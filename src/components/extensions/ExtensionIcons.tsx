@@ -1,4 +1,6 @@
+import { Bot, Library, Music, Palette, Puzzle, Sparkles, Waypoints } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { ExtensionManifest } from '@/lib/extensions/manifest';
 
 /** Logotipo de Notion (silueta oficial, Simple Icons, CC0). */
 export function NotionLogo({ className }: { className?: string }) {
@@ -9,17 +11,39 @@ export function NotionLogo({ className }: { className?: string }) {
   );
 }
 
-/** Icono de cada extensión, en su baldosa (Notion: la N negra sobre blanco, como la marca). */
-export function ExtensionIcon({ className }: { className?: string }) {
+const TILE = 'flex shrink-0 items-center justify-center rounded-lg h-9 w-9';
+
+/**
+ * Icono de cada extensión, en su baldosa. Notion lleva su marca (la N negra
+ * sobre blanco); las demás de Asvent, el acento de Frame; las de terceros, un
+ * icono según lo que aportan, en gris: se distinguen de un vistazo.
+ */
+export function ExtensionIcon({ id, manifest, className }: { id?: string; manifest?: ExtensionManifest | null; className?: string }) {
+  if (id === 'frame.notion' || !id) {
+    return (
+      <span className={cn(TILE, 'bg-white text-black ring-1 ring-black/10', className)}>
+        <NotionLogo className="h-5 w-5" />
+      </span>
+    );
+  }
+  const official: Record<string, typeof Bot> = {
+    'frame.wire': Waypoints,
+    'frame.animaciones': Sparkles,
+    'frame.ia': Bot,
+    'frame.aklore': Library,
+  };
+  const Icon = official[id];
+  if (Icon) {
+    return (
+      <span className={cn(TILE, 'bg-primary/10 text-primary ring-1 ring-primary/20', className)}>
+        <Icon className="h-5 w-5" />
+      </span>
+    );
+  }
+  const ThirdParty = manifest?.contributes?.musicSource ? Music : manifest?.contributes?.appearance ? Palette : Puzzle;
   return (
-    <span
-      className={cn(
-        'flex shrink-0 items-center justify-center rounded-lg bg-white text-black ring-1 ring-black/10',
-        'h-9 w-9',
-        className
-      )}
-    >
-      <NotionLogo className="h-5 w-5" />
+    <span className={cn(TILE, 'bg-muted text-muted-foreground ring-1 ring-border', className)}>
+      <ThirdParty className="h-5 w-5" />
     </span>
   );
 }

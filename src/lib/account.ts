@@ -2,6 +2,7 @@ import { closeMusicDB, MUSIC_DB_NAME } from '@/lib/music-db';
 import { disconnectGoogle } from '@/lib/google/auth';
 import { FILE_HANDLES_DB_NAME } from '@/lib/file-handles';
 import { wipeProfileMedia } from '@/lib/profile-scope';
+import { forgetAllExtensions } from '@/lib/extensions/store';
 
 /** Base del antiguo módulo Conocimiento (Aether KN): sin pantalla desde la
  *  Fase 16 y sin código desde la 1.6.7. Sus datos siguen en el equipo de quien
@@ -110,6 +111,9 @@ export async function wipeLocalAccountData(uid?: string): Promise<void> {
   } catch {
     /* revocar tokens es un extra: nunca debe frenar el borrado */
   }
+
+  // Las extensiones de este equipo, con sus carpetas y llaves (1.7.3).
+  await forgetAllExtensions().catch(() => undefined);
 
   // Sin cerrar la conexión del módulo, `deleteDatabase` quedaría bloqueado.
   closeMusicDB();

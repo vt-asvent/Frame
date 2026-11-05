@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Link2, LoaderCircle, LogOut, Settings, ShieldAlert, Trash2 } from 'lucide-react';
 import GuestLinkDialog from '@/components/auth/GuestLinkDialog';
-import NotionImportDialog from '@/components/extensions/NotionImportDialog';
-import { NotionLogo } from '@/components/extensions/ExtensionIcons';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,7 +51,8 @@ interface DeleteOutcome {
 
 /**
  * Rueda de la cuenta (Ajustes) y su menú pequeño, anclado a ella: vincular
- * (solo invitados), cerrar sesión, importar de Notion y eliminar la cuenta.
+ * (solo invitados), cerrar sesión y eliminar la cuenta. «Importar de Notion»
+ * es desde la 1.7.3 la extensión Notion (Ajustes → Extensiones).
  * (El panel de uso del responsable salió de la app en la 1.7.0: es la
  * página aparte de métricas, `metricas/`.)
  *
@@ -70,7 +69,6 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
   const { toast } = useToast();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notionOpen, setNotionOpen] = useState(false);
 
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -206,7 +204,7 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
           <Button
             variant={menuOpen ? 'default' : 'ghost'}
             size="icon"
-            title={tr('Cerrar sesión, importar de Notion y eliminar cuenta')}
+            title={tr('Cerrar sesión y eliminar cuenta')}
             aria-label={tr('Opciones de la cuenta')}
             className={cn(
               'h-9 w-9 rounded-md border',
@@ -248,17 +246,6 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
             </Button>
 
             <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start"
-              onClick={pick(() => setNotionOpen(true))}
-              title={tr('Tus tareas y fechas de una base de datos de Notion')}
-            >
-              <NotionLogo className="h-4 w-4" />
-              {tr('Importar de Notion')}
-            </Button>
-
-            <Button
               variant="gris"
               size="sm"
               className="w-full justify-start"
@@ -274,8 +261,6 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
       </Popover>
 
       {userProfile && canLink && <GuestLinkDialog open={linkOpen} onOpenChange={setLinkOpen} guest={userProfile} />}
-
-      <NotionImportDialog open={notionOpen} onOpenChange={setNotionOpen} />
 
       {/* --- Cerrar sesión --- */}
       <AlertDialog open={logoutOpen} onOpenChange={(open) => !isLoggingOut && setLogoutOpen(open)}>

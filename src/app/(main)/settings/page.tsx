@@ -33,6 +33,7 @@ import { useStoredImage } from '@/hooks/use-stored-image';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
+import ExtensionsSection from '@/components/extensions/ExtensionsSection';
 import ProfileStats from '@/components/settings/ProfileStats';
 import ReportCenter from '@/components/settings/ReportCenter';
 import { APP_VERSION, BUILD_DATE } from '@/lib/version';
@@ -755,6 +756,10 @@ export default function SettingsPage() {
                 </div>
                 )}
             </div>
+        </div>
+
+        <div className="pt-6">
+          <ExtensionsSection />
         </div>
 
         <p className="pt-12 text-xs text-center text-muted-foreground">

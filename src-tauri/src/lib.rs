@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 mod window_state;
+mod extensions;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -1677,6 +1678,13 @@ pub fn run() {
             music_pick,
             music_read,
             music_pick_release,
+            extensions::ext_forget,
+            extensions::ext_music_folder_pick,
+            extensions::ext_music_folder,
+            extensions::ext_music_folder_scan,
+            extensions::ext_secret_set,
+            extensions::ext_secret_get,
+            extensions::ext_secret_delete,
             open_mini_timer,
             schedule_wake,
             close_mini_timer,

@@ -1,5 +1,6 @@
 import { parseCsv } from '@/lib/csv';
 import { listZip, readZipEntry, readZipText } from '@/lib/zip-read';
+import { tr } from '@/lib/i18n';
 import type { Course, TaskKind, TaskPriority } from '@/types';
 
 // ============================================================
@@ -16,13 +17,26 @@ import type { Course, TaskKind, TaskPriority } from '@/types';
 //   asignaturas de Frame) · prioridad · tipo · descripción.
 // Las fechas se entienden en los formatos que usa Notion: «October 6, 2026»,
 // «6 de octubre de 2026», 06/10/2026, 2026-10-06, con o sin hora.
+//
+// Extensión desde la 1.7.3 (Ajustes → Extensiones → Notion):
+//   · el texto de cada página (los .md del .zip) entra como descripción
+//     cuando la fila no trae una;
+//   · cada fila deja una huella (título + fecha) al importarse: al volver a
+//     importar el mismo archivo, lo ya traído no se repite;
+//   · si el archivo no sirve, se dice por qué (HTML, página suelta, .zip
+//     dañado, tabla vacía) en vez de «no se encontró nada».
 // ============================================================
+
+/** Error con un mensaje para el usuario (ya traducido). */
+export class NotionImportError extends Error {}
 
 export interface NotionTable {
   /** Nombre de la base de datos (del archivo). */
   name: string;
   header: string[];
   rows: string[][];
+  /** Texto de la página de cada fila (por título normalizado), de los .md del .zip. */
+  pages?: Map<string, string>;
 }
 
 export interface NotionItem {
@@ -72,25 +86,84 @@ function toTable(fileName: string, text: string): NotionTable | null {
   return { name: tableName(fileName), header: header.map((h) => h.trim()), rows: body };
 }
 
-async function tablesFromZip(file: Blob, depth = 0): Promise<{ name: string; text: string }[]> {
-  const entries = await listZip(file);
-  const out: { name: string; text: string }[] = [];
+/** Páginas de un .zip: como mucho estas, y de este tamaño (texto, no adjuntos). */
+const MAX_PAGES = 3000;
+const MAX_PAGE_BYTES = 256 * 1024;
+const MAX_FILE_BYTES = 1024 * 1024 * 1024;
+
+interface ZipContents {
+  csvs: { name: string; text: string }[];
+  pages: { name: string; text: string }[];
+  html: boolean;
+}
+
+async function tablesFromZip(file: Blob, label: string, depth = 0, acc: ZipContents = { csvs: [], pages: [], html: false }): Promise<ZipContents> {
+  let entries;
+  try {
+    entries = await listZip(file);
+  } catch {
+    throw new NotionImportError(tr('No pude abrir «{name}»: el .zip está dañado o incompleto. Vuelve a descargarlo de Notion.', { name: label }));
+  }
   for (const entry of entries) {
-    if (/\.csv$/i.test(entry.name)) out.push({ name: entry.name, text: await readZipText(file, entry) });
+    if (/\.csv$/i.test(entry.name)) acc.csvs.push({ name: entry.name, text: await readZipText(file, entry) });
+    else if (/\.md$/i.test(entry.name) && acc.pages.length < MAX_PAGES && entry.size <= MAX_PAGE_BYTES) {
+      acc.pages.push({ name: entry.name, text: await readZipText(file, entry) });
+    } else if (/\.html?$/i.test(entry.name)) acc.html = true;
     else if (/\.zip$/i.test(entry.name) && depth < 2) {
       const bytes = await readZipEntry(file, entry);
       const inner = new Blob([bytes.slice().buffer as ArrayBuffer]);
-      out.push(...(await tablesFromZip(inner, depth + 1)));
+      await tablesFromZip(inner, label, depth + 1, acc);
     }
   }
-  return out;
+  return acc;
 }
+
+/**
+ * Texto de una página exportada: sin el título (# …) ni el bloque de
+ * propiedades que Notion pone debajo («Estado: Hecho»…), que ya vienen en
+ * las columnas.
+ */
+export function pageBody(markdown: string): string {
+  const lines = markdown.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (lines[i]?.startsWith('# ')) i++;
+  while (i < lines.length && !lines[i].trim()) i++;
+  while (i < lines.length && /^[^:\n]{1,60}:\s/.test(lines[i])) i++;
+  return lines.slice(i).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 4000);
+}
+
+/** «Carpeta/Mi tarea 0123…abcd.md» → título normalizado. */
+const pageTitle = (name: string) => norm(name.split('/').pop()!.replace(/\.md$/i, '').replace(/\s+[0-9a-f]{32}$/i, ''));
+/** Carpeta de la página: la base de datos a la que pertenece. */
+const pageFolder = (name: string) => tableName((name.split('/').slice(-2, -1)[0] ?? '') + '.csv');
 
 export async function readNotionFiles(files: File[]): Promise<NotionTable[]> {
   const csvs: { name: string; text: string }[] = [];
+  const pages: { name: string; text: string }[] = [];
+  let html = false;
   for (const file of files) {
-    if (/\.zip$/i.test(file.name)) csvs.push(...(await tablesFromZip(file)));
-    else if (/\.csv$/i.test(file.name)) csvs.push({ name: file.name, text: await file.text() });
+    if (file.size > MAX_FILE_BYTES) {
+      throw new NotionImportError(tr('«{name}» pesa demasiado. Exporta solo la base de datos de tareas, sin «Incluir subpáginas» ni archivos adjuntos.', { name: file.name }));
+    }
+    if (/\.zip$/i.test(file.name)) {
+      const found = await tablesFromZip(file, file.name);
+      csvs.push(...found.csvs);
+      pages.push(...found.pages);
+      html ||= found.html;
+    } else if (/\.csv$/i.test(file.name)) csvs.push({ name: file.name, text: await file.text() });
+    else {
+      throw new NotionImportError(
+        tr('«{name}» no es una exportación de Notion. Elige el .zip que descarga Notion al exportar con «Markdown y CSV».', { name: file.name })
+      );
+    }
+  }
+  if (csvs.length === 0) {
+    if (html) throw new NotionImportError(tr('Ese .zip se exportó en HTML. Vuelve a exportar desde Notion eligiendo el formato «Markdown y CSV».'));
+    if (pages.length > 0) {
+      throw new NotionImportError(tr('Ese .zip trae páginas sueltas, no una base de datos. En Notion, exporta la base de datos (la tabla con tus tareas).'));
+    }
+    return [];
   }
   // Notion exporta dos CSV por base: la vista y «_all» (todas las filas). Se
   // queda con «_all» cuando están los dos.
@@ -100,7 +173,20 @@ export async function readNotionFiles(files: File[]): Promise<NotionTable[]> {
     const current = byName.get(key);
     if (!current || /_all\.csv$/i.test(csv.name)) byName.set(key, csv);
   }
-  return [...byName.values()].map((c) => toTable(c.name, c.text)).filter((t): t is NotionTable => !!t);
+  const tables = [...byName.values()].map((c) => toTable(c.name, c.text)).filter((t): t is NotionTable => !!t);
+  if (tables.length === 0) throw new NotionImportError(tr('La base de datos está vacía: solo trae los nombres de las columnas.'));
+  // El texto de cada página, con la tabla de su carpeta (o con todas, si no se sabe).
+  for (const page of pages) {
+    const body = pageBody(page.text);
+    if (!body) continue;
+    const folder = pageFolder(page.name);
+    const owners = tables.filter((t) => t.name === folder);
+    for (const table of owners.length > 0 ? owners : tables) {
+      table.pages ??= new Map();
+      if (!table.pages.has(pageTitle(page.name))) table.pages.set(pageTitle(page.name), body);
+    }
+  }
+  return tables;
 }
 
 // ------------------------------------------------------------
@@ -326,11 +412,14 @@ export function interpretTable(table: NotionTable, mapping: NotionMapping, cours
       courseLabel: course?.name ?? (courseText || null),
       priority: iPriority >= 0 ? mapPriority(row[iPriority] ?? '') : null,
       kind: iKind >= 0 ? mapKind(row[iKind] ?? '') : null,
-      description: iDescription >= 0 ? (row[iDescription] ?? '').trim().slice(0, 2000) : '',
+      description: ((iDescription >= 0 ? (row[iDescription] ?? '').trim() : '') || table.pages?.get(norm(title)) || '').slice(0, 4000),
     });
   });
   return items;
 }
+
+/** Huella de una fila: qué se importó (tarea o fecha), con qué título y para qué día. */
+export const notionFingerprint = (as: 'tasks' | 'events', title: string, date: string | null) => `${as === 'tasks' ? 't' : 'e'}|${norm(title)}|${date ?? ''}`;
 
 /** yyyy-MM-dd → ISO del inicio de ese día local (como guarda Frame las entregas). */
 export function dueIso(date: string): string {

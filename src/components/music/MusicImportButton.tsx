@@ -1,10 +1,13 @@
 import { useRef, useState } from 'react';
-import { FileAudio, FolderOpen, FolderInput, LoaderCircle } from 'lucide-react';
+import { Download, FileAudio, FolderOpen, FolderInput, LoaderCircle, Puzzle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -17,6 +20,8 @@ import {
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { EchoHeader } from '@/components/shared/EchoWord';
+import MusicSourceDialog from '@/components/extensions/MusicSourceDialog';
+import { useContributions } from '@/lib/extensions/store';
 import { useCourse } from '@/context/CourseContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -27,12 +32,18 @@ import {
   storeImportedSongs,
   type ImportOutcome,
   type MusicImportPlan,
+  type PickedSource,
 } from '@/lib/music-import';
 import { errorText, tr } from '@/lib/i18n';
 
 // ============================================================
-// Botón «Importar» de Música: abre el explorador de archivos para traer
-// canciones sueltas o una carpeta entera (ver lib/music-import.ts).
+// Botón «Importar» de Música (ver lib/music-import.ts). Desde la 1.7.3
+// pregunta de dónde:
+//   · «Archivos locales»: canciones sueltas o una carpeta entera, con el
+//     explorador de Windows (lo de siempre);
+//   · «Descargar»: la página de un programa de descargas de este equipo, que
+//     aporta una extensión «fuente de música» (Ajustes → Extensiones). Lo
+//     que descarga se trae de su carpeta con esta misma importación.
 // ============================================================
 
 type Stage = 'idle' | 'reading' | 'confirm' | 'importing' | 'done';
@@ -40,6 +51,11 @@ type Stage = 'idle' | 'reading' | 'confirm' | 'importing' | 'done';
 export default function MusicImportButton({ variant = 'button' }: { variant?: 'button' | 'empty' }) {
   const { songs, addSongs, mergePlaylistSongs } = useCourse();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const sources = useContributions('musicSource');
+  const [sourceId, setSourceId] = useState<string | null>(null);
+  const [noSource, setNoSource] = useState(false);
+  const activeSource = sources.find((s) => s.id === sourceId) ?? null;
   const [stage, setStage] = useState<Stage>('idle');
   const [plan, setPlan] = useState<MusicImportPlan | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, title: '' });
@@ -57,11 +73,24 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
     try {
       const source = await pickMusic(folder);
       if (!source) return;
+      await importFrom(source, false);
+    } catch (error) {
+      void releasePickedMusic();
+      setStage('idle');
+      toast({ variant: 'destructive', title: tr('No se pudo abrir'), description: errorText(error).slice(0, 160) });
+    }
+  };
+
+  /** Planifica lo elegido (o lo que dejó una fuente de descargas) y pide confirmar. */
+  const importFrom = async (source: PickedSource, quiet: boolean) => {
+    try {
       setStage('reading');
       const next = await planMusicImport(source, songs);
       if (next.entries.length === 0) {
         void releasePickedMusic();
         setStage('idle');
+        // Al cerrar «Descargar» sin bajar nada: no hay nada que decir.
+        if (quiet) return;
         const formats = formatsOf(next.unsupported);
         toast({
           title: next.existing.size > 0 ? tr('Ya tienes esas canciones') : tr('No hay canciones que Frame pueda reproducir'),
@@ -133,7 +162,8 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
             </Button>
           )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="text-xs text-muted-foreground">{tr('Archivos locales')}</DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void choose(false)}>
             <FileAudio className="mr-2 h-4 w-4 text-primary" />
             <span className="flex flex-col">
@@ -148,8 +178,64 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
               <span className="text-[11px] text-muted-foreground">{tr('Con todas sus subcarpetas')}</span>
             </span>
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs text-muted-foreground">{tr('Descargar')}</DropdownMenuLabel>
+          {sources.length > 0 ? (
+            sources.map((source) => (
+              <DropdownMenuItem key={source.id} onSelect={() => setSourceId(source.id)}>
+                <Download className="mr-2 h-4 w-4 text-primary" />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate">{source.manifest.name}…</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {source.value.label ?? tr('Busca una canción o sube una lista')}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            ))
+          ) : (
+            <DropdownMenuItem onSelect={() => setNoSource(true)}>
+              <Download className="mr-2 h-4 w-4 text-primary" />
+              <span className="flex flex-col">
+                {tr('Buscar y descargar…')}
+                <span className="text-[11px] text-muted-foreground">{tr('Con una extensión de descargas')}</span>
+              </span>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {activeSource && (
+        <MusicSourceDialog
+          id={activeSource.id}
+          manifest={activeSource.manifest}
+          source={activeSource.value}
+          open={!!activeSource}
+          onOpenChange={(open) => !open && setSourceId(null)}
+          onImport={(picked, quiet) => void importFrom(picked, quiet)}
+        />
+      )}
+
+      <Dialog open={noSource} onOpenChange={setNoSource}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl font-bold text-primary">{tr('Descargar música')}</DialogTitle>
+            <DialogDescription className="text-center">
+              {tr('Para buscar canciones o subir una lista y descargarlas, instala una extensión de descargas: un programa de este equipo que trae su archivo de extensión para Frame.')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center">
+            <Button
+              onClick={() => {
+                setNoSource(false);
+                navigate('/settings#extensiones');
+              }}
+            >
+              <Puzzle className="mr-2 h-4 w-4" />
+              {tr('Ir a Extensiones')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={stage !== 'idle'} onOpenChange={(open) => !open && stage !== 'importing' && stage !== 'reading' && finish()}>
         <DialogContent className="sm:max-w-md">

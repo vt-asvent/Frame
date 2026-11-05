@@ -252,7 +252,8 @@ interface CourseContextType {
   setAdvancedMode: (on: boolean) => void;
 
 
-  addCourse: (name: string, teacherName?: string) => void;
+  /** Devuelve la asignatura creada (null si ya había una con ese nombre). */
+  addCourse: (name: string, teacherName?: string) => Course | null;
   updateCourse: (id: string, updates: Partial<Course>) => void;
   deleteCourse: (id: string) => void;
 
@@ -1460,8 +1461,8 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
 
   // --- Data Manipulation Methods ---
 
-  const addCourse = useCallback((name: string, teacherName?: string) => {
-    if (!storageKeys) return;
+  const addCourse = useCallback((name: string, teacherName?: string): Course | null => {
+    if (!storageKeys) return null;
     const trimmedName = name.trim();
     if (courses.some(course => course.name.toLowerCase() === trimmedName.toLowerCase())) {
       toast({
@@ -1469,7 +1470,7 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
         title: tr('Asignatura duplicada'),
         description: tr('Ya existe una asignatura con este nombre.'),
       });
-      return;
+      return null;
     }
     const newCourse: Course = { id: crypto.randomUUID(), name: trimmedName, teacherName: teacherName || undefined };
     setCourses(prev => {
@@ -1477,6 +1478,7 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
         setInLocalStorage(storageKeys.courses, updated);
         return updated;
     });
+    return newCourse;
   }, [storageKeys, courses]);
 
   const updateCourse = useCallback((id: string, updates: Partial<Course>) => {
