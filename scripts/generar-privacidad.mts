@@ -69,7 +69,7 @@ const html = `<!doctype html>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>Política de Privacidad · Frame</title>
-  <meta name="description" content="Qué datos trata Frame, para qué, cuánto tiempo y qué derechos tienes. VT Asvent." />
+  <meta name="description" content="Qué datos trata Frame, para qué, cuánto tiempo y qué derechos tienes. Asvent." />
   <meta name="theme-color" content="#ece7dd" />
   <meta name="color-scheme" content="light dark" />
   <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
@@ -83,7 +83,7 @@ const html = `<!doctype html>
   <header class="nav" id="nav">
     <div class="container nav-inner">
       <a class="brand" href="../" aria-label="Frame, inicio">
-        <img src="../assets/img/logo.svg" alt="" width="32" height="32" />
+        <img class="logo-light" src="../assets/img/logo.svg" alt="" width="32" height="32" /><img class="logo-dark" src="../assets/img/logo-dark.svg" alt="" width="32" height="32" />
         <span>FRAME</span>
       </a>
       <div class="nav-actions">

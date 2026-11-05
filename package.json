@@ -3,7 +3,7 @@
   "productName": "Frame",
   "version": "1.7.2",
   "description": "Sistema Operativo de Productividad",
-  "author": "VT Asvent <vt.asvent@gmail.com>",
+  "author": "Asvent <vt.asvent@gmail.com>",
   "private": true,
   "type": "module",
   "scripts": {

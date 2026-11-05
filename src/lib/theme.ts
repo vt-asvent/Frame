@@ -9,6 +9,8 @@
 // pintado para que no haya destello del tema equivocado.
 // ============================================================
 
+import { initAccent } from '@/lib/accent';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'frameTheme';
@@ -62,6 +64,7 @@ async function broadcastTheme(pref: ThemePreference): Promise<void> {
  *  "dispositivo", y obedece los cambios hechos desde otra ventana. */
 export function initTheme(): void {
   applyTheme();
+  initAccent();
   window
     .matchMedia('(prefers-color-scheme: dark)')
     .addEventListener('change', () => {

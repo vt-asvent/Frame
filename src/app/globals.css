@@ -5,8 +5,9 @@
 @layer base {
   /* TEMA CLARO "arena": espejo lógico del oscuro (misma estructura, tonos
      invertidos). Nunca blanco puro: la base es un arena cálido, igual que
-     el oscuro nunca usa negro puro. El azul primario se oscurece un poco
-     para conservar el contraste sobre fondos claros. */
+     el oscuro nunca usa negro puro. El primario es el acento elegido en
+     Ajustes → Tema (`lib/accent.ts`, desde la 1.7.3); aquí, el de marca
+     (azul marino en claro, azul bebé en oscuro) por si aún no se aplicó. */
   :root {
     --background: 40 27% 90%;
     --foreground: 30 10% 12%;
@@ -14,8 +15,9 @@
     --card-foreground: 30 10% 12%;
     --popover: 42 33% 93%;
     --popover-foreground: 30 10% 12%;
-    --primary: 228 88% 62%;
+    --primary: 217 79% 20%;
     --primary-foreground: 0 0% 100%;
+    --primary-2: 158 21% 52%;
     --secondary: 40 22% 84%;
     --secondary-foreground: 30 10% 16%;
     --muted: 40 22% 84%;
@@ -26,7 +28,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 38 18% 76%;
     --input: 38 18% 80%;
-    --ring: 228 88% 62%;
+    --ring: 217 79% 20%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -41,8 +43,9 @@
     --card-foreground: 0 0% 98%;
     --popover: 240 2% 11%;
     --popover-foreground: 0 0% 98%;
-    --primary: 228 100% 73%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 214 74% 80%;
+    --primary-foreground: 217 79% 12%;
+    --primary-2: 158 24% 69%;
     --secondary: 240 3.7% 15.9%;
     --secondary-foreground: 0 0% 98%;
     --muted: 240 3.7% 15.9%;
@@ -53,7 +56,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: 240 3.7% 20%;
     --input: 240 3.7% 15.9%;
-    --ring: 228 100% 73%;
+    --ring: 214 74% 80%;
     --chart-1: 197 71% 73%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;

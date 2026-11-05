@@ -805,7 +805,7 @@ export function buildPerformanceDoc(data: ReportData, options: PerformanceDocOpt
   blocks.push(...performanceBlocks(data, options));
   blocks.push({
     kind: 'footer',
-    text: tr('Frame · VT Asvent — {title}. Generado el {generatedAt}.', { title, generatedAt: data.generatedAt }),
+    text: tr('Frame · Asvent — {title}. Generado el {generatedAt}.', { title, generatedAt: data.generatedAt }),
   });
 
   return { title, blocks };

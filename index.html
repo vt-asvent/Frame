@@ -12,6 +12,15 @@
           ? window.matchMedia('(prefers-color-scheme: dark)').matches
           : true;
         document.documentElement.classList.toggle('dark', dark);
+        // Color de acento (lib/accent.ts): la hoja guardada, ya armada.
+        var accentCss = localStorage.getItem('frameAccentCss');
+        if (accentCss) {
+          document.documentElement.setAttribute('data-accent', localStorage.getItem('frameAccent') || 'marino');
+          var st = document.createElement('style');
+          st.id = 'frame-accent';
+          st.textContent = accentCss;
+          document.head.appendChild(st);
+        }
       } catch (e) {}
     </script>
     <title>Frame</title>

@@ -2,7 +2,7 @@
 name = "frame"
 version = "1.7.2"
 description = "Sistema Operativo de Productividad"
-authors = ["VT Asvent <vt.asvent@gmail.com>"]
+authors = ["Asvent <vt.asvent@gmail.com>"]
 edition = "2021"
 
 [lib]

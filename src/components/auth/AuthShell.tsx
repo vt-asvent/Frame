@@ -39,12 +39,12 @@ export default function AuthShell({ title, description, children, inDialog = fal
           inDialog && 'pr-12'
         )}
       >
-        <span>{tr('VT Asvent')}</span>
+        <span>{tr('Asvent')}</span>
         <span>2026 · v{APP_VERSION}</span>
       </div>
       <CardHeader echo={false} className="items-center pb-4 pt-3 text-center">
         <div className="flex items-center justify-center gap-3">
-          <FrameLogo className="h-12 w-12" />
+          <FrameLogo className="h-16 w-16" />
           <span className="select-none text-3xl font-bold text-foreground">{tr('FRAME')}</span>
         </div>
         {title && <CardTitle className="pt-2 text-xl font-bold text-foreground">{title}</CardTitle>}

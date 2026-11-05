@@ -229,7 +229,7 @@ function htmlBlock(block: DocBlock): string {
       return `<div class="fig" style="margin-bottom:6px;">
   <table cellpadding="0" cellspacing="0" style="margin-bottom:14px;"><tr>
     <td style="font-family:${SERIF_HTML};font-size:11pt;color:#${COLOR.accent};">Frame</td>
-    <td style="text-align:right;font-size:7.5pt;color:#${COLOR.muted};">VT Asvent</td>
+    <td style="text-align:right;font-size:7.5pt;color:#${COLOR.muted};">Asvent</td>
   </tr></table>
   <div style="height:3px;background:#${COLOR.accent};"></div>
   <div style="font-size:8pt;color:#${COLOR.accent};margin-top:12px;">${escapeHtml(block.eyebrow)}</div>
@@ -625,7 +625,7 @@ function docxBlock(block: DocBlock): string {
           pad: { top: 0, left: 0, bottom: 0, right: 0 },
         })}${tableCell(
           CONTENT_WIDTH - half,
-          para(run('VT Asvent', { color: COLOR.muted, size: 15 }), { align: 'right', after: 0 }),
+          para(run('Asvent', { color: COLOR.muted, size: 15 }), { align: 'right', after: 0 }),
           { pad: { top: 0, left: 0, bottom: 0, right: 0 } }
         )}</w:tr>`
       );

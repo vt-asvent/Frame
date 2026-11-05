@@ -2,7 +2,7 @@
 
 **Tu sistema operativo de estudio.** Una app de escritorio para Windows que reúne en un solo lugar las asignaturas, las tareas, los hábitos, las sesiones de estudio, la música y los servicios de Google que usa un estudiante. Gratis, sin funciones de pago y pensada primero para estudiantes de Perú y Latinoamérica.
 
-Un producto de **VT Asvent**, entidad de desarrollo de software (en formación).
+Un producto de **Asvent**, entidad de desarrollo de software (en formación).
 
 - Página oficial y descarga: https://gasparrojasdiego.github.io/frame-app/
 - Versión actual: **1.6.1** (Windows 10 y 11, 64 bits). Hay una versión para Android (tablets y teléfonos) en un proyecto aparte.
@@ -70,4 +70,4 @@ Frame nació como **[Aether OS](https://github.com/vt-asvent/Aether-OS)** (2026)
 
 ## Licencia
 
-© 2026 VT Asvent. Todos los derechos reservados. El código se publica para consulta; no se permite redistribuir la app ni obras derivadas sin permiso.
+© 2026 Asvent. Todos los derechos reservados. El código se publica para consulta; no se permite redistribuir la app ni obras derivadas sin permiso.

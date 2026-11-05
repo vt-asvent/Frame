@@ -14,7 +14,7 @@
 #    1. Compila Frame SIN instalador y con VITE_STORE_BUILD=1: el actualizador
 #       propio no se usa, porque la Store actualiza la app por su cuenta.
 #    2. Arma la carpeta del paquete: frame.exe, AppxManifest.xml y los logos
-#       (sacados de src-tauri/icons/icon.ico con ImageMagick).
+#       (sacados de docs/marca/logo con ImageMagick).
 #    3. Empaqueta con makeappx (Windows SDK) → dist-msix/Frame_X.Y.Z_x64.msix
 #
 #  El paquete va SIN firmar: Partner Center lo firma al publicarlo. Para
@@ -65,18 +65,22 @@ if (Test-Path $layout) { Remove-Item $layout -Recurse -Force }
 New-Item -ItemType Directory -Force "$layout/Assets" | Out-Null
 Copy-Item $exe "$layout/frame.exe"
 
-$icon = "$root/src-tauri/icons/icon.ico[0]"
+# Logos del paquete (marca del 4-nov-2026, `docs/marca/logo/`): plano hasta
+# 64 px y degradado en los grandes, como pide el LEEME de la marca. El .ico
+# empieza en 16 px: ya no sirve de fuente para los mosaicos.
+$flat = "$root/docs/marca/logo/Frame-logo-plano.svg"
+$grad = "$root/docs/marca/logo/Frame-logo-sin-fondo-1024px.png"
 $logos = @(
-    @{ Name = 'Square44x44Logo.png'; Size = '44x44' },
-    @{ Name = 'Square44x44Logo.targetsize-44_altform-unplated.png'; Size = '44x44' },
-    @{ Name = 'Square150x150Logo.png'; Size = '150x150' },
-    @{ Name = 'StoreLogo.png'; Size = '50x50' }
+    @{ Name = 'Square44x44Logo.png'; Size = '44x44'; Src = $flat },
+    @{ Name = 'Square44x44Logo.targetsize-44_altform-unplated.png'; Size = '44x44'; Src = $flat },
+    @{ Name = 'Square150x150Logo.png'; Size = '150x150'; Src = $grad },
+    @{ Name = 'StoreLogo.png'; Size = '50x50'; Src = $flat }
 )
 foreach ($logo in $logos) {
-    magick $icon -background none -resize $logo.Size -gravity center -extent $logo.Size "$layout/Assets/$($logo.Name)"
+    magick -background none $logo.Src -resize $logo.Size -gravity center -extent $logo.Size "$layout/Assets/$($logo.Name)"
 }
 # Mosaico ancho: el logo centrado, con aire a los lados.
-magick $icon -background none -resize 120x120 -gravity center -extent 310x150 "$layout/Assets/Wide310x150Logo.png"
+magick -background none $grad -resize 120x120 -gravity center -extent 310x150 "$layout/Assets/Wide310x150Logo.png"
 
 $description = 'Asignaturas, tareas, sesiones de estudio con nota diaria, hábitos, calendario y tu música, en una sola app.'
 $manifest = @"

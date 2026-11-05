@@ -102,7 +102,7 @@ ${fence}powershell
 Get-FileHash .\Frame-Setup.exe -Algorithm SHA256
 ${fence}
 
-Cada versión va firmada: Frame solo instala actualizaciones con la firma de VT Asvent.
+Cada versión va firmada: Frame solo instala actualizaciones con la firma de Asvent.
 "@
 try {
     $release = Invoke-RestMethod -Method Post -Headers $headers `

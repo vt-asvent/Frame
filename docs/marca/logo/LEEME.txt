@@ -1,0 +1,5 @@
+Logo de Frame, degradado opcion 3, esquinas redondeadas y flecha simetrica (4-nov-2026)
+Degradado diagonal, de abajo a la izquierda hacia arriba a la derecha.
+Claro: barra #0A2858 a #275C7E; flecha #3D7064 a #93C2B0. Oscuro: barra #7FA6DC a #B4D7E4; flecha #86B4A2 a #C9E5DA.
+Plano (sin degradado, para 16-64 px, favicon e impresion a un color): #0B2A5B y #6A9E8B. El .ico usa el plano.
+El logo ocupa el 86 % del ancho del cuadrado, centrado.

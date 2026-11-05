@@ -640,7 +640,7 @@ export function buildPendingReport(
   if (!options.omitCover) {
     blocks.push({
       kind: 'footer',
-      text: tr('Frame · VT Asvent — Informe de tareas pendientes generado el {generatedAt} a partir de las tareas del propio estudiante. Refleja la situación en ese instante: las tareas culminadas después ya no figuran aquí.', { generatedAt }),
+      text: tr('Frame · Asvent — Informe de tareas pendientes generado el {generatedAt} a partir de las tareas del propio estudiante. Refleja la situación en ese instante: las tareas culminadas después ya no figuran aquí.', { generatedAt }),
     });
   }
 

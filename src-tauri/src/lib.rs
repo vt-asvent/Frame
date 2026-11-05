@@ -322,7 +322,7 @@ fn http_client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(25))
-            .user_agent(concat!("Frame/", env!("CARGO_PKG_VERSION"), " (VT Asvent)"))
+            .user_agent(concat!("Frame/", env!("CARGO_PKG_VERSION"), " (Asvent)"))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     })

@@ -49,7 +49,7 @@
     "category": "Productivity",
     "shortDescription": "Sistema Operativo de Productividad",
     "longDescription": "Frame: sistema de productividad personal para la disciplina, el enfoque y la superación. Asignaturas, tareas con recordatorios, sesiones de estudio con calificación diaria, hábitos, calendario, tu música e integraciones de Google, en una app nativa, rápida y offline-first.",
-    "copyright": "Copyright © 2026 VT Asvent",
+    "copyright": "Copyright © 2026 Asvent",
     "windows": {
       "nsis": {
         "installMode": "currentUser",

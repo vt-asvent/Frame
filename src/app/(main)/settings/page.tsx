@@ -677,7 +677,7 @@ export default function SettingsPage() {
         </div>
 
         <p className="pt-12 text-xs text-center text-muted-foreground">
-          Frame{' '}{APP_VERSION}{' '}{tr('· Tus datos viven en este equipo · © 2026 VT Asvent')}
+          Frame{' '}{APP_VERSION}{' '}{tr('· Tus datos viven en este equipo · © 2026 Asvent')}
         </p>
 
         {/* ------------------------------------------------------------------
