@@ -23,6 +23,16 @@ import { songTitle } from '@/lib/music-search';
 //
 // El índice id → clave vive en el dispositivo (`songKeys_<uid>`, no viaja):
 // la sincronización lo lee sin esperar a la base de la música.
+//
+// Copias con el mismo título y artista (1.7.3): un disco doble con dos
+// «Intro» de la misma banda, o la misma canción en MP3 y en FLAC. Hasta la
+// 1.7.2 las dos tenían la misma clave y, al viajar, la playlist las fundía en
+// una (quitaba la repetida): el otro dispositivo veía una canción menos y, al
+// reordenarla allí, la copia que faltaba desaparecía también de este. Ahora la
+// segunda copia lleva su número («k:intro␟banda␟2»), en el orden de su nombre
+// de archivo (igual en todos los dispositivos que tengan los mismos archivos).
+// Las versiones anteriores no la reconocen: la conservan como clave, en su
+// sitio y sin verla.
 // ============================================================
 
 export const SONG_KEY_PREFIX = 'k:';
@@ -84,13 +94,46 @@ function directory(uid: string) {
 }
 
 /**
+ * Clave de cada canción de la biblioteca: la de `songKey` y, si varias la
+ * comparten, la segunda en adelante con su número (ver arriba). El orden de
+ * las copias es el de su nombre de archivo (y su id, a igualdad).
+ */
+export function libraryKeys(songs: Pick<Song, 'id' | 'title' | 'artist' | 'fileName'>[]): Record<string, string> {
+  const groups = new Map<string, Pick<Song, 'id' | 'title' | 'artist' | 'fileName'>[]>();
+  for (const song of songs) {
+    const key = songKey(song);
+    const group = groups.get(key);
+    if (group) group.push(song);
+    else groups.set(key, [song]);
+  }
+  const out: Record<string, string> = {};
+  for (const [key, group] of groups) {
+    if (group.length === 1) {
+      out[group[0].id] = key;
+      continue;
+    }
+    const sorted = [...group].sort(
+      (a, b) => fold(a.fileName ?? '').localeCompare(fold(b.fileName ?? '')) || a.id.localeCompare(b.id)
+    );
+    sorted.forEach((song, index) => {
+      out[song.id] = index === 0 ? key : `${key}${SEPARATOR}${index + 1}`;
+    });
+  }
+  return out;
+}
+
+/** La clave con la que viaja esta canción (la del índice; si no está, la de `songKey`). */
+export function songKeyIn(uid: string, song: Pick<Song, 'id' | 'title' | 'artist' | 'fileName'>): string {
+  return directory(uid).byId.get(song.id) ?? songKey(song);
+}
+
+/**
  * Guarda el índice id → clave de la música del perfil (solo si cambió). Un id
  * que ya no está en la biblioteca pero sigue en una playlist conserva su
  * clave: así viaja por ella y no como un id que nadie más conoce.
  */
 export function rememberSongKeys(uid: string, songs: Song[]): void {
-  const next: Record<string, string> = {};
-  for (const song of songs) next[song.id] = songKey(song);
+  const next: Record<string, string> = libraryKeys(songs);
   try {
     const previous = directory(uid).byId;
     const playlists = JSON.parse(localStorage.getItem(`playlists_${uid}`) ?? '[]') as { songIds?: unknown }[];

@@ -20,6 +20,10 @@
 // Desde la 1.6.9 también recorre las imágenes de la galería (con una base de
 // imágenes y un lienzo simulados) y el corazón de las canciones.
 //
+// Desde la 1.7.3, las playlists entre tres dispositivos con música propia
+// (--solo=playlists): reordenar canciones y el menú, cambios a la vez, uno sin
+// conexión, uno dormido y dos copias con el mismo título y artista.
+//
 // No usa la red ni la nube real.
 // ============================================================
 
@@ -1198,10 +1202,223 @@ async function images() {
   shutdown();
 }
 
+// ------------------------------------------------------------
+// Playlists entre tres dispositivos (1.7.3): lo que hace la interfaz
+// ------------------------------------------------------------
+// Cada dispositivo tiene SU música (ids distintos; en la laptop y el celular,
+// dos copias de «Intro» de la misma banda, como un disco doble). Los mandos de
+// abajo hacen lo mismo que la interfaz: `persistOrder` de
+// PlaylistDetailsClient y `reorderPlaylists` de CourseContext.
+
+function setLibrary(dev, list) {
+  dev.library = Object.fromEntries(list.map((song) => [song.id, song]));
+  dev.frame.songs(list);
+  dev.frame.localize();
+}
+
+/** Como `byOrder` de CourseContext: por `order` y, a igualdad, como vienen. */
+const byOrder = (list) =>
+  list
+    .map((playlist, index) => ({ playlist, index }))
+    .sort((a, b) => (a.playlist.order ?? Infinity) - (b.playlist.order ?? Infinity) || a.index - b.index)
+    .map(({ playlist }) => playlist);
+
+/** Arrastrar canciones en una playlist: se reordenan los huecos de las que se ven. */
+function reorderSongs(dev, playlistId, visibleOrder) {
+  const lists = dev.frame.get('playlists') ?? [];
+  const playlist = lists.find((p) => p.id === playlistId);
+  let next = 0;
+  const songIds = playlist.songIds.map((id) => (dev.library?.[id] ? visibleOrder[next++] ?? id : id));
+  dev.frame.put('playlists', lists.map((p) => (p.id === playlistId ? { ...p, songIds } : p)));
+}
+
+/** Arrastrar playlists en el menú: lo de la interfaz (solo cambian las que se mueven). */
+function reorderPlaylistsAs(dev, orderedIds) {
+  const lists = byOrder(dev.frame.get('playlists') ?? []);
+  const minimal = dev.frame.reorderPlaylists(lists, orderedIds);
+  if (minimal) return dev.frame.put('playlists', minimal);
+  // Hasta la 1.7.2: se renumeraban todas.
+  const byId = new Map(lists.map((p) => [p.id, p]));
+  const next = orderedIds.map((id) => byId.get(id)).filter(Boolean);
+  for (const p of lists) if (!orderedIds.includes(p.id)) next.push(p);
+  dev.frame.put('playlists', next.map((p, order) => (p.order === order ? p : { ...p, order })));
+}
+
+const titlesIn = (dev, playlistId) =>
+  (find(dev, 'playlists', playlistId)?.songIds ?? [])
+    .filter((id) => dev.library?.[id])
+    .map((id) => dev.library[id].title + (dev.library[id].disc ?? ''));
+const playlistOrder = (dev) => byOrder(dev.frame.get('playlists') ?? []).map((p) => p.id);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+async function playlistsAcross() {
+  console.log('\n▶ Playlists entre tres dispositivos (laptop, tablet y celular)');
+  resetWorld();
+  const laptop = device('laptop');
+  const tablet = device('tablet');
+  const phone = device('celular');
+  const devices = [laptop, tablet, phone];
+  setLibrary(laptop, [
+    { id: 'L1', title: 'Alpha', artist: 'Ana', fileName: 'alpha.mp3' },
+    { id: 'L2', title: 'Beta', artist: 'Bruno', fileName: 'beta.mp3' },
+    { id: 'L3', title: 'Gamma', artist: 'Gala', fileName: 'gamma.mp3' },
+    { id: 'L4', title: 'Delta', artist: 'Dora', fileName: 'delta.mp3' },
+    { id: 'L5', title: 'Intro', artist: 'Banda', fileName: 'CD1/01 - Intro.mp3', disc: ' (CD1)' },
+    { id: 'L6', title: 'Intro', artist: 'Banda', fileName: 'CD2/01 - Intro.mp3', disc: ' (CD2)' },
+  ]);
+  setLibrary(tablet, [
+    { id: 'T1', title: 'Alpha', artist: 'Ana', fileName: 'alpha.m4a' },
+    { id: 'T2', title: 'Beta', artist: 'Bruno', fileName: 'beta.m4a' },
+    { id: 'T3', title: 'Gamma', artist: 'Gala', fileName: 'gamma.m4a' },
+    { id: 'T4', title: 'Delta', artist: 'Dora', fileName: 'delta.m4a' },
+  ]);
+  setLibrary(phone, [
+    { id: 'P1', title: 'Alpha', artist: 'Ana', fileName: 'Alpha.mp3' },
+    { id: 'P2', title: 'Beta', artist: 'Bruno', fileName: 'Beta.mp3' },
+    { id: 'P3', title: 'Gamma', artist: 'Gala', fileName: 'Gamma.mp3' },
+    { id: 'P4', title: 'Delta', artist: 'Dora', fileName: 'Delta.mp3' },
+    { id: 'P5', title: 'Intro', artist: 'Banda', fileName: 'CD1/01 - Intro.mp3', disc: ' (CD1)' },
+    { id: 'P6', title: 'Intro', artist: 'Banda', fileName: 'CD2/01 - Intro.mp3', disc: ' (CD2)' },
+  ]);
+  load(laptop, {
+    ...fixture(),
+    playlists: [
+      { id: 'p1', name: 'Estudio', songIds: ['L1', 'L2', 'L3', 'L4'], order: 0 },
+      { id: 'p2', name: 'Gimnasio', songIds: ['L2', 'L4'], order: 1 },
+      { id: 'p3', name: 'Viaje', songIds: ['L3'], order: 2 },
+    ],
+  });
+  laptop.frame.start();
+  await sleep(100);
+  tablet.frame.start();
+  phone.frame.start();
+  check(await settle(), 'se calma');
+  const allEqual = () => differences(laptop, tablet).length === 0 && differences(laptop, phone).length === 0;
+  check(allEqual(), 'los tres tienen lo mismo');
+  check(same(titlesIn(phone, 'p1'), ['Alpha', 'Beta', 'Gamma', 'Delta']), `el celular ve la playlist con SUS canciones (${titlesIn(phone, 'p1')})`);
+
+  console.log('\n 1. La laptop reordena las canciones de una playlist');
+  let before = counters();
+  reorderSongs(laptop, 'p1', ['L4', 'L1', 'L3', 'L2']);
+  const wanted = ['Delta', 'Alpha', 'Gamma', 'Beta'];
+  timing('orden de canciones → celular', await until(() => same(titlesIn(phone, 'p1'), wanted)));
+  timing('orden de canciones → tablet', await until(() => same(titlesIn(tablet, 'p1'), wanted)));
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(devices.every((dev) => same(titlesIn(dev, 'p1'), wanted)), 'los tres ven el orden nuevo');
+  check(allEqual(), 'los tres tienen lo mismo');
+
+  console.log('\n 2. La laptop reordena las playlists del menú');
+  before = counters();
+  reorderPlaylistsAs(laptop, ['p3', 'p1', 'p2']);
+  timing('orden de playlists → celular', await until(() => same(playlistOrder(phone), ['p3', 'p1', 'p2'])));
+  timing('orden de playlists → tablet', await until(() => same(playlistOrder(tablet), ['p3', 'p1', 'p2'])));
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(devices.every((dev) => same(playlistOrder(dev), ['p3', 'p1', 'p2'])), 'los tres ven el menú en el orden nuevo');
+  check(allEqual(), 'los tres tienen lo mismo');
+
+  console.log('\n 3. A la vez: el celular reordena una playlist y la tablet mueve otra en el menú');
+  before = counters();
+  reorderSongs(phone, 'p2', ['P4', 'P2']);
+  reorderPlaylistsAs(tablet, ['p1', 'p2', 'p3']);
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(devices.every((dev) => same(titlesIn(dev, 'p2'), ['Delta', 'Beta'])), `el orden del celular llega a todos (${devices.map((d) => titlesIn(d, 'p2')).join(' | ')})`);
+  check(devices.every((dev) => same(playlistOrder(dev), ['p1', 'p2', 'p3'])), `el menú de la tablet llega a todos (${devices.map(playlistOrder).join(' | ')})`);
+  check(allEqual(), 'los tres tienen lo mismo');
+
+  console.log('\n 4. A la vez: la laptop y el celular reordenan la MISMA playlist');
+  before = counters();
+  reorderSongs(laptop, 'p1', ['L2', 'L3', 'L1', 'L4']);
+  await sleep(15);
+  reorderSongs(phone, 'p1', ['P1', 'P2', 'P3', 'P4']);
+  check(await settle(), 'se calma (sin ida y vuelta)');
+  traffic('tráfico', since(before));
+  const finalOrder = titlesIn(laptop, 'p1');
+  check(same(finalOrder, ['Alpha', 'Beta', 'Gamma', 'Delta']), `gana el último que la tocó, el celular (${finalOrder})`);
+  check(devices.every((dev) => same(titlesIn(dev, 'p1'), finalOrder)), 'los tres acaban igual');
+  check(allEqual(), 'los tres tienen lo mismo');
+
+  console.log('\n 5. El celular sin conexión reordena; mientras, la laptop reordena otra y la tablet añade una canción');
+  setOffline(phone, true);
+  await sleep(200);
+  before = counters();
+  reorderSongs(phone, 'p1', ['P4', 'P3', 'P2', 'P1']);
+  await sleep(300);
+  reorderSongs(laptop, 'p2', ['L2', 'L4']);
+  edit(tablet, 'playlists', 'p3', { songIds: ['T3', 'T1'] });
+  check(await settle(), 'se calma sin el celular');
+  setOffline(phone, false);
+  timing(
+    'reconexión → celular al día',
+    await until(() => same(titlesIn(phone, 'p2'), ['Beta', 'Delta']) && same(titlesIn(phone, 'p3'), ['Gamma', 'Alpha']))
+  );
+  timing('… y su orden llega a la laptop', await until(() => same(titlesIn(laptop, 'p1'), ['Delta', 'Gamma', 'Beta', 'Alpha'])));
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(devices.every((dev) => same(titlesIn(dev, 'p1'), ['Delta', 'Gamma', 'Beta', 'Alpha'])), 'el orden hecho sin conexión llega a todos');
+  check(devices.every((dev) => same(titlesIn(dev, 'p2'), ['Beta', 'Delta'])), 'y el de la laptop también');
+  check(devices.every((dev) => same(titlesIn(dev, 'p3'), ['Gamma', 'Alpha'])), 'y la canción que añadió la tablet');
+  check(allEqual(), `los tres tienen lo mismo ${JSON.stringify(differences(laptop, phone))}`);
+
+  console.log('\n 6. El celular dormido mientras la laptop reordena');
+  putToSleep(phone);
+  await sleep(200);
+  before = counters();
+  reorderSongs(laptop, 'p1', ['L1', 'L4', 'L2', 'L3']);
+  reorderPlaylistsAs(laptop, ['p1', 'p2', 'p3']);
+  check(await settle(), 'se calma sin el celular');
+  wakeUp(phone);
+  timing(
+    'al despertar, el orden llega',
+    await until(() => same(titlesIn(phone, 'p1'), ['Alpha', 'Delta', 'Beta', 'Gamma']) && same(playlistOrder(phone), ['p1', 'p2', 'p3']))
+  );
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(allEqual(), 'los tres tienen lo mismo');
+
+  console.log('\n 7. Dos canciones con el mismo título y artista (disco doble)');
+  before = counters();
+  add(laptop, 'playlists', { id: 'p4', name: 'Disco doble', songIds: ['L5', 'L1', 'L6'], order: 3 });
+  timing('playlist → celular', await until(() => !!find(phone, 'playlists', 'p4')));
+  check(await settle(), 'se calma');
+  check(titlesIn(phone, 'p4').length === 3, `el celular ve las tres (${titlesIn(phone, 'p4')})`);
+  const shown = (find(phone, 'playlists', 'p4')?.songIds ?? []).filter((id) => phone.library[id]);
+  reorderSongs(phone, 'p4', ['P1', ...shown.filter((id) => id !== 'P1')]);
+  timing('orden del celular → laptop', await until(() => (find(laptop, 'playlists', 'p4')?.songIds ?? [])[0] === 'L1'));
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  const p4 = find(laptop, 'playlists', 'p4')?.songIds ?? [];
+  check(p4.length === 3 && p4.includes('L5') && p4.includes('L6'), `la laptop conserva las dos copias (${JSON.stringify(p4)})`);
+  check(find(tablet, 'playlists', 'p4')?.songIds.length === 3, `la tablet, sin esas canciones, les guarda el sitio (${JSON.stringify(find(tablet, 'playlists', 'p4')?.songIds)})`);
+  check(allEqual(), `los tres tienen lo mismo ${JSON.stringify(differences(laptop, phone))}`);
+
+  console.log('\n 8. Los tres cambian cosas distintas en el mismo instante');
+  before = counters();
+  add(laptop, 'tasks', { id: 't-laptop', title: 'Tarea de la laptop', courseId: 'c1' });
+  add(tablet, 'tasks', { id: 't-tablet', title: 'Tarea de la tablet', courseId: 'c2' });
+  add(phone, 'tasks', { id: 't-celular', title: 'Tarea del celular', courseId: 'c1' });
+  reorderSongs(laptop, 'p1', ['L3', 'L2', 'L4', 'L1']);
+  edit(tablet, 'playlists', 'p3', { name: 'Viaje largo' });
+  reorderSongs(phone, 'p2', ['P4', 'P2']);
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(
+    devices.every((dev) => ['t-laptop', 't-tablet', 't-celular'].every((id) => !!find(dev, 'tasks', id))),
+    'las tres tareas nuevas están en los tres'
+  );
+  check(devices.every((dev) => same(titlesIn(dev, 'p1'), ['Gamma', 'Beta', 'Delta', 'Alpha'])), 'el orden de la laptop llega a todos');
+  check(devices.every((dev) => find(dev, 'playlists', 'p3')?.name === 'Viaje largo'), 'el nombre de la tablet llega a todos');
+  check(devices.every((dev) => same(titlesIn(dev, 'p2'), ['Delta', 'Beta'])), 'el orden del celular llega a todos');
+  check(allEqual(), `los tres tienen lo mismo ${JSON.stringify(differences(laptop, phone))}`);
+  shutdown();
+}
+
 const started = Date.now();
-// --solo=dos|tres|relojes|convivencia|anterior|futuro|imagenes|corazon|referencia corre solo ese grupo.
+// --solo=dos|tres|playlists|relojes|convivencia|anterior|futuro|imagenes|corazon|referencia corre solo ese grupo.
 const only = process.argv.find((arg) => arg.startsWith('--solo='))?.slice('--solo='.length);
-const groups = { dos: twoDevices, tres: threeDevices, relojes: clockSkew, convivencia: withOldVersion, anterior: withPrevious, futuro: futureKeys, imagenes: images, corazon: favorites, referencia: oldPair };
+const groups = { dos: twoDevices, tres: threeDevices, playlists: playlistsAcross, relojes: clockSkew, convivencia: withOldVersion, anterior: withPrevious, futuro: futureKeys, imagenes: images, corazon: favorites, referencia: oldPair };
 for (const [name, run] of Object.entries(groups)) {
   if (only ? only === name : name !== 'referencia' || !process.argv.includes('--sin-referencia')) await run();
 }

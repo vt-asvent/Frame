@@ -66,8 +66,18 @@ const PROBE_MAX_MS = 10 * 60_000;
 /** Avisos de fuera que se atienden al momento por minuto; el resto, al final. */
 const NUDGE_BURST = 20;
 const NUDGE_WINDOW_MS = 60_000;
-/** Volver a crear el canal a mano, como mucho una vez por minuto. */
-const RECONNECT_GAP_MS = 60_000;
+/** Volver a crear el canal a mano (al volver a la app, al recuperar la red o
+ *  al despertar el equipo), como mucho una vez cada 5 s. Hasta la 1.7.2 era
+ *  una vez por minuto contado desde la ÚLTIMA conexión: un celular bloqueado y
+ *  desbloqueado antes de ese minuto volvía sin canal y lo que cambiaba en la
+ *  laptop tardaba de 30 a 60 s (la sonda) en llegar; parecía que no llegaba.
+ *  Son acciones del usuario, no llegan todas a la vez tras una caída. */
+const RECONNECT_GAP_MS = 5_000;
+/** Tras estar oculta tanto, el canal no es de fiar aunque diga estar abierto
+ *  (Android congela la app y el socket puede llevar un rato muerto). */
+const HIDDEN_STALE_MS = 15_000;
+/** Si el temporizador de la sonda llega con este retraso, el equipo durmió. */
+const SLEEP_GAP_MS = 2 * PROBE_MS;
 
 export function startLiveSync(uid: string): () => void {
   let stopped = false;
@@ -300,21 +310,43 @@ export function startLiveSync(uid: string): () => void {
   };
   connect();
 
+  /** Canal nuevo (el viejo se suelta). Si el anterior se creó hace menos de
+   *  5 s, se reintenta al cumplirse ese respiro si para entonces sigue sin
+   *  abrirse (sin esto, despertar justo tras una reconexión dejaba la app sin
+   *  canal hasta la sonda siguiente: lo encontró la prueba de playlists). */
+  let reconnectTimer: number | null = null;
+  const reconnect = (): void => {
+    if (!supabase || stopped) return;
+    const wait = lastConnectAt + RECONNECT_GAP_MS - Date.now();
+    if (wait > 0) {
+      reconnectTimer ??= window.setTimeout(() => {
+        reconnectTimer = null;
+        if (!channelReady) reconnect();
+      }, wait);
+      return;
+    }
+    if (channel) void supabase.removeChannel(channel).catch(() => undefined);
+    channel = null;
+    connect();
+  };
+
   // --- 4. Red de seguridad ---
+  let hiddenAt: number | null = document.visibilityState === 'visible' ? null : Date.now();
   const onVisible = () => {
     if (document.visibilityState !== 'visible') {
+      hiddenAt ??= Date.now();
       // A segundo plano: lo pendiente sale ya, sin esperar a la pausa (Android
       // puede congelar la app en cuanto deja de verse).
       if (pendingSince !== null || dirty.size > 0) schedule(0);
       return;
     }
-    // Android duerme el canal con la app en segundo plano: al volver, de nuevo
-    // (como mucho una vez por minuto: Realtime también reconecta por su cuenta).
-    if (!channelReady && channel && supabase && Date.now() - lastConnectAt > RECONNECT_GAP_MS) {
-      void supabase.removeChannel(channel).catch(() => undefined);
-      channel = null;
-      connect();
-    }
+    // Android duerme el canal con la app en segundo plano: al volver, uno nuevo
+    // si no está abierto o si estuvo oculta un buen rato (puede decir que está
+    // abierto y llevar muerto desde que se congeló). La sincronización de
+    // abajo trae lo que cambió mientras tanto.
+    const hiddenFor = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+    hiddenAt = null;
+    if (!channelReady || hiddenFor >= HIDDEN_STALE_MS) reconnect();
     schedule(200);
   };
   // En Windows la ventana recibe el foco a cada rato (al cambiar de ventana):
@@ -323,7 +355,10 @@ export function startLiveSync(uid: string): () => void {
     if (channelReady && Date.now() - lastOkAt < 20_000) return;
     onVisible();
   };
-  const onOnline = () => schedule(200);
+  const onOnline = () => {
+    if (!channelReady) reconnect();
+    schedule(200);
+  };
   // «Sincronizar ahora» del verificador de sincronización.
   const onNow = () => schedule(0);
   document.addEventListener('visibilitychange', onVisible);
@@ -338,8 +373,20 @@ export function startLiveSync(uid: string): () => void {
     // espaciada; un éxito, la conexión o volver a la ventana lo devuelven al ritmo normal.
     return failures > 0 ? Math.max(base, Math.min(PROBE_MAX_MS, PROBE_MS * 2 ** failures)) : base;
   };
+  // Si el temporizador llega muy tarde, el equipo estuvo suspendido (la tapa
+  // cerrada): el canal no es de fiar y lo de los demás no llegó. Canal nuevo y
+  // puesta al día, sin esperar a la próxima sonda.
+  let lastTickAt = Date.now();
   const interval = window.setInterval(() => {
-    if (Date.now() - lastRunAt >= probeEvery() - 1000) schedule(0);
+    const now = Date.now();
+    const slept = now - lastTickAt >= SLEEP_GAP_MS;
+    lastTickAt = now;
+    if (slept) {
+      reconnect();
+      schedule(0);
+      return;
+    }
+    if (now - lastRunAt >= probeEvery() - 1000) schedule(0);
   }, PROBE_MS);
 
   // Primera puesta al día al arrancar.
@@ -349,6 +396,7 @@ export function startLiveSync(uid: string): () => void {
     stopped = true;
     if (timer !== null) window.clearTimeout(timer);
     if (deltaTimer !== null) window.clearTimeout(deltaTimer);
+    if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
     window.clearInterval(interval);
     document.removeEventListener('visibilitychange', onVisible);
     window.removeEventListener('focus', onFocus);

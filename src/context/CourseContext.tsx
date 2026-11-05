@@ -47,7 +47,8 @@ import { reviewStoredSong } from '@/lib/music-review';
 import { foldName, isJunkTag } from '@/lib/song-names';
 import { activeProfileId, ownerForUnownedSongs } from '@/lib/profile-scope';
 import { songTitle } from '@/lib/music-search';
-import { localizePlaylists, rememberSongKeys, setLibraryIds, songKey } from '@/lib/song-keys';
+import { localizePlaylists, rememberSongKeys, setLibraryIds, songKeyIn } from '@/lib/song-keys';
+import { reorderPlaylists as reorderPlaylistsMinimal } from '@/lib/playlist-order';
 import { favoritesToApply, setSongFavorite } from '@/lib/song-favorites';
 import { emit as tauriEmit, listen as tauriListen } from '@tauri-apps/api/event';
 import { format, parseISO } from 'date-fns';
@@ -2373,24 +2374,16 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
 
   const reorderPlaylists = useCallback((orderedIds: string[]) => {
     setPlaylists(prev => {
-      const byId = new Map(prev.map(p => [p.id, p]));
-      const next: Playlist[] = [];
-      for (const id of orderedIds) {
-        const found = byId.get(id);
-        if (found) {
-          next.push(found);
-          byId.delete(id);
-        }
-      }
+      // El orden va en cada playlist (1.6.8): solo así viaja a los demás
+      // dispositivos. Desde la 1.7.3 se reescriben SOLO las que cambian de
+      // sitio (lib/playlist-order.ts): renumerarlas todas pisaba, en los
+      // demás dispositivos, el orden de canciones que otro acababa de dar.
       // Lo que no venía en la lista (creado mientras se arrastraba) no se pierde.
-      for (const rest of byId.values()) next.push(rest);
+      const next = reorderPlaylistsMinimal(prev, orderedIds);
       const unchanged = next.length === prev.length && next.every((p, i) => p === prev[i]);
       if (unchanged) return prev;
-      // El orden va en cada playlist (1.6.8): solo así viaja a los demás
-      // dispositivos (la fusión conserva el orden de la lista de cada uno).
-      const numbered = next.map((playlist, order) => (playlist.order === order ? playlist : { ...playlist, order }));
-      if (storageKeys) setInLocalStorage(storageKeys.playlists, numbered);
-      return numbered;
+      if (storageKeys) setInLocalStorage(storageKeys.playlists, next);
+      return next;
     });
   }, [storageKeys]);
 
@@ -2539,7 +2532,9 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     // Optimistic UI update. En las playlists la canción deja su CLAVE (1.6.8):
     // aquí ya no se ve, pero los demás dispositivos la conservan en su sitio
     // (la música no viaja: borrarla aquí no la borra allí).
-    const keyOfDeleted = songKey(songToDelete);
+    // La clave de ESTA copia (con su número si hay dos con el mismo título y
+    // artista, 1.7.3), no la de la primera.
+    const keyOfDeleted = userProfile ? songKeyIn(userProfile.id, songToDelete) : songToDelete.id;
     const keepKey = (ids: string[]) => [...new Set(ids.map(songId => (songId === id ? keyOfDeleted : songId)))];
     setSongs(prev => prev.filter(s => s.id !== id));
     setPlaylists(prev => prev.map(p => (p.songIds.includes(id) ? { ...p, songIds: keepKey(p.songIds) } : p)));
@@ -2576,7 +2571,7 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     pushUndoableAction({ undo, commit });
     toast({ title: tr('Canción "{songTitle}" eliminada', { songTitle: songTitle(songToDelete) }), description: tr('Presiona Ctrl+Z para deshacer.') });
 
-  }, [currentSong, storageKeys, songs, playlists]);
+  }, [currentSong, storageKeys, songs, playlists, userProfile]);
   
   const toggleSongFavorite = useCallback(async (id: string) => {
       const base = songsRef.current.find(s => s.id === id);

@@ -12,6 +12,8 @@ interface Engine {
   collectLocalData: (uid: string) => Record<string, unknown>;
   rememberSongKeys?: (uid: string, songs: { id: string; title: string; artist?: string; fileName: string }[]) => void;
   localizePlaylists?: (uid: string) => boolean;
+  /** Mover playlists en el menú, como CourseContext (lib/playlist-order.ts, 1.7.3). */
+  reorderPlaylists?: (list: unknown[], orderedIds: string[]) => unknown[];
   /** Imágenes de asignaturas, colecciones y playlists (image-refs.ts). */
   images?: {
     startImageRefs: (uid: string) => () => void;
@@ -70,6 +72,10 @@ export function expose(engine: Engine) {
     cloudForm: () => engine.collectLocalData(uid),
     songs(list: { id: string; title: string; artist?: string; fileName: string }[]) {
       engine.rememberSongKeys?.(uid, list);
+    },
+    /** Mover playlists en el menú. Sin la función (versiones anteriores), null. */
+    reorderPlaylists(list: unknown[], orderedIds: string[]) {
+      return engine.reorderPlaylists ? engine.reorderPlaylists(list, orderedIds) : null;
     },
     /** Lo que hace el estado de la música al terminar de cargar (CourseContext). */
     localize: () => engine.localizePlaylists?.(uid) ?? false,
