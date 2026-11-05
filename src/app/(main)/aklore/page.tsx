@@ -300,6 +300,17 @@ export default function AkLorePage() {
   );
 }
 
+/** El tipo real por la firma del archivo: PDF o imagen rasterizada (nunca SVG ni HTML). */
+function sniffType(b: Uint8Array): string | null {
+  const starts = (...sig: number[]) => sig.every((v, i) => b[i] === v);
+  if (starts(0x25, 0x50, 0x44, 0x46, 0x2d)) return 'application/pdf';
+  if (starts(0x89, 0x50, 0x4e, 0x47)) return 'image/png';
+  if (starts(0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (starts(0x47, 0x49, 0x46, 0x38)) return 'image/gif';
+  if (starts(0x52, 0x49, 0x46, 0x46) && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  return null;
+}
+
 async function openLink(url: string) {
   if (isTauri()) await openUrl(url);
   else window.open(url, '_blank', 'noopener');
@@ -356,8 +367,15 @@ function GuideViewer({
         if (controller.signal.aborted) return;
         if (data.kind === 'link') return setContent({ data, url: null, text: null });
         const textual = guide.format === 'md' || guide.format === 'txt';
-        url = textual ? null : URL.createObjectURL(data.blob);
-        setContent({ data, url, text: textual ? (await data.blob.text()).slice(0, 200_000) : null });
+        if (textual) return setContent({ data, url: null, text: (await data.blob.text()).slice(0, 200_000) });
+        // Un blob: tiene el origen de Frame. Solo se muestra lo que de verdad
+        // es PDF o imagen (por sus primeros bytes) y con ese tipo forzado:
+        // un HTML disfrazado no llega a ejecutarse aquí; se descarga.
+        const safeType = sniffType(new Uint8Array(await data.blob.slice(0, 16).arrayBuffer()));
+        const viewable = (guide.format === 'pdf' && safeType === 'application/pdf') || (guide.format === 'image' && !!safeType?.startsWith('image/'));
+        if (controller.signal.aborted) return;
+        url = viewable && safeType ? URL.createObjectURL(new Blob([data.blob], { type: safeType })) : null;
+        setContent({ data, url, text: null });
       })
       .catch((e) => !controller.signal.aborted && setError(errorText(e)));
     return () => {
