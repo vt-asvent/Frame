@@ -11,6 +11,7 @@ export default {
       './src/**/*.{ts,tsx}',
       '../src/components/ui/{button,card,dialog,dropdown-menu,input,tabs,toast,toaster}.tsx',
       '../src/components/shared/EchoWord.tsx',
+      '../src/components/layout/FrameLogo.tsx',
     ],
   },
 } satisfies Config;
