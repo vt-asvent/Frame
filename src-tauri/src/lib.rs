@@ -6,7 +6,7 @@ pub mod ia_bridge;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 use tauri::{Emitter, Manager};
 
 /// Se levanta cuando ya se preguntó al frontend si puede cerrarse. Una segunda
@@ -16,14 +16,42 @@ static CLOSE_ASKED: AtomicBool = AtomicBool::new(false);
 /// Idioma de la interfaz (1.6.7): lo fija el frontend al arrancar y al
 /// cambiarlo. Solo lo usan los títulos de ventanas y de los selectores de
 /// archivos; los mensajes de error se traducen en la interfaz.
-static UI_ENGLISH: AtomicBool = AtomicBool::new(false);
+/// 0 español, 1 inglés y, desde 1.7.3, los de `UI_LANGS[2..]`.
+static UI_LANG: AtomicU8 = AtomicU8::new(0);
 
-/// Texto nativo en el idioma de la interfaz.
+/// Los códigos, en el orden de `UI_LANG` y de las columnas de `NATIVE_TEXTS`.
+const UI_LANGS: [&str; 8] = ["es", "en", "de", "fr", "it", "pt", "ru", "ja"];
+
+/// Los textos nativos en los idiomas de 1.7.3, buscados por su inglés
+/// (columnas: alemán, francés, italiano, portugués, ruso, japonés). Así las
+/// llamadas siguen siendo `ui("español", "inglés")` y el comprobador de
+/// idioma las reconoce igual. El primero es el código para `lang`, `hl` y
+/// `Accept-Language`.
+const NATIVE_TEXTS: [(&str, [&str; 6]); 11] = [
+    ("en", ["de", "fr", "it", "pt-BR", "ru", "ja"]),
+    ("Sign in with Google — Frame", ["Mit Google anmelden — Frame", "Se connecter avec Google — Frame", "Accedi con Google — Frame", "Entrar com o Google — Frame", "Вход через Google — Frame", "Google でログイン — Frame"]),
+    ("Focus — Frame", ["Fokus — Frame", "Concentration — Frame", "Concentrazione — Frame", "Foco — Frame", "Фокус — Frame", "集中 — Frame"]),
+    ("Schedule — Frame", ["Stundenplan — Frame", "Emploi du temps — Frame", "Orario — Frame", "Horário — Frame", "Расписание — Frame", "時間割 — Frame"]),
+    ("Connection completed", ["Verbindung hergestellt", "Connexion établie", "Connessione completata", "Conexão concluída", "Подключение выполнено", "接続が完了しました"]),
+    ("You can close this window and go back to Frame.", ["Du kannst dieses Fenster schließen und zu Frame zurückkehren.", "Tu peux fermer cette fenêtre et revenir à Frame.", "Puoi chiudere questa finestra e tornare a Frame.", "Você já pode fechar esta janela e voltar ao Frame.", "Можно закрыть это окно и вернуться во Frame.", "このウィンドウを閉じて Frame に戻れます。"]),
+    ("Choose the folder where downloads are saved", ["Wähle den Ordner, in dem Downloads gespeichert werden", "Choisis le dossier où enregistrer les téléchargements", "Scegli la cartella in cui salvare i download", "Escolha a pasta onde os downloads são salvos", "Выбери папку для загрузок", "ダウンロードの保存先フォルダーを選んでください"]),
+    ("Choose the folder with your music", ["Wähle den Ordner mit deiner Musik", "Choisis le dossier contenant ta musique", "Scegli la cartella con la tua musica", "Escolha a pasta com suas músicas", "Выбери папку с музыкой", "音楽が入っているフォルダーを選んでください"]),
+    ("Folder", ["Ordner", "Dossier", "Cartella", "Pasta", "Папка", "フォルダー"]),
+    ("Choose your songs (and their lyrics and covers, if you have them)", ["Wähle deine Songs (und, falls vorhanden, ihre Songtexte und Cover)", "Choisis tes chansons (et leurs paroles et pochettes, si tu les as)", "Scegli le tue canzoni (e, se li hai, testi e copertine)", "Escolha suas músicas (e, se tiver, as letras e capas)", "Выбери песни (и, если есть, их тексты и обложки)", "曲を選んでください(歌詞やジャケットがあればそれも)"]),
+    ("Songs, lyrics and covers", ["Songs, Songtexte und Cover", "Chansons, paroles et pochettes", "Canzoni, testi e copertine", "Músicas, letras e capas", "Песни, тексты и обложки", "曲・歌詞・ジャケット"]),
+];
+
+/// Texto nativo en el idioma de la interfaz (en los de 1.7.3, desde
+/// `NATIVE_TEXTS`; si faltara, en inglés).
 fn ui(es: &'static str, en: &'static str) -> &'static str {
-    if UI_ENGLISH.load(Ordering::Relaxed) {
-        en
-    } else {
-        es
+    match UI_LANG.load(Ordering::Relaxed) {
+        0 => es,
+        1 => en,
+        n => NATIVE_TEXTS
+            .iter()
+            .find(|(key, _)| *key == en)
+            .map(|(_, texts)| texts[(n as usize - 2).min(5)])
+            .unwrap_or(en),
     }
 }
 
@@ -44,10 +72,10 @@ fn window_title(label: &str) -> &'static str {
 
 #[tauri::command]
 fn set_ui_language(app: tauri::AppHandle, lang: String) {
-    let english = lang == "en";
+    let index = UI_LANGS.iter().position(|code| *code == lang).unwrap_or(0) as u8;
     // Gmail, YouTube y Classroom se abren en el idioma de Frame (`hl`): si
     // cambia, se cierran y el recuadro los vuelve a abrir solo, ya en el nuevo.
-    if UI_ENGLISH.swap(english, Ordering::Relaxed) != english {
+    if UI_LANG.swap(index, Ordering::Relaxed) != index {
         close_embeds(&app);
     }
     // Las ventanas que ya están abiertas cambian de título en el acto.

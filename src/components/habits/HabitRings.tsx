@@ -9,7 +9,7 @@ import { HABIT_PHASES, phaseStarted } from '@/lib/habit-phases';
 import { isScheduled } from '@/lib/habit-schedule';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitPhase } from '@/types';
-import { tr } from '@/lib/i18n';
+import { lowerFirst, tr } from '@/lib/i18n';
 import { dayInitial, dayInitials } from '@/lib/day-names';
 
 // ============================================================
@@ -162,7 +162,7 @@ function PhaseRings({
       {rows.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
           <Icon className="h-7 w-7 text-muted-foreground/40" />
-          <p className="text-xs text-muted-foreground">{tr('Sin hábitos de {phase}.', { phase: info.label.toLowerCase() })}</p>
+          <p className="text-xs text-muted-foreground">{tr('Sin hábitos de {phase}.', { phase: lowerFirst(info.label, true) })}</p>
           <p className="px-4 text-[10px] text-muted-foreground/70">{tr('Añade uno y elige «{phase}» como momento.', { phase: info.label })}</p>
         </div>
       ) : showData ? (
@@ -202,7 +202,7 @@ function PhaseRings({
       ) : (
         // Cara del gráfico.
         <div className="relative mx-auto mt-2 w-full max-w-[290px] flex-1 animate-in fade-in-0">
-          <svg viewBox="0 0 240 240" className="h-full w-full" role="img" aria-label={tr('Semana de {p}', { p: info.label.toLowerCase() })}>
+          <svg viewBox="0 0 240 240" className="h-full w-full" role="img" aria-label={tr('Semana de {p}', { p: lowerFirst(info.label, true) })}>
             {/* Iniciales de los días, fuera del anillo exterior. */}
             {dayInitials().map((initial, index) => {
               const mid = -90 + index * SEGMENT + SEGMENT / 2;

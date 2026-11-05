@@ -462,7 +462,7 @@ export default function TaskAttachments({
           ) : (
             <button type="button" title={linkTitle} className={cn(chipClassName, 'gap-1')}>
               <Link2 className="h-3.5 w-3.5" />
-              {urlCount > 0 ? tr('{urlCount} enlace{p}', { urlCount, p: urlCount === 1 ? '' : 's' }) : tr('Enlace')}
+              {urlCount > 0 ? (urlCount === 1 ? tr('1 enlace') : tr('{urlCount} enlaces', { urlCount })) : tr('Enlace')}
             </button>
           )}
         </PopoverTrigger>

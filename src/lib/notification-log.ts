@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { getLang, type Lang } from '@/lib/i18n';
+import { pickLang, type Lang } from '@/lib/i18n';
 
 // ============================================================
 // Registro de notificaciones (la campana, desde la 1.6.4).
@@ -40,7 +40,7 @@ export interface LogEntry {
   courseId?: string;
   /** Interfaz a la que lleva al pulsarla. */
   route?: string;
-  /** El texto en los dos idiomas (1.6.7): un aviso guardado se lee en el
+  /** El texto en varios idiomas (1.6.7; 1.7.3, también el actual): un aviso guardado se lee en el
    *  idioma de la interfaz de hoy, no en el del día en que llegó. */
   texts?: Partial<Record<Lang, EntryText>>;
 }
@@ -53,7 +53,7 @@ export interface EntryText {
 /** Título y detalle en el idioma actual (los avisos de antes de la 1.6.7
  *  solo tienen el texto con el que llegaron). */
 export const entryText = (entry: Pick<LogEntry, 'title' | 'detail' | 'texts'>): EntryText =>
-  entry.texts?.[getLang()] ?? { title: entry.title, detail: entry.detail };
+  pickLang(entry.texts) ?? { title: entry.title, detail: entry.detail };
 
 interface NotificationPrefs {
   sound: boolean;

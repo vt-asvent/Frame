@@ -13,7 +13,8 @@
 
 import type { CalendarDayColor, LocalCalendarEvent, Task } from '@/types';
 import { EVENT_COLOR_ROWS, eventDisplay, normalizeKind } from '@/lib/calendar-events';
-import { getLang, tr } from '@/lib/i18n';
+import { getLang, intlLocale, lowerFirst, tr, type Lang } from '@/lib/i18n';
+import { dayName, fromSunday } from '@/lib/day-names';
 import { describeReminder, reminderFromTask } from '@/components/tasks/ReminderEditor';
 
 // ---------------------------------------------------------------------------
@@ -93,18 +94,28 @@ export function monthWeeks({ year, month }: MonthCursor): string[][] {
 
 // Nombres de meses y días por idioma: el español queda exactamente como era
 // («12 mar», «martes 12 de marzo») y el inglés lleva su propio orden
-// («Mar 12», «Tuesday, March 12»).
-const MONTHS = {
+// («Mar 12», «Tuesday, March 12»). Los idiomas de 1.7.3 tienen sus tablas
+// y su orden («12. Okt», «10月12日»); el día largo lo arma `Intl`, que sabe
+// declinar («12 марта»).
+const MONTHS: Record<Lang, string[]> = {
   es: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
   en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  de: ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'],
+  fr: ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'],
+  it: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+  pt: ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'],
+  ru: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
+  ja: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
 };
-const MONTHS_SHORT = {
+const MONTHS_SHORT: Record<Lang, string[]> = {
   es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'],
   en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-};
-const WEEKDAYS = {
-  es: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
-  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  de: ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'],
+  fr: ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'],
+  it: ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'],
+  pt: ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'],
+  ru: ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'],
+  ja: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
 };
 
 /** «Octubre» / «October». */
@@ -113,18 +124,33 @@ export const monthName = (month: number): string => MONTHS[getLang()][month];
 /** «oct» / «Oct». */
 export const monthShort = (month: number): string => MONTHS_SHORT[getLang()][month];
 
-/** «1 oct» / «Oct 1». */
-export const dayMonthShort = (day: number, month: number): string =>
-  getLang() === 'en' ? `${monthShort(month)} ${day}` : `${day} ${monthShort(month)}`;
+/** «1 oct» / «Oct 1» / «1. Okt» / «10月1日». */
+export const dayMonthShort = (day: number, month: number): string => {
+  const lang = getLang();
+  if (lang === 'en') return `${monthShort(month)} ${day}`;
+  if (lang === 'de') return `${day}. ${monthShort(month)}`;
+  if (lang === 'ja') return `${monthShort(month)}${day}日`;
+  return `${day} ${monthShort(month)}`;
+};
 
-export const weekdayName = (key: string): string => WEEKDAYS[getLang()][fromKey(key).getDay()];
+/** El día de la semana de una fecha (en español, en minúscula). */
+export const weekdayName = (key: string): string => dayName(fromSunday(fromKey(key).getDay()));
 
 /** «martes 12 de marzo» / «Tuesday, March 12» (con el año solo si no es el actual). */
 export function longDayLabel(key: string, todayKey: string): string {
   const date = fromKey(key);
   const otherYear = date.getFullYear() !== fromKey(todayKey).getFullYear();
-  const weekday = WEEKDAYS[getLang()][date.getDay()];
-  if (getLang() === 'en') {
+  const lang = getLang();
+  if (lang !== 'es' && lang !== 'en') {
+    return new Intl.DateTimeFormat(intlLocale(), {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      ...(otherYear ? { year: 'numeric' as const } : {}),
+    }).format(date);
+  }
+  const weekday = weekdayName(key);
+  if (lang === 'en') {
     return `${weekday}, ${monthName(date.getMonth())} ${date.getDate()}${otherYear ? `, ${date.getFullYear()}` : ''}`;
   }
   return `${weekday} ${date.getDate()} de ${monthName(date.getMonth()).toLowerCase()}${otherYear ? ` de ${date.getFullYear()}` : ''}`;
@@ -143,9 +169,11 @@ export function rangeLabel({ start, end }: DayRange): string {
   const a = fromKey(start);
   const b = fromKey(end);
   if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) {
-    return getLang() === 'en'
-      ? `${monthShort(a.getMonth())} ${a.getDate()} – ${b.getDate()}`
-      : `${a.getDate()} – ${b.getDate()} ${monthShort(b.getMonth())}`;
+    const lang = getLang();
+    if (lang === 'en') return `${monthShort(a.getMonth())} ${a.getDate()} – ${b.getDate()}`;
+    if (lang === 'de') return `${a.getDate()}. – ${b.getDate()}. ${monthShort(b.getMonth())}`;
+    if (lang === 'ja') return `${monthShort(a.getMonth())}${a.getDate()}日 – ${b.getDate()}日`;
+    return `${a.getDate()} – ${b.getDate()} ${monthShort(b.getMonth())}`;
   }
   return `${shortDayLabel(start)} – ${shortDayLabel(end)}`;
 }
@@ -190,7 +218,7 @@ export const REMIND_OPTIONS: { minutes: number; label: string }[] = [
 export function eventReminderLabel(event: LocalCalendarEvent): string | null {
   if (event.reminderEnabled && event.reminderTime) return describeReminder(reminderFromTask(event));
   const legacy = event.time ? remindLabel(event.remindBefore) : null;
-  return legacy ? tr('Aviso {p}', { p: legacy.toLowerCase() }) : null;
+  return legacy ? tr('Aviso {p}', { p: lowerFirst(legacy) }) : null;
 }
 
 export const remindLabel = (minutes: number | undefined): string | null => {

@@ -18,7 +18,7 @@ import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns
 import type { Course, Space, Task } from '@/types';
 import { hm } from '@/lib/performance-report';
 import type { DocBlock, DocCell, DocModel, DocTone } from '@/lib/report-doc';
-import { dateLocale, tr } from '@/lib/i18n';
+import { dateLocale, lowerFirst, tr } from '@/lib/i18n';
 import { difficultyLabel, priorityLabel, taskKindLabel } from '@/lib/enum-labels';
 
 const looseSpace = () => tr('Sin colección');
@@ -362,7 +362,7 @@ export function buildPendingReport(
       pieces.push(tr('Ninguna está vencida. '));
     }
     if (nextUp) {
-      pieces.push(tr('La siguiente entrega es «{name}» de {courseName}, {p}. ', { name: nextUp.task.name, courseName: nextUp.courseName, p: deadlineLabel(nextUp.daysLeft).text.toLowerCase() }));
+      pieces.push(tr('La siguiente entrega es «{name}» de {courseName}, {p}. ', { name: nextUp.task.name, courseName: nextUp.courseName, p: lowerFirst(deadlineLabel(nextUp.daysLeft).text) }));
     }
     if (undated.length > 0) {
       pieces.push(
@@ -493,7 +493,7 @@ export function buildPendingReport(
         note: [
           row.courseName,
           deadlineLabel(row.daysLeft).text,
-          row.task.priority !== 'Baja' ? tr('importancia {p}', { p: priorityLabel(row.task.priority).toLowerCase() }) : null,
+          row.task.priority !== 'Baja' ? tr('importancia {p}', { p: lowerFirst(priorityLabel(row.task.priority)) }) : null,
           row.estimated > 0 ? hm(row.estimated) : null,
         ]
           .filter(Boolean)

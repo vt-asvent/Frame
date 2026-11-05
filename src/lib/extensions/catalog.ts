@@ -59,7 +59,7 @@ export const OFFICIAL_EXTENSIONS: OfficialExtension[] = [
     id: 'frame.animaciones',
     manifest: official(
       'frame.animaciones',
-      'Animaciones',
+      () => tr('Animaciones'),
       () => tr('Elige animaciones de fondo (vuelve la constelación), pon tu propia imagen de fondo y usa mods de apariencia.'),
       ['appearance', 'files.pick']
     ),

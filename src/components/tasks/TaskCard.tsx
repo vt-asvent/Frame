@@ -55,7 +55,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useCourse } from '@/context/CourseContext';
-import { dateLocale, tr } from '@/lib/i18n';
+import { dateLocale, lowerFirst, tr } from '@/lib/i18n';
 import { difficultyLabel, priorityLabel, taskKindLabel } from '@/lib/enum-labels';
 import { parseIsoSafe } from '@/lib/dates';
 
@@ -311,7 +311,7 @@ export const TaskCard = ({
       {advancedMode && (
         <span
           aria-hidden
-          title={tr('Importancia {p}', { p: priorityLabel(shownPriority).toLowerCase() })}
+          title={tr('Importancia {p}', { p: lowerFirst(priorityLabel(shownPriority)) })}
           className={cn('absolute inset-y-0 left-0 w-[3px] transition-colors', priorityMeta.spine)}
         />
       )}
@@ -577,7 +577,7 @@ export const TaskCard = ({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <span className={cn(chip, 'font-medium', priorityMeta.text)} title={tr('Importancia {p}', { p: priorityLabel(shownPriority).toLowerCase() })}>
+            <span className={cn(chip, 'font-medium', priorityMeta.text)} title={tr('Importancia {p}', { p: lowerFirst(priorityLabel(shownPriority)) })}>
               <span className={cn('h-1.5 w-1.5 rounded-full', priorityMeta.dot)} />
               {priorityLabel(shownPriority)}
             </span>

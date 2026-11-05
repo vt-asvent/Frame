@@ -1,4 +1,4 @@
-import { getLang, setLang, subscribeLang, type Lang } from '@/lib/i18n';
+import { getLang, isClassicLang, isLang, setLang, subscribeLang, type Lang } from '@/lib/i18n';
 import { getCardImageRatio, setCardImageRatio, subscribeCardImageRatio } from '@/lib/card-image-height';
 import { WEATHER_PLACE_EVENT, loadWeatherPlace, saveWeatherPlace, type WeatherPlace } from '@/lib/weather';
 import { CLOUD_APPLIED_EVENT } from '@/lib/supabase/sync';
@@ -16,10 +16,22 @@ import { getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
 // nada); aquí solo se copia a `appSettings_<uid>`, que viaja con la cuenta,
 // y lo que llega de otro dispositivo se aplica al instante. El tema, en
 // cambio, es de cada dispositivo (oscuro en la laptop, claro en la tablet).
+//
+// Idiomas nuevos (1.7.3): Frame móvil y las versiones anteriores solo
+// conocen español e inglés, y al guardar cualquier otro ajuste (la ciudad
+// del clima, que se actualiza sola) anotan su idioma encima del de la
+// cuenta y borran lo que no conocen. Por eso esta versión deja su marca
+// (`multiLang`): si este equipo está en un idioma nuevo y llega un español
+// o un inglés SIN la marca, no es una elección sino un ajuste anotado por
+// una app que no conoce el idioma; se conserva el de aquí y se vuelve a
+// anotar. Un cambio de idioma hecho en el teléfono, entonces, no llega a
+// este equipo mientras use un idioma que el teléfono no tiene.
 // ============================================================
 
 interface AccountSettings {
   lang?: Lang;
+  /** Lo anotó una versión que conoce los ocho idiomas (1.7.3 o posterior). */
+  multiLang?: boolean;
   cardRatio?: number;
   /** Última ciudad elegida a mano (ausente: nunca se eligió una). */
   weather?: WeatherPlace;
@@ -43,6 +55,7 @@ function current(previous: AccountSettings | null): AccountSettings {
   const place = loadWeatherPlace();
   return {
     lang: getLang(),
+    multiLang: true,
     cardRatio: round(getCardImageRatio()),
     // Una ubicación automática no pisa la última ciudad elegida a mano.
     weather: place && !place.auto ? place : previous?.weather,
@@ -58,8 +71,14 @@ function write(uid: string, settings: AccountSettings): void {
   }
 }
 
-async function apply(settings: AccountSettings): Promise<void> {
-  if ((settings.lang === 'es' || settings.lang === 'en') && settings.lang !== getLang()) await setLang(settings.lang);
+/** Aplica lo de la cuenta. Devuelve `true` si el idioma de aquí se conservó
+ *  frente al de una app que no lo conoce (y hay que volver a anotarlo). */
+async function apply(settings: AccountSettings): Promise<boolean> {
+  let keptOwn = false;
+  if (isLang(settings.lang) && settings.lang !== getLang()) {
+    if (!isClassicLang(getLang()) && !settings.multiLang) keptOwn = true;
+    else await setLang(settings.lang);
+  }
   if (typeof settings.cardRatio === 'number' && settings.cardRatio > 0 && Math.abs(settings.cardRatio - getCardImageRatio()) > 1e-4) {
     setCardImageRatio(settings.cardRatio);
   }
@@ -68,6 +87,7 @@ async function apply(settings: AccountSettings): Promise<void> {
     const here = loadWeatherPlace();
     if (!here || here.auto || here.latitude !== place.latitude || here.longitude !== place.longitude) saveWeatherPlace(place);
   }
+  return keptOwn;
 }
 
 /** Para la cuenta que sincroniza: aplica lo suyo y anota lo que cambie aquí. */
@@ -83,9 +103,11 @@ export function startAccountSettings(uid: string): () => void {
     if (!settings) return false;
     applying += 1;
     void apply(settings)
-      .catch(() => undefined)
-      .finally(() => {
+      .catch(() => false)
+      .then((keptOwn) => {
         applying -= 1;
+        // El idioma de aquí vuelve a la cuenta, con lo demás ya aplicado.
+        if (keptOwn) record();
       });
     return true;
   };

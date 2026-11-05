@@ -47,7 +47,7 @@ import { useRouter } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 import { signInAgain, useConnectionState } from '@/lib/connection-status';
 import { BELL_PING_EVENT } from '@/components/layout/ConnectionNotice';
-import { dateLocale, inBothLangs, tr, useLang } from '@/lib/i18n';
+import { dateLocale, inBothLangs, pickLang, tr, useLang } from '@/lib/i18n';
 import { openSyncIssues, useSyncIssues } from '@/lib/sync-check';
 import { parseIsoSafe } from '@/lib/dates';
 
@@ -206,7 +206,7 @@ export default function NotificationCenter() {
       return items.sort((a, b) => order[a.kind] - order[b.kind]);
     };
     const both = inBothLangs(build);
-    const shown = (lang === 'en' ? both.en : both.es) ?? both.es ?? [];
+    const shown = pickLang(both) ?? [];
     return shown.map((item, index) => ({
       ...item,
       texts: Object.fromEntries(

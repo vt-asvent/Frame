@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { enUS, es } from 'date-fns/locale';
+import { de, enUS, es, fr, it, ja, ptBR, ru, type Locale } from 'date-fns/locale';
 
 // ============================================================
-// Idioma de la interfaz (1.6.7): español o inglés.
+// Idioma de la interfaz (1.6.7): español o inglés; desde 1.7.3, también
+// ruso, alemán, francés, italiano, portugués (de Brasil) y japonés.
 //
 // El texto en español ES la clave: `tr('Guardar')` devuelve «Guardar» en
 // español y lo que diga el diccionario (`i18n-en.ts`) en inglés. Así el código
@@ -13,8 +14,10 @@ import { enUS, es } from 'date-fns/locale';
 // Variables con nombre: `tr('Hoy llevas {total}', { total })`. El orden de
 // las palabras cambia entre idiomas; las llaves, no.
 //
-// El diccionario inglés solo se carga si hace falta: en español, solo cuando
-// algo se guarda en los dos idiomas (`inBothLangs`, el historial de avisos). Cambiar de idioma repinta la interfaz al
+// Cada diccionario (`i18n-<código>.ts`) solo se carga si hace falta. En los
+// idiomas nuevos se carga también el inglés: lo que faltara en el suyo sale
+// en inglés, no en español. En español, el inglés solo se carga cuando algo
+// se guarda en varios idiomas (`inBothLangs`, el historial de avisos). Cambiar de idioma repinta la interfaz al
 // instante (ver `LangRoot` en main.tsx) sin recargarla: el temporizador y la
 // música siguen como estaban. Las ventanas auxiliares (mini temporizador,
 // vistazo al horario) se enteran por el evento `storage`.
@@ -23,34 +26,79 @@ import { enUS, es } from 'date-fns/locale';
 // (una constante traducida al cargar se quedaría en el idioma de arranque).
 // ============================================================
 
-export type Lang = 'es' | 'en';
+export type Lang = 'es' | 'en' | 'ru' | 'de' | 'fr' | 'it' | 'pt' | 'ja';
+
+/** Los idiomas, en el orden del selector: español e inglés primero y luego
+ *  por su propio nombre (Deutsch, Français, Italiano, Português, Русский, 日本語). */
+export const LANGS: readonly Lang[] = ['es', 'en', 'de', 'fr', 'it', 'pt', 'ru', 'ja'];
+
+/** Cada idioma, nombrado en sí mismo: quien cambió sin querer encuentra el suyo. */
+export const LANG_NAMES: Record<Lang, string> = {
+  es: 'Español',
+  en: 'English',
+  de: 'Deutsch',
+  fr: 'Français',
+  it: 'Italiano',
+  pt: 'Português',
+  ru: 'Русский',
+  ja: '日本語',
+};
+
+export const isLang = (value: unknown): value is Lang => typeof value === 'string' && (LANGS as readonly string[]).includes(value);
+
+/** Los que Frame conocía antes de 1.7.3 (y Frame móvil, por ahora). */
+export const isClassicLang = (lang: Lang): boolean => lang === 'es' || lang === 'en';
 
 export const LANG_STORAGE_KEY = 'appLanguage';
 
 const readStored = (): Lang => {
   try {
     const stored = localStorage.getItem(LANG_STORAGE_KEY);
-    if (stored === 'en' || stored === 'es') return stored;
+    if (isLang(stored)) return stored;
     // Sin elección guardada: quien ya usaba Frame sigue en español; una
-    // instalación nueva sigue el idioma del sistema (la pantalla de acceso
-    // ya sale en el idioma de quien la abre).
+    // instalación nueva sigue el idioma del sistema si Frame lo tiene, y si
+    // no, inglés (la pantalla de acceso ya sale en el idioma de quien la abre).
     if (localStorage.getItem('userProfile')) return 'es';
-    return navigator.language?.toLowerCase().startsWith('es') ? 'es' : 'en';
+    const system = navigator.language?.toLowerCase().slice(0, 2);
+    return isLang(system) ? system : 'en';
   } catch {
     return 'es';
   }
 };
 
 let current: Lang = readStored();
-let english: Record<string, string> | null = null;
+type Dictionary = Record<string, string>;
+const dictionaries: Partial<Record<Lang, Dictionary>> = {};
 const listeners = new Set<() => void>();
 
 const notify = () => listeners.forEach((listener) => listener());
 
-async function loadDictionary(lang: Lang): Promise<void> {
+const LOADERS: Record<Exclude<Lang, 'es'>, () => Promise<{ default: Dictionary }>> = {
+  en: () => import('./i18n-en'),
+  de: () => import('./i18n-de'),
+  fr: () => import('./i18n-fr'),
+  it: () => import('./i18n-it'),
+  pt: () => import('./i18n-pt'),
+  ru: () => import('./i18n-ru'),
+  ja: () => import('./i18n-ja'),
+};
+
+async function loadOne(lang: Lang): Promise<void> {
+  if (lang === 'es' || dictionaries[lang]) return;
   // Sin prototipo: una clave que llegue de datos («constructor», «toString»)
   // no debe devolver una función de Object en vez de un texto.
-  if (lang === 'en' && !english) english = Object.assign(Object.create(null) as Record<string, string>, (await import('./i18n-en')).default);
+  dictionaries[lang] = Object.assign(Object.create(null) as Dictionary, (await LOADERS[lang]()).default);
+}
+
+/** El diccionario del idioma y, en los nuevos, el inglés de respaldo. */
+async function loadDictionary(lang: Lang): Promise<void> {
+  await Promise.all([loadOne(lang), isClassicLang(lang) ? Promise.resolve() : loadOne('en')]);
+}
+
+/** El texto en el idioma actual: el suyo, o el inglés si le faltara. */
+function lookup(key: string): string | undefined {
+  const own = dictionaries[current];
+  return own?.[key] ?? (current === 'en' ? undefined : dictionaries.en?.[key]);
 }
 
 /** Los títulos de las ventanas y de los selectores de archivos los pone el
@@ -123,8 +171,8 @@ const fill = (text: string, vars?: Vars) =>
 
 /** Traduce un texto escrito en español al idioma de la interfaz. */
 export function tr(text: string, vars?: Vars): string {
-  if (current === 'es' || !english) return fill(text, vars);
-  const translated = english[text];
+  if (current === 'es' || !dictionaries[current]) return fill(text, vars);
+  const translated = lookup(text);
   if (translated === undefined && import.meta.env.DEV) console.warn('[idioma] sin traducir:', text);
   return fill(translated ?? text, vars);
 }
@@ -135,33 +183,41 @@ export function tr(text: string, vars?: Vars): string {
  * clave inglesa es `contexto|texto`; en español sale el texto tal cual.
  */
 export function trc(context: string, text: string, vars?: Vars): string {
-  if (current === 'es' || !english) return fill(text, vars);
-  const translated = english[`${context}|${text}`] ?? english[text];
+  if (current === 'es' || !dictionaries[current]) return fill(text, vars);
+  const translated = lookup(`${context}|${text}`) ?? lookup(text);
   if (translated === undefined && import.meta.env.DEV) console.warn('[idioma] sin traducir:', `${context}|${text}`);
   return fill(translated ?? text, vars);
 }
 
 /**
- * El mismo texto en los dos idiomas, para lo que se GUARDA ya escrito (el
+ * El mismo texto en varios idiomas, para lo que se GUARDA ya escrito (el
  * historial de la campana): así un aviso de ayer se lee en el idioma de hoy.
+ * Siempre en español e inglés, y además en el idioma actual si es otro.
  * `build` debe ser síncrona y solo construir textos. Si el diccionario inglés
  * aún no estaba cargado, se carga para la próxima vez.
  */
 export function inBothLangs<T>(build: () => T): Partial<Record<Lang, T>> {
   const previous = current;
   const out: Partial<Record<Lang, T>> = {};
+  const langs: Lang[] = ['es', 'en'];
+  if (!isClassicLang(previous)) langs.push(previous);
   try {
-    current = 'es';
-    out.es = build();
-    if (english) {
-      current = 'en';
-      out.en = build();
+    for (const lang of langs) {
+      if (lang !== 'es' && !dictionaries[lang]) continue;
+      current = lang;
+      out[lang] = build();
     }
   } finally {
     current = previous;
   }
-  if (!english) void loadDictionary('en').catch(() => undefined);
+  if (!dictionaries.en) void loadDictionary('en').catch(() => undefined);
   return out;
+}
+
+/** De lo guardado en varios idiomas, lo del actual; si no está, inglés y si no, español. */
+export function pickLang<T>(texts: Partial<Record<Lang, T>> | undefined): T | undefined {
+  if (!texts) return undefined;
+  return texts[current] ?? (current === 'es' ? undefined : texts.en) ?? texts.es;
 }
 
 /**
@@ -172,11 +228,12 @@ export function inBothLangs<T>(build: () => T): Partial<Record<Lang, T>> {
  */
 export function errorText(error: unknown): string {
   const raw = String((error as { message?: unknown } | null)?.message ?? error ?? '');
-  if (current === 'es' || !english) return raw;
-  if (english[raw] !== undefined) return english[raw];
+  if (current === 'es' || !dictionaries[current]) return raw;
+  const whole = lookup(raw);
+  if (whole !== undefined) return whole;
   const colon = raw.indexOf(': ');
   if (colon > 0) {
-    const pattern = english[`${raw.slice(0, colon)}: {e}`];
+    const pattern = lookup(`${raw.slice(0, colon)}: {e}`);
     if (pattern !== undefined) return fill(pattern, { e: raw.slice(colon + 2) });
   }
   return raw;
@@ -188,17 +245,28 @@ export function listText(items: string[]): string {
   return tr('{list} y {last}', { list: items.slice(0, -1).join(', '), last: items[items.length - 1] });
 }
 
+/** Un texto traducido que va dentro de una frase («Alta» → «alta»). Baja solo
+ *  la primera letra: `toLowerCase()` entero rompería los sustantivos alemanes
+ *  («in 3 tagen»). Con `noun`, en alemán lo deja igual («Abend» sigue «Abend»). */
+export function lowerFirst(text: string, noun = false): string {
+  if (!text || (noun && current === 'de')) return text;
+  return text.charAt(0).toLocaleLowerCase(INTL_LOCALES[current]) + text.slice(1);
+}
+
 /** Locale de date-fns para el idioma actual. SOLO para dar formato a fechas:
  *  los cálculos de semanas siguen con `es` (la semana de Frame empieza en
  *  lunes; con `enUS` empezaría en domingo y moverían las métricas). */
-export const dateLocale = () => (current === 'en' ? enUS : es);
+export const dateLocale = (): Locale => DATE_LOCALES[current];
+
+const DATE_LOCALES: Record<Lang, Locale> = { es, en: enUS, de, fr, it, pt: ptBR, ru, ja };
+const INTL_LOCALES: Record<Lang, string> = { es: 'es-PE', en: 'en-US', de: 'de-DE', fr: 'fr-FR', it: 'it-IT', pt: 'pt-BR', ru: 'ru-RU', ja: 'ja-JP' };
 
 /** Etiqueta BCP 47 para `toLocaleString` e `Intl`. */
-export const intlLocale = () => (current === 'en' ? 'en-US' : 'es-PE');
+export const intlLocale = (): string => INTL_LOCALES[current];
 
-/** Número con decimales fijos: coma en español (como siempre en Frame),
- *  punto en inglés. */
+/** Número con decimales fijos: coma en español (como siempre en Frame) y en
+ *  los idiomas que la usan; punto en inglés y japonés. */
 export const decimalText = (value: number, digits = 1): string => {
   const text = value.toFixed(digits);
-  return current === 'en' ? text : text.replace('.', ',');
+  return current === 'en' || current === 'ja' ? text : text.replace('.', ',');
 };

@@ -479,7 +479,7 @@ export default function HabitsView({ weekOffset }: { weekOffset: number }) {
                                     <Button
                                         variant="ghost"
                                         onClick={() => { if (!isLimitReached) setIsAdding(true); }}
-                                        className="w-full h-full justify-center text-muted-foreground hover:text-foreground p-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="w-full h-full justify-center whitespace-normal leading-tight text-muted-foreground hover:text-foreground px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                                         disabled={isLimitReached}
                                     >
                                         <Plus className="mr-2 h-4 w-4 text-primary" />

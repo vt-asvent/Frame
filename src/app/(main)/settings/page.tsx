@@ -19,6 +19,8 @@ import {
   CalendarDays,
   Copy,
   LoaderCircle,
+  ChevronDown,
+  Languages,
 } from 'lucide-react';
 import { accountCode } from '@/lib/account-code';
 import RealNameRow from '@/components/settings/RealNameRow';
@@ -31,6 +33,7 @@ import { Switch } from '@/components/ui/switch';
 import { saveImage } from '@/lib/music-db';
 import { useStoredImage } from '@/hooks/use-stored-image';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
 import ExtensionsSection from '@/components/extensions/ExtensionsSection';
@@ -48,7 +51,7 @@ import StreakStatusCard from '@/components/settings/StreakStatusCard';
 import EchoWord from '@/components/shared/EchoWord';
 
 
-import { dateLocale, setLang, tr, useLang, type Lang } from '@/lib/i18n';
+import { dateLocale, LANG_NAMES, LANGS, setLang, tr, useLang } from '@/lib/i18n';
 import { usernameLabel } from '@/lib/enum-labels';
 
 const daysOfWeek: { key: keyof StudyGoals; label: string }[] = [
@@ -62,36 +65,40 @@ const daysOfWeek: { key: keyof StudyGoals; label: string }[] = [
 ];
 
 // Idioma de la interfaz (1.6.7): cambia al instante, sin reiniciar. Cada
-// idioma se nombra en sí mismo («Español», «English»), como pidió Diego: así
-// quien cambió sin querer encuentra el suyo.
+// idioma se nombra en sí mismo («Español», «English», «日本語»): así quien
+// cambió sin querer encuentra el suyo. Con ocho (1.7.3), una lista en vez
+// de un botón por idioma; el ícono universal de idiomas ayuda a encontrarla.
 function LanguageSelector() {
   const lang = useLang();
-  const options: { value: Lang; label: string }[] = [
-    { value: 'es', label: 'Español' },
-    { value: 'en', label: 'English' },
-  ];
   return (
     <div className="flex flex-col items-center gap-2">
       <p className="font-bold text-muted-foreground text-xs">{tr('Idioma')}</p>
-      <div className="flex items-center gap-1.5">
-        {options.map(({ value, label }) => (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            key={value}
             variant="ghost"
-            lang={value}
-            aria-pressed={lang === value}
-            className={cn(
-              'h-9 rounded-md border px-2.5 text-[11px] font-semibold',
-              lang === value
-                ? 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary'
-                : 'border-border bg-transparent text-muted-foreground hover:bg-secondary'
-            )}
-            onClick={() => void setLang(value)}
+            lang={lang}
+            className="h-9 gap-1.5 rounded-md border border-primary/50 bg-primary/10 px-2.5 text-[11px] font-semibold text-primary hover:bg-primary/20 hover:text-primary"
           >
-            {label}
+            <Languages className="h-3.5 w-3.5" aria-hidden />
+            {LANG_NAMES[lang]}
+            <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden />
           </Button>
-        ))}
-      </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="center" className="min-w-[10rem]">
+          {LANGS.map((value) => (
+            <DropdownMenuCheckboxItem
+              key={value}
+              lang={value}
+              checked={lang === value}
+              onCheckedChange={() => void setLang(value)}
+              className="text-xs font-medium"
+            >
+              {LANG_NAMES[value]}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -413,10 +420,12 @@ export default function SettingsPage() {
 
   // Los tres documentos de la app, con los datos de esta instalación ya
   // interpolados (versión, identificador y fecha de la compilación). En
-  // inglés, su traducción (el español es el que manda: cláusula 29).
+  // inglés, su traducción (el español es el que manda: cláusula 29). En los
+  // idiomas de 1.7.3 se muestra esa misma traducción inglesa: los documentos
+  // no se tradujeron a esos idiomas y el auténtico sigue siendo el español.
   const lang = useLang();
   const LEGAL_DIALOGS = useMemo(() => {
-    const english = lang === 'en';
+    const english = lang !== 'es';
     const appVersion = APP_VERSION;
     const installId = accountCode(userProfile?.id) ?? tr('sin identificador');
     const stamp = format(parseISO(BUILD_DATE), tr('d \'de\' MMMM \'de\' yyyy'), { locale: dateLocale() });

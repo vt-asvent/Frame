@@ -9,9 +9,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Poppins', 'sans-serif'],
-        headline: ['Poppins', 'sans-serif'],
-        display: ['Poppins', 'sans-serif'],
+        // Poppins no trae cirílico ni japonés (1.7.3): esas letras salen de
+        // las fuentes del sistema que siguen, letra por letra.
+        body: ['Poppins', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
+        headline: ['Poppins', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
+        display: ['Poppins', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {

@@ -1,4 +1,6 @@
-// Comprueba el diccionario inglés (src/lib/i18n-en.ts) contra el código:
+// Comprueba el diccionario inglés (src/lib/i18n-en.ts) contra el código y,
+// desde 1.7.3, los de los demás idiomas (i18n-de, -fr, -it, -pt, -ru, -ja)
+// contra el inglés:
 //
 //   · claves que el código pide con tr()/trc() y el diccionario no tiene
 //     (en inglés se verían en español: es el fallo que no puede ocurrir);
@@ -6,7 +8,9 @@
 //     llegar a la interfaz y el diccionario no tiene: errorText() los traduce
 //     si están, exactos o con la forma «Prefijo: {e}»;
 //   · entradas que ya nadie usa (sobran: pesan y confunden);
-//   · traducciones cuyas variables {así} no coinciden con las del español.
+//   · traducciones cuyas variables {así} no coinciden con las del español;
+//   · en cada idioma nuevo, claves que faltan o sobran respecto del inglés;
+//   · textos nativos `ui("es", "en")` sin su fila en NATIVE_TEXTS (lib.rs).
 //
 // Las llamadas con un argumento que no es un literal (tr(item)) no se pueden
 // resolver aquí: una entrada cuenta como usada si su texto aparece como
@@ -20,13 +24,16 @@ import { createRequire } from 'node:module';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(path.join(root, 'package.json'))('typescript');
 const DICTIONARY = path.join(root, 'src/lib/i18n-en.ts');
+const OTHER_LANGS = ['de', 'fr', 'it', 'pt', 'ru', 'ja'];
+const dictionaryPath = (lang) => path.join(root, `src/lib/i18n-${lang}.ts`);
+const DICTIONARIES = new Set([DICTIONARY, ...OTHER_LANGS.map(dictionaryPath)]);
 
 const files = [];
 (function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full);
-    else if (/\.tsx?$/.test(entry.name) && full !== DICTIONARY) files.push(full);
+    else if (/\.tsx?$/.test(entry.name) && !DICTIONARIES.has(full)) files.push(full);
   }
 })(path.join(root, 'src'));
 
@@ -107,17 +114,22 @@ for (const file of nativeFiles) {
     });
 }
 
-const dictionarySource = ts.createSourceFile(DICTIONARY, fs.readFileSync(DICTIONARY, 'utf8'), ts.ScriptTarget.Latest, true);
-const english = new Map();
-dictionarySource.forEachChild(function find(node) {
-  if (ts.isPropertyAssignment(node)) {
-    const key = literal(node.name);
-    const value = literal(node.initializer);
-    if (key !== null && value !== null) english.set(key, value);
-    return;
-  }
-  ts.forEachChild(node, find);
-});
+const readDictionary = (file) => {
+  if (!fs.existsSync(file)) return null;
+  const map = new Map();
+  const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+  source.forEachChild(function find(node) {
+    if (ts.isPropertyAssignment(node)) {
+      const key = literal(node.name);
+      const value = literal(node.initializer);
+      if (key !== null && value !== null) map.set(key, value);
+      return;
+    }
+    ts.forEachChild(node, find);
+  });
+  return map;
+};
+const english = readDictionary(DICTIONARY);
 
 const variables = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
 const missing = [...wanted].filter(([key]) => !english.has(key) && !english.has(key.split('|').pop()));
@@ -143,4 +155,43 @@ console.log(
   `\n${wanted.size} claves en el código · ${nativeWanted.size} mensajes nativos · ${english.size} en el diccionario · ` +
     `${missing.length + missingNative.length} sin traducir · ${unused.length} sin uso`
 );
-process.exit(missing.length || missingNative.length || mismatched.length ? 1 : 0);
+
+// ---- Los demás idiomas, contra el inglés ----
+let otherErrors = 0;
+for (const lang of OTHER_LANGS) {
+  const dict = readDictionary(dictionaryPath(lang));
+  if (!dict) {
+    console.log(`\n[${lang}] falta el archivo i18n-${lang}.ts`);
+    otherErrors += 1;
+    continue;
+  }
+  const absent = [...english.keys()].filter((key) => !dict.has(key));
+  const extra = [...dict.keys()].filter((key) => !english.has(key));
+  const wrongVars = [...dict].filter(([key, value]) => english.has(key) && variables(key.split('|').pop()) !== variables(value));
+  const empty = [...dict].filter(([key, value]) => !value.trim() && english.get(key)?.trim());
+  const same = [...dict].filter(([key, value]) => value === english.get(key) && /\p{L}{4,}/u.test(value));
+  report(`[${lang}] Faltan (están en inglés)`, absent.map((key) => JSON.stringify(key)));
+  report(`[${lang}] Sobran (no están en inglés)`, extra.map((key) => JSON.stringify(key)));
+  report(`[${lang}] Variables que no coinciden`, wrongVars.map(([key, value]) => `${JSON.stringify(key)} → ${JSON.stringify(value)}`));
+  report(`[${lang}] Vacías`, empty.map(([key]) => JSON.stringify(key)));
+  console.log(`[${lang}] ${dict.size} entradas · ${absent.length} faltan · ${extra.length} sobran · ${same.length} iguales al inglés`);
+  otherErrors += absent.length + extra.length + wrongVars.length + empty.length;
+}
+
+// ---- Textos nativos con su fila en NATIVE_TEXTS (lib.rs) ----
+const libRs = fs.readFileSync(path.join(root, 'src-tauri/src/lib.rs'), 'utf8');
+const tableStart = libRs.indexOf('const NATIVE_TEXTS');
+const table = tableStart >= 0 ? libRs.slice(tableStart, libRs.indexOf('\n];', tableStart)) : '';
+const tableKeys = new Set([...table.matchAll(/\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*\[/g)].map((m) => m[1]));
+const nativeUi = new Set();
+for (const file of nativeFiles.filter((f) => f.endsWith('.rs'))) {
+  const text = fs.readFileSync(file, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  for (const m of text.matchAll(/\bui\(\s*"(?:[^"\\]|\\.)*"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,?\s*\)/g)) nativeUi.add(m[1]);
+}
+// Los títulos de ventana pasan por ui() desde su tabla (WINDOW_TITLES).
+const titles = libRs.slice(libRs.indexOf('const WINDOW_TITLES'), libRs.indexOf('];', libRs.indexOf('const WINDOW_TITLES')));
+for (const m of titles.matchAll(/"((?:[^"\\]|\\.)*)"\s*\)/g)) nativeUi.add(m[1]);
+const nativeAbsent = [...nativeUi].filter((en) => !tableKeys.has(en));
+report('Textos nativos sin fila en NATIVE_TEXTS', nativeAbsent.map((en) => JSON.stringify(en)));
+
+process.exit(missing.length || missingNative.length || mismatched.length || otherErrors || nativeAbsent.length ? 1 : 0);

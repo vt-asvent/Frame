@@ -36,7 +36,7 @@ import {
   weekdayName,
   type DayRange,
 } from './calendar-model';
-import { tr } from '@/lib/i18n';
+import { lowerFirst, tr } from '@/lib/i18n';
 import { priorityLabel } from '@/lib/enum-labels';
 
 // ============================================================
@@ -210,7 +210,7 @@ function DayView({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-foreground">{task.name}</p>
                     <p className="truncate text-[11px] text-muted-foreground">
-                      {task.courseName || tr('Sin asignatura')}{' · '}{tr('Importancia {level}', { level: priorityLabel(task.priority).toLowerCase() })}
+                      {task.courseName || tr('Sin asignatura')}{' · '}{tr('Importancia {level}', { level: lowerFirst(priorityLabel(task.priority)) })}
                     </p>
                   </div>
                   <Button

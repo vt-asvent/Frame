@@ -34,7 +34,8 @@ import LooseNotesSection from '@/components/dashboard/LooseNotesSection';
 import { DIFFICULTY_META, DifficultyBars } from '@/components/tasks/task-badges';
 import { EchoHeader, EchoTileHeader } from '@/components/shared/EchoWord';
 import { scheduleImageKey } from '@/lib/profile-scope';
-import { dateLocale, tr } from '@/lib/i18n';
+import { dateLocale, lowerFirst, tr } from '@/lib/i18n';
+import { difficultyLabel, priorityLabel } from '@/lib/enum-labels';
 import { dayInitials } from '@/lib/day-names';
 
 // El radar usa la biblioteca de gráficos (la más pesada de la app) y está al
@@ -538,7 +539,7 @@ export default function HomePage() {
       const due = parseISO(criticalTask.dueDate);
       const sameYear = due.getFullYear() === new Date().getFullYear();
       return {
-        short: format(due, sameYear ? 'EEE d MMM' : 'd MMM yy', { locale: dateLocale() }),
+        short: format(due, sameYear ? tr('EEE d MMM') : tr('d MMM yy'), { locale: dateLocale() }),
         long: format(due, tr('EEEE d \'de\' MMMM \'de\' yyyy'), { locale: dateLocale() }),
       };
     } catch {
@@ -746,17 +747,17 @@ export default function HomePage() {
                                           'inline-flex shrink-0 items-center gap-1 font-medium',
                                           PRIORITY_TONE[criticalTaskPriority].text
                                         )}
-                                        title={tr('Importancia {p}', { p: criticalTaskPriority.toLowerCase() })}
+                                        title={tr('Importancia {p}', { p: lowerFirst(priorityLabel(criticalTaskPriority)) })}
                                       >
                                         <span
                                           className={cn('h-1.5 w-1.5 rounded-full', PRIORITY_TONE[criticalTaskPriority].dot)}
                                         />
-                                        {criticalTaskPriority}
+                                        {priorityLabel(criticalTaskPriority)}
                                       </span>
                                       {criticalTask.difficulty && DIFFICULTY_META[criticalTask.difficulty] && (
                                         <span
                                           className={cn('flex shrink-0', DIFFICULTY_META[criticalTask.difficulty].text)}
-                                          title={tr('Dificultad {p}', { p: criticalTask.difficulty.toLowerCase() })}
+                                          title={tr('Dificultad {p}', { p: lowerFirst(difficultyLabel(criticalTask.difficulty)) })}
                                         >
                                           <DifficultyBars level={criticalTask.difficulty} />
                                         </span>

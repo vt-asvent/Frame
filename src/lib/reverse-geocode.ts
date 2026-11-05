@@ -106,7 +106,7 @@ async function fromBigDataCloud(lat: number, lon: number): Promise<ResolvedPlace
 // ---------- Proveedor 2: Photon / Komoot (datos OpenStreetMap) ----------
 async function fromPhoton(lat: number, lon: number): Promise<ResolvedPlaceName | null> {
   // `lang` sólo admite default|de|en|fr — con 'es' responde HTTP 400.
-  const params = new URLSearchParams({ lat: String(lat), lon: String(lon), lang: getLang() === 'en' ? 'en' : 'default', limit: '1' });
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lon), lang: ['en', 'de', 'fr'].includes(getLang()) ? getLang() : 'default', limit: '1' });
   const d = await getJson(`https://photon.komoot.io/reverse?${params}`);
   const p = d?.features?.[0]?.properties;
   if (!p) return null;

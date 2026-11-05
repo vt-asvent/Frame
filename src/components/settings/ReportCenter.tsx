@@ -31,7 +31,7 @@ import { buildPendingReport, pendingReportFileBase, pendingSummary } from '@/lib
 import type { ReportFormat } from '@/lib/report-export';
 import { cn } from '@/lib/utils';
 import type { UserProfile } from '@/types';
-import { dateLocale, getLang, tr } from '@/lib/i18n';
+import { dateLocale, getLang, tr, trc } from '@/lib/i18n';
 import { usernameLabel } from '@/lib/enum-labels';
 
 // ============================================================
@@ -188,14 +188,14 @@ export default function ReportCenter({ userProfile }: { userProfile: UserProfile
 
   // El nombre del archivo, en el idioma de Frame; la telemetría recibe
   // siempre el español, para que las cifras no se partan por idioma.
-  const english = getLang() === 'en';
+  const spanish = getLang() === 'es';
   const stampOf = (week: string) =>
     scope === 'anio' ? format(start, 'yyyy') : scope === 'mes' ? format(start, 'yyyy-MM') : format(start, `RRRR-'${week}'II`);
-  const period = english ? { semana: 'week', mes: 'month', anio: 'year' }[scope] : scope;
+  const period = spanish ? scope : { semana: trc('archivo', 'semana'), mes: trc('archivo', 'mes'), anio: trc('archivo', 'año') }[scope];
   const fileBase =
     kind === 'performance'
-      ? tr('Frame-Rendimiento-{p}', { p: `${period}-${stampOf(english ? 'W' : 'S')}` })
-      : pendingReportFileBase(new Date(), `${period}-${stampOf(english ? 'W' : 'S')}`);
+      ? tr('Frame-Rendimiento-{p}', { p: `${period}-${stampOf(spanish ? 'S' : 'W')}` })
+      : pendingReportFileBase(new Date(), `${period}-${stampOf(spanish ? 'S' : 'W')}`);
   const reportId = `Frame-${kind === 'performance' ? 'Rendimiento' : 'Pendientes'}-${scope}-${stampOf('S')}`;
 
   return (
