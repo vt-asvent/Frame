@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type { Task, TaskDifficulty, TaskKind, TaskPriority } from '@/types';
 import { tr } from '@/lib/i18n';
 import { difficultyLabel, priorityLabel, taskKindLabel } from '@/lib/enum-labels';
+import { useCourse } from '@/context/CourseContext';
 
 // ============================================================
 // Filtros de la galería de tareas.
@@ -122,6 +123,8 @@ export default function TaskFilters({
   onChange: (next: TaskFilterState) => void;
 }) {
   const active = countActiveFilters(value);
+  // Importancia y dificultad solo se filtran en modo Avanzado.
+  const { advancedMode } = useCourse();
 
   return (
     <Popover>
@@ -168,6 +171,7 @@ export default function TaskFilters({
           />
         </div>
 
+        {advancedMode && (<>
         <Group title={tr('Importancia')}>
           {PRIORITIES.map((priority) => (
             <Pill
@@ -197,6 +201,7 @@ export default function TaskFilters({
             {tr('Sin definir')}
           </Pill>
         </Group>
+        </>)}
 
 
         <Group title={tr('Entrega')}>

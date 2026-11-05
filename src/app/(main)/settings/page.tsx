@@ -27,6 +27,7 @@ import { ACCENTS, getAccent, setAccent, type AccentId } from '@/lib/accent';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { saveImage } from '@/lib/music-db';
 import { useStoredImage } from '@/hooks/use-stored-image';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -167,6 +168,32 @@ function AccentSelector() {
 }
 
 /** El documento legal se carga al abrir su recuadro (y solo en el idioma de la interfaz). */
+/** Modo Avanzado (1.7.3): el interruptor y lo que añade. Apagado por defecto
+ *  para quien empieza; quien ya usaba esas funciones lo tiene encendido (ver
+ *  `advancedMode` en CourseContext). Apagarlo no borra nada: solo oculta. */
+function AdvancedModeCard() {
+  const { advancedMode, setAdvancedMode } = useCourse();
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-card px-4 py-3">
+      <div className="min-w-0">
+        <label htmlFor="advanced-mode" className="cursor-pointer text-sm font-semibold text-foreground">
+          {tr('Modo Avanzado')}
+        </label>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {tr('Añade el modo Rendimiento (enfoque de 1 a 20 y notas AD, A, B y C), el calendario de calificaciones, el progreso académico, las metas diarias, los informes y la importancia, dificultad, tiempo estimado y avance de las tareas. Al apagarlo no se borra nada: solo se oculta.')}
+        </p>
+      </div>
+      <Switch
+        id="advanced-mode"
+        checked={advancedMode}
+        onCheckedChange={setAdvancedMode}
+        aria-label={tr('Modo Avanzado')}
+        className="data-[state=unchecked]:bg-muted-foreground/30"
+      />
+    </div>
+  );
+}
+
 function LegalBody({ load }: { load: () => Promise<string> }) {
   const [markdown, setMarkdown] = useState<string | null>(null);
   useEffect(() => {
@@ -197,6 +224,7 @@ export default function SettingsPage() {
     setSelectionMode,
     streakGoal,
     updateStreakGoal,
+    advancedMode,
   } = useCourse();
 
   const [localGoals, setLocalGoals] = useState<StudyGoals>(studyGoals);
@@ -575,6 +603,13 @@ export default function SettingsPage() {
           </div>
         </div>
         
+        <div className="pt-6">
+          <AdvancedModeCard />
+        </div>
+
+        {/* Metas diarias (minutos) y escala AD/A/B/C: modo Avanzado. Las
+            metas siguen guardadas y midiendo el día aunque no se vean. */}
+        {advancedMode && (
         <div className="space-y-2 pt-6">
             <div className="flex justify-center items-center relative mb-6">
                 <h2 className="text-xl font-semibold leading-none tracking-tight text-center text-primary">
@@ -629,6 +664,7 @@ export default function SettingsPage() {
               </div>
             )}
         </div>
+        )}
 
         <div className="space-y-12">
             {/* Expediente completo: sustituye a las tres cifras sueltas
@@ -640,14 +676,18 @@ export default function SettingsPage() {
             {/* Izquierda: modo de medición, meta de racha y, debajo, «Tu racha».
                 Derecha: «Informes», con el alto de toda la columna izquierda
                 (1.6.6). */}
-            <div className="grid grid-cols-1 gap-6 items-stretch lg:grid-cols-2">
+            {/* Sin modo Avanzado: solo la meta de racha (en minutos) y «Tu
+                racha», centradas; sin pestañas de modo ni informes. */}
+            <div className={advancedMode ? 'grid grid-cols-1 gap-6 items-stretch lg:grid-cols-2' : 'mx-auto grid w-full max-w-xl grid-cols-1 gap-6'}>
                 <div className="flex flex-col gap-4 h-full">
+                    {advancedMode && (
                     <Tabs value={selectionMode} onValueChange={(value) => setSelectionMode(value as 'rendimiento' | 'tiempo')} className="w-full">
                         <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="rendimiento" className="border-r">{tr('Rendimiento')}</TabsTrigger>
                             <TabsTrigger value="tiempo">{tr('Tiempo')}</TabsTrigger>
                         </TabsList>
                     </Tabs>
+                    )}
                     <Card className="w-full group/streak flex flex-col flex-grow">
                         <CardHeader className="relative flex flex-row items-center justify-center p-4">
                             <CardTitle className="text-lg font-bold text-primary flex-grow text-center">{tr('Meta de racha')}</CardTitle>
@@ -702,6 +742,7 @@ export default function SettingsPage() {
                 {/* Informes: rendimiento y pendientes, con vista previa real. En
                     pantallas anchas no empuja la fila: mide lo que la columna
                     izquierda, y su vista previa se desplaza dentro. */}
+                {advancedMode && (
                 <div className="relative min-h-[34rem] lg:min-h-0">
                 <Card className="flex flex-col lg:absolute lg:inset-0">
                     <CardHeader className="p-4 pb-3">
@@ -712,6 +753,7 @@ export default function SettingsPage() {
                     </CardContent>
                 </Card>
                 </div>
+                )}
             </div>
         </div>
 

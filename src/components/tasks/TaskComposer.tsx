@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import type { Task, TaskAttachment, TaskDifficulty, TaskKind, TaskPriority } from '@/types';
 import { tr } from '@/lib/i18n';
 import { difficultyLabel, priorityLabel, taskKindLabel } from '@/lib/enum-labels';
+import { useCourse } from '@/context/CourseContext';
 
 // ============================================================
 // La tarjeta de crear tarea.
@@ -96,6 +97,10 @@ export default function TaskComposer({
   disabledReason?: string;
   submitLabel?: string;
 }) {
+  // Sin modo Avanzado, el redactor pide solo tipo, fecha y recordatorio; la
+  // tarea nace con importancia y dificultad «Media» y sin tiempo estimado,
+  // igual que si se dejaran sin tocar.
+  const { advancedMode } = useCourse();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
@@ -221,6 +226,7 @@ export default function TaskComposer({
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {advancedMode && (<>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -302,6 +308,7 @@ export default function TaskComposer({
                 <EstimateEditor minutes={estimate} onChange={setEstimate} />
               </PopoverContent>
             </Popover>
+            </>)}
 
             {/* Recordatorio: botón discreto → mini recuadro con reloj */}
             <Popover>

@@ -83,7 +83,7 @@ const SectionTitle = ({
 );
 
 export default function ProfileStats() {
-  const { studySessions, archivedTasks } = useCourse();
+  const { studySessions, archivedTasks, advancedMode } = useCourse();
   const todayKey = useTodayKey();
 
   const stats = useMemo(() => {
@@ -296,7 +296,9 @@ export default function ProfileStats() {
 
       {/* ---------- Collage: piezas de distinto tamaño ---------- */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
-        {/* Rosco de complejidad */}
+        {/* Rosco de complejidad: modo Avanzado (sin él, la dificultad no se
+            pide y el reparto no diría nada). */}
+        {advancedMode && (
         <Card className="lg:col-span-2">
           <CardContent className="p-4">
             <SectionTitle icon={Target}>{tr('Dificultad')}</SectionTitle>
@@ -355,9 +357,10 @@ export default function ProfileStats() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Tiempo por asignatura */}
-        <Card className="lg:col-span-4">
+        <Card className={advancedMode ? 'lg:col-span-4' : 'lg:col-span-6'}>
           <CardContent className="p-4">
             <SectionTitle icon={TrendingUp}>{tr('Dónde va tu tiempo')}</SectionTitle>
             {stats.subjectRows.length > 0 ? (

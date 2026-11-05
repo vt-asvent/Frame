@@ -79,6 +79,7 @@ export default function InterruptedSessionManager({ session, onDone }: Interrupt
     courses,
     sessionNotes,
     resumeInterruptedSession,
+    advancedMode,
   } = useCourse();
   const router = useRouter();
 
@@ -93,7 +94,8 @@ export default function InterruptedSessionManager({ session, onDone }: Interrupt
 
   /** `InterruptedSession.duration` ya viene en segundos. */
   const studiedSeconds = Math.max(0, Math.round(session.duration));
-  const isRendimiento = session.selectionMode === 'rendimiento';
+  // Sin modo Avanzado (1.7.3), siempre como modo Tiempo: sin enfoque.
+  const isRendimiento = advancedMode && session.selectionMode === 'rendimiento';
   const origin = session.origin ?? 'default';
 
   // Retomar exige tres cosas: que haya reloj guardado, que la sesión no sea
@@ -146,7 +148,7 @@ export default function InterruptedSessionManager({ session, onDone }: Interrupt
       subjects: picked.map((c) => c.name),
       subjectIds: picked.map((c) => c.id),
       taskIds: selectedTaskIds,
-      mode: session.selectionMode,
+      mode: isRendimiento ? 'rendimiento' : 'tiempo',
       notes: isRichNoteEmpty(notes) ? undefined : notes.trim(),
       // Cuándo ocurrió de verdad, no cuándo se rescata: así cuenta para el día
       // en que se estudió y no para hoy.

@@ -48,6 +48,7 @@ export default function TimerPage() {
     updateDailyPerformance,
     studyGoals,
     selectionMode,
+    advancedMode,
     sessionNotes,
     deleteSessionNote,
   } = useCourse();
@@ -388,6 +389,9 @@ export default function TimerPage() {
         )}
       </div>
 
+      {/* Calendario de calificaciones y progreso académico: modo Avanzado
+          (1.7.3). Las notas y sesiones siguen guardándose igual. */}
+      {advancedMode && (<>
       <Separator className="my-4" />
 
       {/* Calificación diaria: este calendario es exclusivo de Enfoque
@@ -404,6 +408,7 @@ export default function TimerPage() {
       {/* Analítica académica: vive aquí, bajo el calendario, porque habla de
           estudio y no de hábitos. Es autónoma (tiene su propio periodo). */}
       <AcademicAnalytics />
+      </>)}
 
       {/* Detalle de una sesión de hoy. Corregir abre su diálogo encima y,
           al guardar, el detalle ya enseña lo corregido. */}

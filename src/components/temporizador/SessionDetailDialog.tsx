@@ -94,12 +94,12 @@ export function SessionDetailView({
   onEdit?: (session: StudySession) => void;
   onDelete?: (id: string) => void;
 }) {
-  const { courses, spaces, tasks, archivedTasks, studySessions } = useCourse();
+  const { courses, spaces, tasks, archivedTasks, studySessions, advancedMode } = useCourse();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const seconds = sessionSeconds(session);
   const range = sessionRange(session);
-  const hasFocus = sessionHasFocus(session);
+  const hasFocus = advancedMode && sessionHasFocus(session);
   const editable = isSessionEditable(session);
 
   const subjects = useMemo(() => sessionSubjects(session, courses ?? []), [session, courses]);
@@ -200,7 +200,7 @@ export function SessionDetailView({
 
         <div className="space-y-5 px-6 pb-5 pt-4">
           {/* Tres tercios exactos, con una línea fina entre cada uno. */}
-          <div className="grid grid-cols-3 divide-x divide-border">
+          <div className={cn('grid divide-x divide-border', advancedMode ? 'grid-cols-3' : 'grid-cols-2')}>
             <div className="flex min-w-0 flex-col items-center justify-center px-3 text-center">
               <DurationFigure seconds={seconds} />
               <p className="mt-2 text-[11px] text-muted-foreground">
@@ -210,6 +210,8 @@ export function SessionDetailView({
               </p>
             </div>
 
+            {/* Rendimiento y nota del día: modo Avanzado. */}
+            {advancedMode && (
             <div className="flex min-w-0 flex-col justify-center gap-3 px-4">
               <div>
                 <div className="flex items-baseline justify-between gap-2">
@@ -239,6 +241,7 @@ export function SessionDetailView({
                 </p>
               </div>
             </div>
+            )}
 
             <dl className="flex min-w-0 flex-col justify-center gap-3 px-4 text-xs">
               <div>

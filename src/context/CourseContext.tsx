@@ -236,8 +236,19 @@ interface CourseContextType {
   studySessions: StudySession[];
   dailyPerformances: DailyPerformance[];
   studyGoals: StudyGoals;
+  /** Meta de racha EFECTIVA: sin modo Avanzado, siempre por minutos (la
+   *  guardada no cambia y vuelve al activarlo). */
   streakGoal: StreakGoal;
+  /** La guardada, para el editor de Ajustes. */
+  storedStreakGoal: StreakGoal;
   completedTasksByCourse: Record<string, number>;
+  /** Modo Avanzado (1.7.3): con él se ven el rendimiento, las metas, los
+   *  informes y los campos finos de las tareas. Ver `advancedMode` abajo. */
+  advancedMode: boolean;
+  /** true si el usuario lo eligió a mano (viaja con la cuenta); false si se
+   *  dedujo de su uso. */
+  advancedModeChosen: boolean;
+  setAdvancedMode: (on: boolean) => void;
 
 
   addCourse: (name: string, teacherName?: string) => void;
@@ -334,8 +345,10 @@ interface CourseContextType {
   playingContextHref: string;
   playbackHistory: Song[];
 
-  // Selection Mode
+  // Selection Mode: el EFECTIVO (sin modo Avanzado, siempre 'tiempo') y el
+  // guardado (lo que el usuario eligió; vuelve al activar el modo Avanzado).
   selectionMode: SelectionMode;
+  storedSelectionMode: SelectionMode;
   setSelectionMode: (mode: SelectionMode) => void;
   hasInteracted: boolean;
   isPlayerVisible: boolean;
@@ -472,8 +485,34 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.id, areSongsLoading]);
   const [studyGoals, setStudyGoals] = useState<StudyGoals>(defaultStudyGoals);
-  const [streakGoal, setStreakGoal] = useState<StreakGoal>(defaultStreakGoal);
-  const [selectionMode, setSelectionModeState] = useState<SelectionMode>('rendimiento');
+  const [storedStreakGoal, setStreakGoal] = useState<StreakGoal>(defaultStreakGoal);
+  const [storedSelectionMode, setSelectionModeState] = useState<SelectionMode>('rendimiento');
+  /** Elección a mano del modo Avanzado (null: nunca se eligió). */
+  const [advancedChoice, setAdvancedChoice] = useState<boolean | null>(null);
+  // Modo Avanzado (1.7.3). Si el usuario nunca lo eligió, se deduce de su
+  // uso: quien ya tiene sesiones en modo Rendimiento, notas diarias o tareas
+  // con dificultad, importancia o tiempo estimado propios lo tiene activado
+  // y no pierde nada de vista. Se deduce de los datos (que viajan), así que
+  // da lo mismo en todos sus equipos sin escribir nada; al elegirlo a mano,
+  // la elección viaja con la cuenta (`advancedMode_<uid>`).
+  const derivedAdvanced = useMemo(
+    () =>
+      studySessions.some((s) => s.mode === 'rendimiento') ||
+      dailyPerformances.length > 0 ||
+      [...tasks, ...archivedTasks].some(
+        (t) => (t.estimatedMinutes ?? 0) > 0 || (t.difficulty && t.difficulty !== 'Media') || (t.priority && t.priority !== 'Media')
+      ),
+    [studySessions, dailyPerformances, tasks, archivedTasks]
+  );
+  const advancedMode = advancedChoice ?? derivedAdvanced;
+  // Sin modo Avanzado la app trabaja en modo Tiempo: la sesión se cierra con
+  // una nota simple (sin enfoque obligatorio) y la racha cuenta minutos. Lo
+  // guardado no se toca: al activarlo, todo vuelve como estaba.
+  const selectionMode: SelectionMode = advancedMode ? storedSelectionMode : 'tiempo';
+  const streakGoal = useMemo<StreakGoal>(
+    () => (advancedMode ? storedStreakGoal : { ...storedStreakGoal, mode: 'tiempo' }),
+    [advancedMode, storedStreakGoal]
+  );
   const [completedTasksCount, setCompletedTasksCount] = useState(0);
   const [completedTasksByCourse, setCompletedTasksByCourse] = useState<Record<string, number>>({});
 
@@ -577,6 +616,7 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
         studyGoals: `studyGoals_${uid}`,
         streakGoal: `streakGoal_${uid}`,
         selectionMode: `selectionMode_${uid}`,
+        advancedMode: `advancedMode_${uid}`,
         completedTasks: `completedTasks_${uid}`,
         completedTasksByCourse: `completedTasksByCourse_${uid}`,
         interruptedSession: `interruptedSession_${uid}`,
@@ -675,6 +715,10 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     const storedStreakGoal = getFromLocalStorage(storageKeys.streakGoal, defaultStreakGoal);
     setStreakGoal({ ...defaultStreakGoal, ...storedStreakGoal });
     setSelectionModeState(getFromLocalStorage(storageKeys.selectionMode, 'rendimiento'));
+    {
+      const chosen = getFromLocalStorage<unknown>(storageKeys.advancedMode, null);
+      setAdvancedChoice(typeof chosen === 'boolean' ? chosen : null);
+    }
     setCompletedTasksCount(getFromLocalStorage(storageKeys.completedTasks, 0));
     setCompletedTasksByCourse(getFromLocalStorage(storageKeys.completedTasksByCourse, {}));
     setArchivedTasks(getArrayFromLocalStorage(storageKeys.archivedTasks));
@@ -2229,6 +2273,12 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     });
   }, [storageKeys]);
 
+  const setAdvancedMode = useCallback((on: boolean) => {
+    if (!storageKeys) return;
+    setAdvancedChoice(on);
+    setInLocalStorage(storageKeys.advancedMode, on);
+  }, [storageKeys]);
+
   const setSelectionMode = useCallback((mode: SelectionMode) => {
     if (!storageKeys) return;
     setSelectionModeState(mode);
@@ -2671,6 +2721,10 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     dailyPerformances,
     studyGoals,
     streakGoal,
+    storedStreakGoal,
+    advancedMode,
+    advancedModeChosen: advancedChoice !== null,
+    setAdvancedMode,
     completedTasksByCourse,
     archivedTasks,
     incompleteTasks,
@@ -2751,6 +2805,7 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     playingContextHref,
     playbackHistory,
     selectionMode,
+    storedSelectionMode,
     setSelectionMode,
     hasInteracted,
     isPlayerVisible,

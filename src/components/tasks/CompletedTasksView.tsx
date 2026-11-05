@@ -83,6 +83,7 @@ function punctuality(task: ArchivedTask): { label: string; tone: string } | null
 }
 
 export function CompletedTaskCard({ task, studiedMinutes }: { task: ArchivedTask; studiedMinutes: number }) {
+  const { advancedMode } = useCourse();
   const kind = task.kind ?? 'Tarea';
   const KindIcon = TASK_KIND_META[kind]?.icon ?? TASK_KIND_META.Tarea.icon;
   const onTime = punctuality(task);
@@ -126,7 +127,7 @@ export function CompletedTaskCard({ task, studiedMinutes }: { task: ArchivedTask
           {taskKindLabel(kind)}
         </span>
 
-        {task.difficulty && (
+        {advancedMode && task.difficulty && (
           <span
             className={cn('flex items-center gap-1', DIFFICULTY_META[task.difficulty].text)}
             title={tr('Dificultad: {difficulty}', { difficulty: difficultyLabel(task.difficulty) })}
@@ -136,6 +137,7 @@ export function CompletedTaskCard({ task, studiedMinutes }: { task: ArchivedTask
           </span>
         )}
 
+        {advancedMode && (
         <span className="flex items-center gap-1" title={tr('Importancia')}>
           <span
             className={cn(
@@ -149,11 +151,12 @@ export function CompletedTaskCard({ task, studiedMinutes }: { task: ArchivedTask
           />
           {priorityLabel(task.priority)}
         </span>
+        )}
 
         <span className="ml-auto flex items-center gap-1 font-medium text-foreground" title={tr('Tiempo de estudio dedicado a esta tarea')}>
           <Timer className="h-3.5 w-3.5 text-primary" />
           {studiedMinutes > 0 ? formatMinutes(Math.round(studiedMinutes)) : tr('sin sesiones')}
-          {task.estimatedMinutes ? (
+          {advancedMode && task.estimatedMinutes ? (
             <span className="font-normal text-muted-foreground">
               {' '}/ {formatMinutes(task.estimatedMinutes)}{' '}{tr('est.')}
             </span>

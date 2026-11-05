@@ -76,7 +76,7 @@ function whenLabel(due: Date, today: Date): string {
 }
 
 /** Saludo según la hora: la frase neutra cuando aún no hay nada que contar. */
-function greetingPhrase(now: Date, name?: string): HeaderPhrase {
+export function greetingPhrase(now: Date, name?: string): HeaderPhrase {
   const hour = now.getHours();
   const salute = hour >= 5 && hour < 12 ? tr('Buenos días') : hour >= 12 && hour < 20 ? tr('Buenas tardes') : tr('Buenas noches');
   const first = name?.trim().split(/\s+/)[0];

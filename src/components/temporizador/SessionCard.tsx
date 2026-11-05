@@ -179,7 +179,7 @@ export default function SessionCard({
 }) {
   // La portada guarda la proporción elegida en Asignaturas (1.6.6).
   const imageStyle = useCardImageStyle();
-  const { courses } = useCourse();
+  const { courses, advancedMode } = useCourse();
   const reducedMotion = usePrefersReducedMotion();
 
   const subjects = useMemo(() => sessionSubjects(session, courses ?? []), [session, courses]);
@@ -190,7 +190,9 @@ export default function SessionCard({
   const multiple = subjects.length > 1;
 
   const seconds = sessionSeconds(session);
-  const hasFocus = sessionHasFocus(session);
+  // El enfoque (1-20) es del modo Avanzado: sin él no se pinta, aunque
+  // siga guardado en la sesión.
+  const hasFocus = advancedMode && sessionHasFocus(session);
   const canEdit = Boolean(onEdit) && isSessionEditable(session);
   const names = subjects.map((subject) => subject.name);
   const label = names.length > 0 ? names.join(' · ') : tr('Sin asignatura');

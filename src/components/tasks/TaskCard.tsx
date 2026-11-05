@@ -138,6 +138,7 @@ export const TaskCard = ({
     updateIncompleteTask,
     restoreIncompleteTask,
     deleteIncompleteTask,
+    advancedMode,
   } = useCourse();
   const isIncomplete = variant === 'incomplete';
   // Cada tarea se corrige donde vive: la incompleta, en su archivo.
@@ -305,12 +306,15 @@ export const TaskCard = ({
         isHighlighted && 'animate-pulse-border'
       )}
     >
-      {/* Filo de importancia: el único acento permanente de la tarjeta. */}
-      <span
-        aria-hidden
-        title={tr('Importancia {p}', { p: priorityLabel(shownPriority).toLowerCase() })}
-        className={cn('absolute inset-y-0 left-0 w-[3px] transition-colors', priorityMeta.spine)}
-      />
+      {/* Filo de importancia: el único acento permanente de la tarjeta.
+          Sin modo Avanzado no se pinta: la importancia sigue guardada. */}
+      {advancedMode && (
+        <span
+          aria-hidden
+          title={tr('Importancia {p}', { p: priorityLabel(shownPriority).toLowerCase() })}
+          className={cn('absolute inset-y-0 left-0 w-[3px] transition-colors', priorityMeta.spine)}
+        />
+      )}
 
       {/* Tarea incompleta: una franja ámbar la distingue de un vistazo. */}
       {isIncomplete && (
@@ -550,6 +554,10 @@ export const TaskCard = ({
             </span>
           )}
 
+          {/* Importancia, dificultad y tiempo estimado: modo Avanzado (1.7.3).
+              Sin él no se ven ni se editan, pero siguen guardados y vuelven
+              al activarlo. */}
+          {advancedMode && (<>
           {/* Importancia */}
           {isEditing ? (
             <DropdownMenu>
@@ -627,6 +635,7 @@ export const TaskCard = ({
               </span>
             )
           )}
+          </>)}
 
           {/* Recordatorio: apagado por defecto */}
           {isEditing ? (
@@ -684,6 +693,7 @@ export const TaskCard = ({
         {/* ---- Avance ----
             Un hilo, no una barra: informa de un vistazo sin pesar en la
             composición, y sigue siendo arrastrable. */}
+        {advancedMode && (
         <div className="flex items-center gap-3 pt-0.5">
           <Slider
             min={0}
@@ -699,6 +709,7 @@ export const TaskCard = ({
             {Math.round(progress)}%
           </span>
         </div>
+        )}
       </CardContent>
 
       <AlertDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>

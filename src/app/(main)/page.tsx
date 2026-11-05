@@ -321,7 +321,7 @@ const StatTile = ({
 
 export default function HomePage() {
   const todayKey = useTodayKey();
-  const { tasks, courses, userProfile, dailyPerformances, studySessions, selectionMode, streakGoal, studyGoals } = useCourse();
+  const { tasks, courses, userProfile, dailyPerformances, studySessions, selectionMode, streakGoal, studyGoals, advancedMode } = useCourse();
   const router = useRouter();
 
   const [yesterdayPerformance, setYesterdayPerformance] = useState<DailyPerformance | null>(null);
@@ -595,7 +595,7 @@ export default function HomePage() {
           <div ref={studyHoursCardRef} className="lg:col-span-6">
             <Card className="h-full">
                 <CardHeader className="pb-4">
-                    <CardTitle className="text-lg font-headline text-center">{tr('Rendimiento académico')}</CardTitle>
+                    <CardTitle className="text-lg font-headline text-center">{advancedMode ? tr('Rendimiento académico') : tr('Tu estudio')}</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -638,6 +638,8 @@ export default function HomePage() {
                         </div>
                       </StatTile>
 
+                      {/* Promedio semanal: del modo Avanzado (1.7.3). */}
+                      {advancedMode && (
                       <StatTile
                         icon={Calendar}
                         label={tr('Promedio semanal')}
@@ -671,6 +673,7 @@ export default function HomePage() {
                           ))}
                         </div>
                       </StatTile>
+                      )}
                     </div>
 
                     {/* Columna derecha: «Próxima tarea» arriba y «Días de racha»
@@ -679,7 +682,9 @@ export default function HomePage() {
                     <div className="relative min-h-0">
                     {/* La columna no empuja la fila: toma el alto que marca la
                         izquierda y lo reparte a partes iguales. */}
-                    <div className="absolute inset-0 flex flex-col gap-4">
+                    {/* Sin modo Avanzado la izquierda solo tiene «Ayer»: aquí
+                        manda la derecha y la izquierda se estira a su alto. */}
+                    <div className={advancedMode ? 'absolute inset-0 flex flex-col gap-4' : 'flex h-full min-h-[17rem] flex-col gap-4'}>
                       {criticalTask ? (
                           <Dialog>
                             <DialogTrigger asChild>
@@ -875,9 +880,10 @@ export default function HomePage() {
           </div>
        </div>
 
-      <AcademicPulse />
+      {/* «Tu semana en datos» y la matriz de competencias: modo Avanzado (1.7.3). */}
+      {advancedMode && <AcademicPulse />}
 
-      <div><Suspense fallback={null}><CompetencyMatrix /></Suspense></div>
+      {advancedMode && <div><Suspense fallback={null}><CompetencyMatrix /></Suspense></div>}
 
       {/* Tareas apuntadas sin asignatura desde el botón «+» de la barra. */}
       <InboxTasksSection />

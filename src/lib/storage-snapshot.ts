@@ -33,6 +33,10 @@ export const SCOPED_KEYS = [
   'studyGoals',
   'streakGoal',
   'selectionMode',
+  // Modo Avanzado elegido a mano (1.7.3): un booleano que sigue a la cuenta.
+  // Las versiones anteriores (y Frame móvil) no lo conocen y lo conservan
+  // intacto (clave «del futuro», 1.6.9).
+  'advancedMode',
   'completedTasks',
   'completedTasksByCourse',
   'taskSortMode',

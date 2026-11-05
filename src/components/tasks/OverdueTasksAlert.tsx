@@ -24,7 +24,7 @@ import { dateLocale, tr } from '@/lib/i18n';
 const SNOOZE_KEY = 'overdueAlertSnoozedOn';
 
 export default function OverdueTasksAlert() {
-  const { tasks, userProfile, updateTask, deleteTask, removeTask } = useCourse();
+  const { tasks, userProfile, updateTask, deleteTask, removeTask, advancedMode } = useCourse();
   const [isOpen, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -93,7 +93,7 @@ export default function OverdueTasksAlert() {
                   <p className="truncate text-sm font-semibold text-foreground">{task.name}</p>
                   <p className="text-[11px] text-muted-foreground">
                     {task.courseName ? `${task.courseName} · ` : ''}{tr('vencía el')}{' '}
-                    {format(parseISO(task.dueDate!), tr('d \'de\' MMMM'), { locale: dateLocale() })} · {task.progress || 0}%
+                    {format(parseISO(task.dueDate!), tr('d \'de\' MMMM'), { locale: dateLocale() })}{advancedMode ? ` · ${task.progress || 0}%` : ''}
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Popover>

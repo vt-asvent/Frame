@@ -7,7 +7,7 @@ import RecordingDialog from '@/components/recordings/RecordingDialog';
 import QuickCreateButton from '@/components/layout/QuickCreateButton';
 import { useCourse } from '@/context/CourseContext';
 import { useTodayKey } from '@/hooks/use-today';
-import { buildHeaderPhrases, type HeaderPhrase } from '@/lib/header-phrases';
+import { greetingPhrase, buildHeaderPhrases, type HeaderPhrase } from '@/lib/header-phrases';
 import { startQuickRecording } from '@/lib/quick-recording';
 import type { RecorderState } from '@/components/recordings/RecordingDialog';
 import type { UserProfile } from '@/types';
@@ -135,16 +135,18 @@ function PhraseStage({ text }: { text: string }) {
  * cada vuelta (así «buenos días» no sigue en pie por la tarde).
  */
 function HeaderPhrases({ name }: { name?: string }) {
-  const { tasks, archivedTasks, courses, studySessions, habits, studyGoals, dailyPerformances, streakGoal } = useCourse();
+  const { tasks, archivedTasks, courses, studySessions, habits, studyGoals, dailyPerformances, streakGoal, advancedMode } = useCourse();
   const todayKey = useTodayKey();
   const lang = useLang();
   const [tick, setTick] = useState(0);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
 
+  // Sin modo Avanzado (1.7.3), solo el saludo, sin rotar: la frase con datos
+  // que cambia cada 90 s es del modo Avanzado.
   const phrases = useMemo<HeaderPhrase[]>(
-    () =>
-      buildHeaderPhrases({
+    () => {
+      const all = buildHeaderPhrases({
         now: new Date(),
         name,
         tasks: tasks ?? [],
@@ -155,10 +157,12 @@ function HeaderPhrases({ name }: { name?: string }) {
         studyGoals,
         dailyPerformances: dailyPerformances ?? [],
         streakGoal,
-      }),
+      });
+      return advancedMode ? all : [greetingPhrase(new Date(), name)];
+    },
     // `tick`, `todayKey` y `lang` no se leen dentro: renuevan el «ahora» y el idioma.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tick, todayKey, lang, name, tasks, archivedTasks, courses, studySessions, habits, studyGoals, dailyPerformances, streakGoal]
+    [tick, todayKey, lang, name, tasks, archivedTasks, courses, studySessions, habits, studyGoals, dailyPerformances, streakGoal, advancedMode]
   );
   const phrasesRef = useRef(phrases);
   phrasesRef.current = phrases;

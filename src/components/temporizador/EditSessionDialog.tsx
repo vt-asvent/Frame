@@ -52,13 +52,15 @@ export default function EditSessionDialog({
   session: StudySession | null;
   onClose: () => void;
 }) {
-  const { courses, updateStudySession } = useCourse();
+  const { courses, updateStudySession, advancedMode } = useCourse();
 
   const [perception, setPerception] = useState(0);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
 
-  const isRendimiento = session?.mode === 'rendimiento';
+  // Sin modo Avanzado el enfoque no se pide ni se ve; el guardado de la
+  // sesión no se toca (se reenvía el mismo valor).
+  const isRendimiento = advancedMode && session?.mode === 'rendimiento';
 
   // Cada apertura parte de lo que la sesión tiene guardado, no de un
   // formulario en blanco: corregir es retocar, no volver a rellenar.
