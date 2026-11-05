@@ -20,6 +20,7 @@ const pages = {
   playlists: () => import('@/app/(main)/playlists/page'),
   cursos: () => import('@/app/(main)/cursos/page'),
   knowledge: () => import('@/app/(main)/knowledge/page'),
+  aklore: () => import('@/app/(main)/aklore/page'),
   settings: () => import('@/app/(main)/settings/page'),
 };
 
@@ -34,6 +35,7 @@ const MusicPage = lazy(pages.music);
 const PlaylistsPage = lazy(pages.playlists);
 const CursosPage = lazy(pages.cursos);
 const KnowledgePage = lazy(pages.knowledge);
+const AkLorePage = lazy(pages.aklore);
 const SettingsPage = lazy(pages.settings);
 
 function usePrefetchPages() {
@@ -66,6 +68,7 @@ export default function App() {
           <Route path="/playlists" element={<PlaylistsPage />} />
           <Route path="/cursos" element={<CursosPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
+          <Route path="/aklore" element={<AkLorePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import NotionImportDialog from '@/components/extensions/NotionImportDialog';
 import { WirePanel } from '@/components/extensions/wire/WireViews';
 import { AnimacionesPanel } from '@/components/extensions/animaciones/AnimacionesPanel';
+import { AkLorePanel } from '@/components/extensions/AkLorePanel';
 import { NotionLogo } from '@/components/extensions/ExtensionIcons';
 import { useToast } from '@/hooks/use-toast';
 import type { OfficialId } from '@/lib/extensions/catalog';
@@ -38,6 +39,7 @@ export const EXTENSION_PANELS: Partial<Record<OfficialId, ComponentType<PanelPro
   'frame.notion': NotionPanel,
   'frame.wire': WirePanel,
   'frame.animaciones': AnimacionesPanel,
+  'frame.aklore': AkLorePanel,
 };
 
 /** Carpeta de descargas de una fuente de música (se elige una vez, se cambia aquí). */

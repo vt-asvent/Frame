@@ -12,7 +12,9 @@ import {
   GraduationCap,
   Repeat,
   CalendarDays,
+  Library,
 } from 'lucide-react';
+import { useAkLoreAccess } from '@/lib/extensions/aklore/access';
 import Link from '@/lib/navigation';
 import { usePathname } from '@/lib/navigation';
 import { Button } from '@/components/ui/button';
@@ -68,6 +70,13 @@ const navItems: NavItem[] = [
   { href: '/music', get label() { return tr('Música'); }, icon: Music, ghostFor: ['/playlists'], group: 3 },
 ];
 
+/** Extensión AK Lore (1.7.3): tras Calendario, solo para cuentas del colegio. */
+const akLoreItem: NavItem = { href: '/aklore', label: 'AK Lore', icon: Library, group: 1 };
+const withAkLore = (() => {
+  const at = navItems.findIndex((i) => i.href === '/calendario') + 1;
+  return [...navItems.slice(0, at), akLoreItem, ...navItems.slice(at)];
+})();
+
 /**
  * Testigo de sesión de estudio en el sidebar. Gira mientras el cronómetro
  * corre y se queda quieto en pausa: de un vistazo se sabe si el tiempo está
@@ -105,6 +114,7 @@ export function SidebarContent({
   hostDialogs?: boolean;
 }) {
   const pathname = usePathname();
+  const items = useAkLoreAccess(userProfile?.email) === 'allowed' ? withAkLore : navItems;
   const {
     showAlert,
     isTimerActive,
@@ -220,8 +230,8 @@ export function SidebarContent({
             ------------------------------------------------------------------ */}
         <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
           <nav className="flex flex-col gap-1">
-            {navItems.map((item, itemIndex) => {
-              const newGroup = itemIndex > 0 && navItems[itemIndex - 1].group !== item.group;
+            {items.map((item, itemIndex) => {
+              const newGroup = itemIndex > 0 && items[itemIndex - 1].group !== item.group;
               // Normalizamos ambas rutas para ignorar la barra diagonal final (trailing slash)
               // Esto garantiza que /tareas coincida con /tareas/
               const normalizedPath = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
