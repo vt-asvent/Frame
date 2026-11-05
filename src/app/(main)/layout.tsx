@@ -38,6 +38,7 @@ import StudyVideoHost from '@/components/temporizador/StudyVideoHost';
 import InterfaceErrorBoundary from '@/components/layout/InterfaceErrorBoundary';
 import UpdateDialog from '@/components/layout/UpdateDialog';
 import WireRuntime from '@/components/extensions/wire/WireRuntime';
+import IaRuntime from '@/components/extensions/ia/IaRuntime';
 import AppBackdrop from '@/components/extensions/animaciones/Backdrops';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { getActiveSession, onAuthChange, tidyName, updatePersonNames, updateUsername } from '@/lib/supabase/auth';
@@ -299,6 +300,7 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
                 al cambiar de interfaz (Enfoque solo le reserva el hueco). */}
             <StudyVideoHost />
             <WireRuntime />
+            <IaRuntime />
 
             {/*
                 This silent audio element provides a robust way to prevent system sleep

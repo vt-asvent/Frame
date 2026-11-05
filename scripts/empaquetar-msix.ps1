@@ -88,8 +88,9 @@ $manifest = @"
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  IgnorableNamespaces="uap uap5 rescap">
   <Identity Name="$IdentityName" Publisher="$Publisher" Version="$msixVersion" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>Frame Estudio</DisplayName>
@@ -115,6 +116,15 @@ $manifest = @"
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>
+      <Extensions>
+        <!-- Conexiones con IA (1.7.3): las IA arrancan frame-estudio.exe con el argumento mcp
+             (src-tauri/src/ia_bridge.rs); WindowsApps no se ejecuta desde fuera. -->
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="frame.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="frame-estudio.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities>

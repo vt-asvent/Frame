@@ -2,6 +2,7 @@ use serde::Serialize;
 
 mod window_state;
 mod extensions;
+pub mod ia_bridge;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -1686,6 +1687,13 @@ pub fn run() {
             extensions::ext_secret_set,
             extensions::ext_secret_get,
             extensions::ext_secret_delete,
+            ia_bridge::ia_bridge_start,
+            ia_bridge::ia_bridge_stop,
+            ia_bridge::ia_bridge_reply,
+            ia_bridge::ia_exe_path,
+            ia_bridge::ia_config_read,
+            ia_bridge::ia_config_write,
+            ia_bridge::ia_client_installed,
             open_mini_timer,
             schedule_wake,
             close_mini_timer,
