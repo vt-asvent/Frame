@@ -32,6 +32,8 @@ import {
 import { EXTENSION_PANELS, ThirdPartyPanel } from '@/components/extensions/extension-panels';
 import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { markWireJustInstalled } from '@/components/extensions/wire/WireViews';
+import { WIRE } from '@/lib/extensions/wire/relay';
 
 // ============================================================
 // Ajustes → Extensiones (1.7.3): el centro de extensiones.
@@ -112,6 +114,7 @@ export default function ExtensionsSection() {
   const accept = () => {
     if (!pending) return;
     installExtension(pending.manifest, pending.official);
+    if (pending.manifest.id === WIRE && !pending.previous) markWireJustInstalled();
     toast({
       title: pending.previous ? tr('{name} actualizada', { name: pending.manifest.name }) : tr('{name} instalada', { name: pending.manifest.name }),
     });

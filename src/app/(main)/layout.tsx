@@ -37,6 +37,7 @@ import { validateUsername } from '@/components/auth/AuthShell';
 import StudyVideoHost from '@/components/temporizador/StudyVideoHost';
 import InterfaceErrorBoundary from '@/components/layout/InterfaceErrorBoundary';
 import UpdateDialog from '@/components/layout/UpdateDialog';
+import WireRuntime from '@/components/extensions/wire/WireRuntime';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { getActiveSession, onAuthChange, tidyName, updatePersonNames, updateUsername } from '@/lib/supabase/auth';
 import { CLOUD_APPLIED_EVENT, pushToCloud, pullFromCloud } from '@/lib/supabase/sync';
@@ -294,6 +295,7 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
             {/* Reproductor de vídeos de estudio: vive aquí para no desmontarse
                 al cambiar de interfaz (Enfoque solo le reserva el hueco). */}
             <StudyVideoHost />
+            <WireRuntime />
 
             {/*
                 This silent audio element provides a robust way to prevent system sleep

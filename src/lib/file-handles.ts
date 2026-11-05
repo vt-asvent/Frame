@@ -90,6 +90,11 @@ async function storeCopy(attachmentId: string, file: File): Promise<PickedFile> 
   return { fileName: file.name, mime: file.type, live: false };
 }
 
+/** Guarda como copia un adjunto que llegó de otro equipo (extensión Wire, 1.7.3). */
+export async function storeAttachmentCopy(attachmentId: string, file: File): Promise<void> {
+  await storeCopy(attachmentId, file);
+}
+
 export interface StoredPick {
   id: string;
   picked: PickedFile;

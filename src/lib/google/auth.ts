@@ -34,6 +34,9 @@ const IDENTITY_SCOPES = ['openid', 'email', 'profile'];
 interface GoogleTokens {
   accessToken: string;
   idToken?: string;
+  /** Solo con `offline` (extensión Wire). */
+  refreshToken?: string;
+  expiresIn?: number;
 }
 
 interface GoogleIdentity {
@@ -92,6 +95,8 @@ interface AuthorizeOptions {
   /** 'select_account' muestra el selector de cuentas de Google. */
   prompt?: string;
   loginHint?: string;
+  /** Pide también el token de renovación (acceso sin conexión). Solo Wire. */
+  offline?: boolean;
 }
 
 /** El usuario cerró la ventana de Google antes de terminar. */
@@ -102,7 +107,7 @@ class AuthCancelled extends Error {
   }
 }
 
-async function authorize({ scopes, prompt, loginHint }: AuthorizeOptions): Promise<GoogleTokens> {
+async function authorize({ scopes, prompt, loginHint, offline }: AuthorizeOptions): Promise<GoogleTokens> {
   if (!isTauri()) {
     throw new Error(tr('Las integraciones de Google requieren la app de escritorio Frame.'));
   }
@@ -132,6 +137,7 @@ async function authorize({ scopes, prompt, loginHint }: AuthorizeOptions): Promi
     });
     if (prompt) params.set('prompt', prompt);
     if (loginHint) params.set('login_hint', loginHint);
+    if (offline) params.set('access_type', 'offline');
 
     // 1. Armar la escucha ANTES de abrir el navegador.
     const waiter = invoke<{ params: Record<string, string> }>('oauth_wait_callback', {
@@ -204,7 +210,7 @@ async function authorize({ scopes, prompt, loginHint }: AuthorizeOptions): Promi
 
     const json = await invoke<any>('google_token_request', { form });
 
-    return { accessToken: json.access_token, idToken: json.id_token };
+    return { accessToken: json.access_token, idToken: json.id_token, refreshToken: json.refresh_token, expiresIn: json.expires_in };
   }
   throw new Error(lastError || tr('No se pudo iniciar la escucha OAuth local.'));
 }
@@ -230,6 +236,56 @@ async function fetchIdentity(accessToken: string): Promise<GoogleIdentity> {
  * Inicio de sesión con Google. Devuelve el perfil y el id_token para abrir la
  * sesión de Supabase; nada se guarda en el equipo.
  */
+// --- Google Drive para la extensión Wire (1.7.3) ---
+//
+// Excepción, con permiso expreso al instalar Wire: el relevo trabaja en
+// segundo plano, así que necesita el token de RENOVACIÓN. No va a
+// localStorage: el núcleo nativo lo guarda cifrado con DPAPI en la carpeta de
+// la extensión (extensions.rs) y se borra al desconectar o desinstalar.
+// Ámbito `drive.file`: Frame solo ve los archivos que él mismo crea.
+
+const DRIVE_SCOPES = ['openid', 'email', 'https://www.googleapis.com/auth/drive.file'];
+
+export interface DriveGrant {
+  email: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
+/** Elige la cuenta de Google cuyo Drive hará de relevo. */
+export async function authorizeDrive(): Promise<DriveGrant> {
+  // `consent`: Google solo da el token de renovación la primera vez si no se fuerza.
+  const tokens = await authorize({ scopes: DRIVE_SCOPES, prompt: 'select_account consent', offline: true });
+  if (!tokens.refreshToken) throw new Error(tr('Google no dio acceso sin conexión. Vuelve a intentarlo.'));
+  const identity = await fetchIdentity(tokens.accessToken);
+  return {
+    email: identity.email,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: Date.now() + (tokens.expiresIn ?? 3600) * 1000,
+  };
+}
+
+/** Token de acceso nuevo a partir del de renovación. */
+export async function refreshGoogleAccess(refreshToken: string): Promise<{ accessToken: string; expiresAt: number }> {
+  if (!CLIENT_ID) throw new Error(tr('Falta VITE_GOOGLE_CLIENT_ID en el archivo .env.'));
+  const form: Record<string, string> = { client_id: CLIENT_ID, refresh_token: refreshToken, grant_type: 'refresh_token' };
+  if (CLIENT_SECRET) form.client_secret = CLIENT_SECRET;
+  const json = await invoke<any>('google_token_request', { form });
+  return { accessToken: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
+}
+
+/** Retira el permiso en Google (lo mejor posible: si falla, el token igual se borra aquí). */
+export async function revokeGoogleToken(token: string): Promise<void> {
+  await fetch('https://oauth2.googleapis.com/revoke', {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token }).toString(),
+  }).catch(() => undefined);
+}
+
 export async function googleSignIn(): Promise<GoogleIdentity & { idToken?: string }> {
   const tokens = await authorize({ scopes: IDENTITY_SCOPES, prompt: 'select_account' });
   const identity = await fetchIdentity(tokens.accessToken);

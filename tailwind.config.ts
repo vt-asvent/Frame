@@ -90,6 +90,11 @@ export default {
           '0%, 100%': { boxShadow: '0 0 6px 0 hsl(var(--primary) / 0.35)' },
           '50%': { boxShadow: '0 0 18px 4px hsl(var(--primary) / 0.6)' },
         },
+        // La barra de una subida o bajada de Wire, yendo y viniendo.
+        'wire-slide': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(300%)' },
+        },
         'pulse-border': {
           '0%, 100%': {
             borderColor: 'hsl(var(--border))',

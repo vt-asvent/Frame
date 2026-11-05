@@ -1679,6 +1679,7 @@ pub fn run() {
             music_read,
             music_pick_release,
             extensions::ext_forget,
+            extensions::ext_device_name,
             extensions::ext_music_folder_pick,
             extensions::ext_music_folder,
             extensions::ext_music_folder_scan,

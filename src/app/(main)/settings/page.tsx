@@ -34,6 +34,7 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from 
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
 import ExtensionsSection from '@/components/extensions/ExtensionsSection';
+import { WireSection } from '@/components/extensions/wire/WireViews';
 import ProfileStats from '@/components/settings/ProfileStats';
 import ReportCenter from '@/components/settings/ReportCenter';
 import { APP_VERSION, BUILD_DATE } from '@/lib/version';
@@ -760,6 +761,10 @@ export default function SettingsPage() {
 
         <div className="pt-6">
           <ExtensionsSection />
+        </div>
+
+        <div className="pt-6 empty:hidden">
+          <WireSection />
         </div>
 
         <p className="pt-12 text-xs text-center text-muted-foreground">

@@ -61,6 +61,12 @@ pub fn ext_forget(app: AppHandle, ext: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Nombre del equipo (para la lista de equipos de Wire, en el Drive del propio usuario).
+#[tauri::command]
+pub fn ext_device_name() -> String {
+    std::env::var("COMPUTERNAME").ok().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "Windows".into())
+}
+
 // ------------------------------------------------------------
 // Carpeta de una fuente de música
 // ------------------------------------------------------------
