@@ -23,6 +23,7 @@ import {
 import { accountCode } from '@/lib/account-code';
 import RealNameRow from '@/components/settings/RealNameRow';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/lib/theme';
+import { ACCENTS, getAccent, setAccent, type AccentId } from '@/lib/accent';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -123,6 +124,43 @@ function ThemeSelector() {
             <Icon className={cn('h-5 w-5', pref === value ? 'text-primary' : 'text-muted-foreground')} />
           </Button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Color de acento (1.7.3): ocho opciones, cada una con su versión clara y
+// oscura (lib/accent.ts). Cada muestra enseña el tono del tema actual.
+function AccentSelector() {
+  const [accent, setAccentState] = useState<AccentId>(() => getAccent());
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <p className="font-bold text-muted-foreground text-xs">{tr('Color')}</p>
+      <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={tr('Color de acento')}>
+        {ACCENTS.map((a) => {
+          const selected = accent === a.id;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              title={tr(a.name)}
+              aria-label={tr(a.name)}
+              onClick={() => {
+                setAccent(a.id);
+                setAccentState(a.id);
+              }}
+              className={cn(
+                'relative h-[18px] w-[18px] overflow-hidden rounded-full border border-border/60 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected && 'ring-2 ring-foreground/80 ring-offset-2 ring-offset-background'
+              )}
+            >
+              <span className="absolute inset-0 dark:hidden" style={{ background: `hsl(${a.light.primary})` }} />
+              <span className="absolute inset-0 hidden dark:block" style={{ background: `hsl(${a.dark.primary})` }} />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -527,6 +565,7 @@ export default function SettingsPage() {
                 un menú pequeño a su lado (AccountCard), no un recuadro. --- */}
             <div className="flex shrink-0 items-start gap-5 border-l border-border/60 pl-5">
               <ThemeSelector />
+              <AccentSelector />
               <div className="flex flex-col items-center gap-2">
                 <p className="text-xs font-bold text-muted-foreground">{tr('Cuenta')}</p>
                 <AccountMenu userProfile={userProfile} />

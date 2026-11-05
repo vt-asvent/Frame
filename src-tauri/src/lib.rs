@@ -1,4 +1,6 @@
 use serde::Serialize;
+
+mod window_state;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -1065,6 +1067,10 @@ async fn focus_main_window(app: tauri::AppHandle) -> Result<(), String> {
 /// con una sesión de estudio en curso (o cuando no había ninguna).
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
+    if let Some(main) = app.get_window("main") {
+        window_state::capture(&main);
+    }
+    window_state::save(&app);
     app.exit(0);
 }
 
@@ -1708,6 +1714,9 @@ pub fn run() {
                         (size.height * 0.5).floor(),
                     )));
                 }
+                // Tal como se cerró (1.7.3): tamaño, posición, maximizada o
+                // pantalla completa. Nace oculta y aquí se muestra ya colocada.
+                window_state::restore(&window);
             }
 
 
@@ -1718,6 +1727,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "main" {
+                match event {
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                        window_state::capture(window)
+                    }
+                    tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+                        window_state::capture(window);
+                        window_state::save(window.app_handle());
+                    }
+                    _ => {}
+                }
+            }
             // Cerrar Frame cierra Frame: nada de seguir vivo en la bandeja.
             // Lo único que se interpone es la despedida de una sesión de
             // estudio en curso, y de eso decide el frontend.

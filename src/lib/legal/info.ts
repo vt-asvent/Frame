@@ -27,7 +27,7 @@ export function infoDocument({
 
 **Versión ${appVersion}** · Canal estable · Compilación ${appVersion} (NSIS x64) · ${releaseDate}
 Sistema de productividad académica para Windows y Android
-Desarrollado por **VT Asvent**, entidad de desarrollo de software en formación · Perú
+Desarrollado por **Asvent**, entidad de desarrollo de software en formación · Perú
 
 Disponible en español e inglés (Ajustes → «Idioma»).
 
@@ -199,5 +199,5 @@ Términos y Condiciones de Uso y Política de Privacidad, versión ${TERMS_VERSI
 Política de Uso Aceptable · Anexo C de los Términos
 Avisos de software de terceros · Anexo E de los Términos
 
-Contacto: vt.asvent@gmail.com · VT Asvent`;
+Contacto: vt.asvent@gmail.com · Asvent`;
 }

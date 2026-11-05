@@ -117,7 +117,9 @@ export default function InboxTasksSection() {
         {tr('Apuntadas en caliente desde la barra superior. Edítalas aquí mismo y colócalas en su asignatura cuando sepas cuál es.')}
       </p>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* Cada tarjeta, la mitad del ancho (1.7.3; antes, un tercio). A media
+          pantalla, una sola columna: dos quedarían en ~230 px. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {loose.map((task) => (
           <div key={task.id} className="space-y-2">
             <TaskCard task={task} isDragDisabled />

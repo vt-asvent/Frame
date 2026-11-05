@@ -26,7 +26,7 @@ This channel handles **malfunctions**, **questions about using** the Application
 
 **Shortcuts inside Frame:** “Information and what’s new” (in Settings) explains what each part of Frame does; **usage questions** and **improvement proposals** are sent by email, just like reports; and failures that break a screen **are reported automatically**, without any of your data, so they can be fixed in the next version.
 
-Frame is maintained by VT Asvent, a small team. Every message is logged and reviewed. **We don’t guarantee an individual reply to every message**, but we do guarantee that every report describing a reproducible failure enters the work queue.
+Frame is maintained by Asvent, a small team. Every message is logged and reviewed. **We don’t guarantee an individual reply to every message**, but we do guarantee that every report describing a reproducible failure enters the work queue.
 
 The times below are **service goals, not contractual commitments**: a failure that prevents using the Application is handled first; one that affects a specific feature with a workaround available, afterwards; a feature proposal is evaluated when planning the next version.
 
@@ -102,5 +102,5 @@ Every report goes through: **received** —it’s logged and acknowledged when p
 
 ## 9. Support contact
 
-**vt.asvent@gmail.com** · VT Asvent`;
+**vt.asvent@gmail.com** · Asvent`;
 }

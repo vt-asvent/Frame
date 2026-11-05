@@ -30,7 +30,7 @@ Este canal atiende **fallos de funcionamiento**, **dudas sobre el uso** de la Ap
 
 **Atajos dentro de Frame:** «Información y novedades» (en Ajustes) explica qué hace cada parte de Frame; las **dudas de uso** y las **propuestas de mejora** se envían por correo, igual que los reportes; y los fallos que rompen una pantalla **se reportan solos**, sin datos tuyos, para corregirlos en la siguiente versión.
 
-Frame la mantiene VT Asvent, un equipo reducido. Todos los mensajes se registran y se revisan. **No garantizamos una respuesta individual a cada mensaje**, y sí garantizamos que todo reporte que describa un fallo reproducible entra en la cola de trabajo.
+Frame la mantiene Asvent, un equipo reducido. Todos los mensajes se registran y se revisan. **No garantizamos una respuesta individual a cada mensaje**, y sí garantizamos que todo reporte que describa un fallo reproducible entra en la cola de trabajo.
 
 Los tiempos que siguen son **objetivos de servicio, no compromisos contractuales**: un fallo que impide usar la Aplicación se atiende con prioridad; uno que afecta a una función concreta con alternativa disponible, después; una propuesta de función se evalúa en la planificación de la siguiente versión.
 
@@ -106,5 +106,5 @@ Todo reporte pasa por: **recibido** —se registra y se acusa recibo cuando es p
 
 ## 9. Contacto de soporte
 
-**vt.asvent@gmail.com** · VT Asvent`;
+**vt.asvent@gmail.com** · Asvent`;
 }

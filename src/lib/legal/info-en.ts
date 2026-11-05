@@ -19,7 +19,7 @@ export function infoDocumentEn({
 
 **Version ${appVersion}** · Stable channel · Build ${appVersion} (NSIS x64) · ${releaseDate}
 Academic productivity system for Windows and Android
-Developed by **VT Asvent**, a software development entity in formation · Peru
+Developed by **Asvent**, a software development entity in formation · Peru
 
 Available in Spanish and English (Settings → “Language”).
 
@@ -191,5 +191,5 @@ Terms and Conditions of Use and Privacy Policy, version ${TERMS_VERSION}, in for
 Acceptable Use Policy · Annex C of the Terms
 Third-party software notices · Annex E of the Terms
 
-Contact: vt.asvent@gmail.com · VT Asvent`;
+Contact: vt.asvent@gmail.com · Asvent`;
 }
