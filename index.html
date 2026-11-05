@@ -12,6 +12,15 @@
           ? window.matchMedia('(prefers-color-scheme: dark)').matches
           : true;
         document.documentElement.classList.toggle('dark', dark);
+        // Color de un mod de apariencia (extensión Animaciones), encima del acento.
+        var modCss = localStorage.getItem('frameExt:frame.animaciones:accentCss');
+        if (modCss) {
+          document.documentElement.setAttribute('data-accent-mod', '1');
+          var sm = document.createElement('style');
+          sm.id = 'frame-accent-mod';
+          sm.textContent = modCss;
+          document.head.appendChild(sm);
+        }
         // Color de acento (lib/accent.ts): la hoja guardada, ya armada.
         var accentCss = localStorage.getItem('frameAccentCss');
         if (accentCss) {

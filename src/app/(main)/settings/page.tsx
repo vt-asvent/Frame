@@ -34,6 +34,8 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from 
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
 import ExtensionsSection from '@/components/extensions/ExtensionsSection';
+import { useContributions, useExtensionOn } from '@/lib/extensions/store';
+import { ANIMACIONES, effectiveLook, useLook } from '@/lib/extensions/animaciones';
 import { WireSection } from '@/components/extensions/wire/WireViews';
 import ProfileStats from '@/components/settings/ProfileStats';
 import ReportCenter from '@/components/settings/ReportCenter';
@@ -136,6 +138,11 @@ function ThemeSelector() {
 // oscura (lib/accent.ts). Cada muestra enseña el tono del tema actual.
 function AccentSelector() {
   const [accent, setAccentState] = useState<AccentId>(() => getAccent());
+  // Con el color de un mod (extensión Animaciones), este queda guardado debajo.
+  const animaciones = useExtensionOn(ANIMACIONES);
+  const mods = useContributions('appearance');
+  const look = useLook();
+  const modAccent = animaciones && !!effectiveLook(look, mods).accentFrom;
   return (
     <div className="flex flex-col items-center gap-2">
       <p className="font-bold text-muted-foreground text-xs">{tr('Color')}</p>
@@ -165,6 +172,7 @@ function AccentSelector() {
           );
         })}
       </div>
+      {modAccent && <p className="max-w-[11rem] text-center text-[10px] leading-tight text-muted-foreground">{tr('Ahora manda el color de un mod (Extensiones › Animaciones).')}</p>}
     </div>
   );
 }

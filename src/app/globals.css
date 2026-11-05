@@ -105,6 +105,26 @@
 /* Olas animadas de las tarjetas de asignatura (cuando no hay imagen).
    Cada capa es un SVG del 200% de ancho con una onda periódica: al
    trasladarse -50% el bucle es perfecto y continuo. */
+/* Aurora (extensión Animaciones, 1.7.3): manchas de luz del acento que se
+   desplazan despacio. Solo transform: lo mueve la tarjeta gráfica. */
+@keyframes frame-aurora-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(14%, 9%, 0) scale(1.18); }
+}
+@keyframes frame-aurora-b {
+  from { transform: translate3d(0, 0, 0) scale(1.1); }
+  to { transform: translate3d(-16%, 11%, 0) scale(0.9); }
+}
+@keyframes frame-aurora-c {
+  from { transform: translate3d(0, 0, 0) scale(0.95); }
+  to { transform: translate3d(11%, -13%, 0) scale(1.22); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame-aurora-blob {
+    animation: none !important;
+  }
+}
+
 /* Nombre de la asignatura repetido al fondo de su cabecera: deriva de izquierda
    a derecha. La pista mide dos mitades idénticas, así que al llegar a 0 el
    bucle no tiene costura. */

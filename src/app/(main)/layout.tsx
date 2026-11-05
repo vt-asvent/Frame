@@ -38,6 +38,7 @@ import StudyVideoHost from '@/components/temporizador/StudyVideoHost';
 import InterfaceErrorBoundary from '@/components/layout/InterfaceErrorBoundary';
 import UpdateDialog from '@/components/layout/UpdateDialog';
 import WireRuntime from '@/components/extensions/wire/WireRuntime';
+import AppBackdrop from '@/components/extensions/animaciones/Backdrops';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { getActiveSession, onAuthChange, tidyName, updatePersonNames, updateUsername } from '@/lib/supabase/auth';
 import { CLOUD_APPLIED_EVENT, pushToCloud, pullFromCloud } from '@/lib/supabase/sync';
@@ -193,6 +194,8 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
         // El color de fondo lo pone <body>. Sin constelación desde la 1.6.8
         // (Diego): el fondo de la app es liso.
         <div className="relative flex h-screen text-foreground">
+            {/* Extensión Animaciones (1.7.3): fondo y animación detrás de todo. */}
+            <AppBackdrop />
             <Sidebar userProfile={userProfile} />
 
             {/* Mobile sidebar and trigger - CORRECCIÓN MAGISTRAL DE CAPAS */}

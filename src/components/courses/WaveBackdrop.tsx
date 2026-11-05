@@ -18,6 +18,10 @@ interface WaveBackdropProps {
    *  sin depender de que el padre sea `relative`. */
   fullscreen?: boolean;
   className?: string;
+  /** Multiplicador de velocidad (1 = la de siempre). */
+  speed?: number;
+  /** Tripleta HSL («H S% L%») en lugar de `--primary`. */
+  color?: string | null;
 }
 
 const BASE_LAYERS = [
@@ -34,6 +38,8 @@ export default function WaveBackdrop({
   dense = false,
   fullscreen = false,
   className,
+  speed = 1,
+  color = null,
 }: WaveBackdropProps = {}) {
   // En modo denso se intercalan capas a medio camino entre las originales.
   const layers = dense
@@ -73,14 +79,14 @@ export default function WaveBackdrop({
             top: `${l.top}%`,
             height: `${lineHeight}px`,
             opacity: Math.min(1, l.opacity * intensity),
-            animation: `${l.reverse ? 'frame-wave-reverse' : 'frame-wave'} ${l.duration}s linear infinite`,
+            animation: `${l.reverse ? 'frame-wave-reverse' : 'frame-wave'} ${l.duration / speed}s linear infinite`,
           }}
         >
           {/* Onda periódica (periodo 600): el bucle de -50% es continuo. */}
           <path
             d="M0 30 Q150 8 300 30 T600 30 T900 30 T1200 30"
             fill="none"
-            stroke="hsl(var(--primary))"
+            stroke={color ? `hsl(${color})` : 'hsl(var(--primary))'}
             strokeWidth={l.width}
             strokeLinecap="round"
           />
