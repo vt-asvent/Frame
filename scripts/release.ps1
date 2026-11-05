@@ -8,7 +8,8 @@
 #       pwsh scripts/release.ps1 -SkipBuild (solo publica lo ya compilado)
 #
 #  Qué hace: compila el instalador NSIS FIRMADO (clave keys/frame-updater.key),
-#  genera latest.json, crea el Release vX.Y.Z en GitHub y sube:
+#  genera latest.json, crea el Release vX.Y.Z en vt-asvent/frame-app y en
+#  GasparRojasDiego/frame-app (espejo para las versiones viejas) y sube:
 #    - Frame_X.Y.Z_x64-setup.exe   (instalador versionado; lo usa el updater)
 #    - Frame-Setup.exe             (copia con nombre estable; lo usa la web)
 #    - latest.json                 (manifiesto firmado del auto-updater)
@@ -24,7 +25,6 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$OWNER = 'GasparRojasDiego'
 $REPO  = 'frame-app'
 
 # --- Versión desde tauri.conf.json ---
@@ -60,35 +60,18 @@ $sums = "$bundle/SHA256SUMS.txt"
 "$hash  Frame_${version}_x64-setup.exe`n$hash  Frame-Setup.exe`n" | Set-Content -Path $sums -Encoding utf8NoBOM -NoNewline
 Write-Host "==> SHA-256: $hash" -ForegroundColor Cyan
 
-# --- latest.json (manifiesto del auto-updater) ---
-# `frame` es nuestro (el plugin de Tauri lo ignora): el peso exacto del
-# instalador, para que el recuadro de actualizar diga cuánto pesa y cuánto
-# tardará ANTES de empezar a descargar (src/lib/updater.ts lo lee de rawJson),
-# y `minimum`, la versión mínima que se puede seguir usando (1.7.2): toda
-# versión anterior obliga a actualizar. Se publica la recién publicada; para
-# permitir una anterior, bajar este número a mano en el latest.json del release.
-$latest = @{
-    version  = $version
-    notes    = "Frame $version"
-    pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-    frame    = @{ size = $size; minimum = $version }
-    platforms = @{
-        'windows-x86_64' = @{
-            signature = (Get-Content $sig -Raw).Trim()
-            url = "https://github.com/$OWNER/$REPO/releases/download/v$version/Frame_${version}_x64-setup.exe"
-        }
-    }
-}
-$latestPath = "$bundle/latest.json"
-$latest | ConvertTo-Json -Depth 5 | Set-Content -Path $latestPath -Encoding utf8NoBOM
-Write-Host "==> latest.json generado" -ForegroundColor Cyan
+# --- Destinos (5-nov-2026, mudanza a Asvent) ---
+# Cada versión sale en los dos repositorios: `vt-asvent/frame-app` (el nuevo,
+# el primero que leen las apps desde la 1.7.3) y `GasparRojasDiego/frame-app`
+# (el viejo: lo leen las versiones anteriores hasta que se actualicen). Cada
+# uno lleva su propio latest.json, que apunta al instalador de SU release.
+$TARGETS = @('vt-asvent', 'GasparRojasDiego')
 
 # --- Token de GitHub (del Administrador de credenciales de Git) ---
 $cred = "protocol=https`nhost=github.com`n`n" | git credential fill
 $token = ($cred | Select-String '^password=').ToString().Substring(9)
 $headers = @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json' }
 
-# --- Crear (o reutilizar) el Release vX.Y.Z ---
 $tag = "v$version"
 $fence = '```'
 $notes = @"
@@ -104,33 +87,62 @@ ${fence}
 
 Cada versión va firmada: Frame solo instala actualizaciones con la firma de Asvent.
 "@
-try {
-    $release = Invoke-RestMethod -Method Post -Headers $headers `
-        -Uri "https://api.github.com/repos/$OWNER/$REPO/releases" `
-        -Body (@{ tag_name = $tag; name = "Frame $version"; body = $notes; make_latest = 'true' } | ConvertTo-Json)
-} catch {
-    $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$OWNER/$REPO/releases/tags/$tag"
-    # Re-publicación: las notas se rehacen con la huella del instalador nuevo.
-    Invoke-RestMethod -Method Patch -Headers $headers -Uri "https://api.github.com/repos/$OWNER/$REPO/releases/$($release.id)" `
-        -Body (@{ body = $notes } | ConvertTo-Json) | Out-Null
-    Write-Host "==> Release $tag ya existía: se reutiliza" -ForegroundColor Yellow
-}
-Write-Host "==> Release $tag listo (id $($release.id))" -ForegroundColor Cyan
 
-function Upload-Asset([string]$path, [string]$name, [string]$mime) {
-    # Si ya existe un asset con ese nombre (re-publicación), se reemplaza.
-    $existing = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$OWNER/$REPO/releases/$($release.id)/assets"
-    $dup = $existing | Where-Object { $_.name -eq $name }
-    if ($dup) { Invoke-RestMethod -Method Delete -Headers $headers -Uri "https://api.github.com/repos/$OWNER/$REPO/releases/assets/$($dup.id)" | Out-Null }
-    Write-Host "==> Subiendo $name ($([math]::Round((Get-Item $path).Length/1MB)) MB)…" -ForegroundColor Cyan
-    Invoke-RestMethod -Method Post -Uri "https://uploads.github.com/repos/$OWNER/$REPO/releases/$($release.id)/assets?name=$name" `
-        -Headers @{ Authorization = "Bearer $token"; 'Content-Type' = $mime } -InFile $path | Out-Null
+function Publish-Release([string]$owner) {
+    # --- latest.json (manifiesto del auto-updater) ---
+    # `frame` es nuestro (el plugin de Tauri lo ignora): el peso exacto del
+    # instalador, para que el recuadro de actualizar diga cuánto pesa y cuánto
+    # tardará ANTES de empezar a descargar (src/lib/updater.ts lo lee de rawJson),
+    # y `minimum`, la versión mínima que se puede seguir usando (1.7.2): toda
+    # versión anterior obliga a actualizar. Se publica la recién publicada; para
+    # permitir una anterior, bajar este número a mano en el latest.json del release.
+    $latest = @{
+        version  = $version
+        notes    = "Frame $version"
+        pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        frame    = @{ size = $size; minimum = $version }
+        platforms = @{
+            'windows-x86_64' = @{
+                signature = (Get-Content $sig -Raw).Trim()
+                url = "https://github.com/$owner/$REPO/releases/download/v$version/Frame_${version}_x64-setup.exe"
+            }
+        }
+    }
+    $latestPath = "$bundle/latest-$owner.json"
+    $latest | ConvertTo-Json -Depth 5 | Set-Content -Path $latestPath -Encoding utf8NoBOM
+
+    # --- Crear (o reutilizar) el Release vX.Y.Z ---
+    try {
+        $release = Invoke-RestMethod -Method Post -Headers $headers `
+            -Uri "https://api.github.com/repos/$owner/$REPO/releases" `
+            -Body (@{ tag_name = $tag; name = "Frame $version"; body = $notes; make_latest = 'true' } | ConvertTo-Json)
+    } catch {
+        $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$owner/$REPO/releases/tags/$tag"
+        # Re-publicación: las notas se rehacen con la huella del instalador nuevo.
+        Invoke-RestMethod -Method Patch -Headers $headers -Uri "https://api.github.com/repos/$owner/$REPO/releases/$($release.id)" `
+            -Body (@{ body = $notes } | ConvertTo-Json) | Out-Null
+        Write-Host "==> $owner/${REPO}: release $tag ya existía, se reutiliza" -ForegroundColor Yellow
+    }
+    Write-Host "==> $owner/${REPO}: release $tag listo (id $($release.id))" -ForegroundColor Cyan
+
+    function Upload-Asset([string]$path, [string]$name, [string]$mime) {
+        # Si ya existe un asset con ese nombre (re-publicación), se reemplaza.
+        $existing = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$owner/$REPO/releases/$($release.id)/assets"
+        $dup = $existing | Where-Object { $_.name -eq $name }
+        if ($dup) { Invoke-RestMethod -Method Delete -Headers $headers -Uri "https://api.github.com/repos/$owner/$REPO/releases/assets/$($dup.id)" | Out-Null }
+        Write-Host "==> $owner/${REPO}: subiendo $name ($([math]::Round((Get-Item $path).Length/1MB)) MB)…" -ForegroundColor Cyan
+        Invoke-RestMethod -Method Post -Uri "https://uploads.github.com/repos/$owner/$REPO/releases/$($release.id)/assets?name=$name" `
+            -Headers @{ Authorization = "Bearer $token"; 'Content-Type' = $mime } -InFile $path | Out-Null
+    }
+
+    Upload-Asset $setup "Frame_${version}_x64-setup.exe" 'application/octet-stream'
+    Upload-Asset $setup 'Frame-Setup.exe' 'application/octet-stream'
+    Upload-Asset $sums 'SHA256SUMS.txt' 'text/plain'
+    # latest.json, lo último: hasta que esté, las apps no ven la versión nueva.
+    Upload-Asset $latestPath 'latest.json' 'application/json'
 }
 
-Upload-Asset $setup "Frame_${version}_x64-setup.exe" 'application/octet-stream'
-Upload-Asset $setup 'Frame-Setup.exe' 'application/octet-stream'
-Upload-Asset $sums 'SHA256SUMS.txt' 'text/plain'
-Upload-Asset $latestPath 'latest.json' 'application/json'
+foreach ($owner in $TARGETS) { Publish-Release $owner }
 
 # --- La página muestra versión, fecha, tamaño y huella (website/version.json) ---
 $site = "$root/website"
@@ -154,6 +166,7 @@ try {
 
 Write-Host ''
 Write-Host "✔ Versión $version publicada." -ForegroundColor Green
-Write-Host "  Página:    https://gasparrojasdiego.github.io/frame-app/"
-Write-Host "  Descarga:  https://github.com/$OWNER/$REPO/releases/latest/download/Frame-Setup.exe"
-Write-Host "  Updater:   https://github.com/$OWNER/$REPO/releases/latest/download/latest.json"
+Write-Host "  Página:    https://vt-asvent.github.io/frame-app/ (y su espejo en gasparrojasdiego.github.io)"
+foreach ($owner in $TARGETS) {
+    Write-Host "  Updater:   https://github.com/$owner/$REPO/releases/latest/download/latest.json"
+}

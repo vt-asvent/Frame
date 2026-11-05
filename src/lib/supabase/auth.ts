@@ -91,8 +91,10 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return { user: data.user, session: data.session, error: error?.message ?? null };
 }
 
-/** Página de la web donde se elige la contraseña nueva. */
-const PASSWORD_RECOVERY_URL = 'https://gasparrojasdiego.github.io/frame-app/recuperar/';
+/** Página de la web donde se elige la contraseña nueva. Desde la 1.7.3, la web
+ *  oficial de Asvent (`vt-asvent/frame-app`); la vieja sigue como espejo y
+ *  Supabase admite las dos en sus *Redirect URLs*. */
+const PASSWORD_RECOVERY_URL = 'https://vt-asvent.github.io/frame-app/recuperar/';
 
 /**
  * Envía el correo para elegir una contraseña nueva. Supabase no dice si el
