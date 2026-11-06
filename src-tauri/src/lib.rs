@@ -1665,7 +1665,12 @@ fn remove_download_leftovers(app: &tauri::AppHandle) {
     }
     if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
         for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().starts_with("frame_dl_") {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // `Frame-<versión>-updater-<azar>`: la carpeta donde el actualizador
+            // dejó cada instalador descargado (1.7.5). Si Frame ya arrancó, la
+            // actualización terminó y no sirve de nada: no queda rastro.
+            let updater = name.starts_with("Frame-") && name.contains("-updater-");
+            if name.starts_with("frame_dl_") || updater {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
         }
