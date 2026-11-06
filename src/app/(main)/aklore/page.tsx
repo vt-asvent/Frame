@@ -161,7 +161,7 @@ export default function AkLorePage() {
             ? tr('Instala o activa la extensión AK Lore en Ajustes › Extensiones, con la cuenta del colegio.')
             : tr('Entra con tu cuenta del colegio para buscar y descargar las guías.')}
         </p>
-        <Button variant="outline" onClick={() => navigate('/settings#extensiones')}>
+        <Button variant="outline" onClick={() => navigate('/extensiones?ext=frame.aklore')}>
           {tr('Ir a Extensiones')}
         </Button>
       </Notice>

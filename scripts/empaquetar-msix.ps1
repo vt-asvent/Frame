@@ -65,11 +65,11 @@ if (Test-Path $layout) { Remove-Item $layout -Recurse -Force }
 New-Item -ItemType Directory -Force "$layout/Assets" | Out-Null
 Copy-Item $exe "$layout/frame.exe"
 
-# Logos del paquete (marca del 4-nov-2026, `docs/marca/logo/`): plano hasta
-# 64 px y degradado en los grandes, como pide el LEEME de la marca. El .ico
-# empieza en 16 px: ya no sirve de fuente para los mosaicos.
-$flat = "$root/docs/marca/logo/Frame-logo-plano.svg"
-$grad = "$root/docs/marca/logo/Frame-logo-sin-fondo-1024px.png"
+# Logo del 6-nov-2026 (docs/marca/logo/LEEME.txt): los mosaicos pequeños salen
+# del .ico (símbolo sin margen, se ve grande en la barra) y los grandes del PNG
+# con 4 % de margen. Fondo transparente: la Store no exige placa.
+$flat = "$root/docs/marca/logo/Frame.ico[8]"
+$grad = "$root/docs/marca/logo/Frame-logo-1024.png"
 $logos = @(
     @{ Name = 'Square44x44Logo.png'; Size = '44x44'; Src = $flat },
     @{ Name = 'Square44x44Logo.targetsize-44_altform-unplated.png'; Size = '44x44'; Src = $flat },

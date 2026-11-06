@@ -21,7 +21,9 @@ import {
   LoaderCircle,
   ChevronDown,
   Languages,
+  Puzzle,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { accountCode } from '@/lib/account-code';
 import RealNameRow from '@/components/settings/RealNameRow';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/lib/theme';
@@ -36,10 +38,8 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from 
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
-import ExtensionsSection from '@/components/extensions/ExtensionsSection';
-import { useContributions, useExtensionOn } from '@/lib/extensions/store';
+import { useContributions, useExtensionOn, useInstalledExtensions } from '@/lib/extensions/store';
 import { ANIMACIONES, effectiveLook, useLook } from '@/lib/extensions/animaciones';
-import { WireSection } from '@/components/extensions/wire/WireViews';
 import ProfileStats from '@/components/settings/ProfileStats';
 import ReportCenter from '@/components/settings/ReportCenter';
 import { APP_VERSION, BUILD_DATE } from '@/lib/version';
@@ -243,6 +243,8 @@ export default function SettingsPage() {
     updateStreakGoal,
     advancedMode,
   } = useCourse();
+  const navigate = useNavigate();
+  const extensionsOn = useInstalledExtensions().filter((e) => e.enabled).length;
 
   const [localGoals, setLocalGoals] = useState<StudyGoals>(studyGoals);
   const { toast } = useToast();
@@ -776,12 +778,23 @@ export default function SettingsPage() {
             </div>
         </div>
 
+        {/* Extensiones: una sola fila; su sección propia está en /extensiones
+            (cada una con su panel, Wire con su relevo en vivo). */}
         <div className="pt-6">
-          <ExtensionsSection />
-        </div>
-
-        <div className="pt-6 empty:hidden">
-          <WireSection />
+          <button
+            type="button"
+            onClick={() => navigate('/extensiones')}
+            className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
+          >
+            <Puzzle className="h-5 w-5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">{tr('Extensiones')}</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {extensionsOn > 0 ? tr('{count} activas', { count: extensionsOn }) : tr('Añade funciones a Frame')}
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
         </div>
 
         <p className="pt-12 text-xs text-center text-muted-foreground">

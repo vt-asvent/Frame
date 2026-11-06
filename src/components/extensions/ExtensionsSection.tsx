@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { useLocation } from 'react-router-dom';
-import { ExternalLink, FileUp, MoreHorizontal, ShieldCheck, Trash2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ChevronRight, ExternalLink, FileUp, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
@@ -13,8 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import ExtensionInstallDialog from '@/components/extensions/ExtensionInstallDialog';
 import { useCourse } from '@/context/CourseContext';
@@ -32,16 +32,22 @@ import {
 import { EXTENSION_PANELS, ThirdPartyPanel } from '@/components/extensions/extension-panels';
 import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { markWireJustInstalled } from '@/components/extensions/wire/WireViews';
+import { markWireJustInstalled, WireSection } from '@/components/extensions/wire/WireViews';
 import { WIRE } from '@/lib/extensions/wire/relay';
 
 // ============================================================
-// Ajustes → Extensiones (1.7.3): el centro de extensiones.
+// Extensiones (1.7.3, rehecho el 6-nov-2026): una sección propia, fuera del
+// menú principal. Se llega desde una sola fila en Ajustes (/extensiones).
 //
-// Arriba las instaladas (con su interruptor y lo que ofrecen); debajo el
-// catálogo oficial que falta por instalar; «Instalar desde archivo» acepta el
-// manifiesto de una de terceros (lib/extensions/manifest.ts). Cada oficial
-// aparece aquí en cuanto tiene su panel (extension-panels.tsx).
+// - Arriba, un buscador. Sin texto se ven solo las oficiales; al escribir se
+//   filtra en vivo entre las oficiales y las de terceros instaladas.
+// - Cada extensión es una fila compacta: logo, nombre, una línea y su
+//   interruptor. Encender una que no está instalada abre la aceptación de
+//   permisos. Tocar la fila abre su propio panel (ajustes, permisos,
+//   desinstalar); nada se despliega dentro de la lista.
+// - Lo que aporta una extensión activa vive en su sitio natural (Descargar en
+//   Música, AK Lore en la barra lateral), no aquí.
+// - `?ext=<id>` abre directamente el panel de esa extensión.
 // ============================================================
 
 interface Pending {
@@ -50,22 +56,28 @@ interface Pending {
   previous: ExtensionManifest | null;
 }
 
-export default function ExtensionsSection() {
+/** Una fila de la lista: instalada o no, oficial o de terceros. */
+interface Row {
+  id: string;
+  manifest: ExtensionManifest;
+  official: boolean;
+  entry: InstalledExtension | null;
+}
+
+const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+export default function ExtensionsCenter() {
   const { userProfile } = useCourse();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const installed = useInstalledExtensions();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [removing, setRemoving] = useState<InstalledExtension | null>(null);
-  const [details, setDetails] = useState<InstalledExtension | null>(null);
   const [domainHash, setDomainHash] = useState<string | null>(null);
-  const sectionRef = useRef<HTMLElement>(null);
-  const location = useLocation();
-
-  // «Ir a Extensiones» (desde Música → Descargar) llega con #extensiones.
-  useEffect(() => {
-    if (location.hash === '#extensiones') sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [location.hash]);
+  const openId = params.get('ext');
 
   useEffect(() => {
     let alive = true;
@@ -76,15 +88,39 @@ export default function ExtensionsSection() {
   }, [userProfile?.email]);
 
   /** Oficiales que este usuario puede ver (las de un colegio, solo con su cuenta). */
-  const available = useMemo(
-    () => OFFICIAL_EXTENSIONS.filter((e) => EXTENSION_PANELS[e.id] && (!e.domainHash || e.domainHash === domainHash)),
-    [domainHash]
-  );
-  const notInstalled = available.filter((e) => !installed.some((i) => i.id === e.id));
-  const shown = installed.filter((e) => {
-    const official = OFFICIAL_EXTENSIONS.find((o) => o.id === e.id);
-    return !official || available.includes(official);
-  });
+  const rows = useMemo<Row[]>(() => {
+    const officials: Row[] = OFFICIAL_EXTENSIONS.filter(
+      (e) => EXTENSION_PANELS[e.id] && (!e.domainHash || e.domainHash === domainHash)
+    ).map((e) => {
+      const entry = installed.find((i) => i.id === e.id) ?? null;
+      return { id: e.id, manifest: (entry && manifestOf(entry)) || e.manifest(), official: true, entry };
+    });
+    const thirdParty: Row[] = installed
+      .filter((i) => i.manifest)
+      .map((i) => ({ id: i.id, manifest: i.manifest!, official: false, entry: i }));
+    return [...officials, ...thirdParty];
+  }, [installed, domainHash]);
+
+  const q = normalize(query.trim());
+  const visible = q
+    ? rows.filter((r) => normalize(`${r.manifest.name} ${r.manifest.description} ${r.manifest.author}`).includes(q))
+    : rows.filter((r) => r.official);
+
+  const open = rows.find((r) => r.id === openId) ?? null;
+  const setOpen = (id: string | null) => {
+    const next = new URLSearchParams(params);
+    if (id) next.set('ext', id);
+    else next.delete('ext');
+    setParams(next, { replace: true });
+  };
+
+  const toggle = (row: Row, on: boolean) => {
+    if (!row.entry) {
+      if (on) setPending({ manifest: row.manifest, official: row.official, previous: null });
+      return;
+    }
+    setExtensionEnabled(row.id, on);
+  };
 
   const onFile = async (files: FileList | null) => {
     const file = files?.[0];
@@ -125,19 +161,73 @@ export default function ExtensionsSection() {
     if (!removing) return;
     const name = manifestOf(removing)?.name ?? removing.id;
     setRemoving(null);
+    setOpen(null);
     await uninstallExtension(removing.id);
     toast({ title: tr('{name} desinstalada', { name }), description: tr('No quedó nada suyo en este equipo.') });
   };
 
   return (
-    <section ref={sectionRef} id="extensiones" className="rounded-lg border border-border/60 bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="mx-auto w-full max-w-2xl px-4 py-6">
+      <div className="mb-4 flex items-center gap-2">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')} aria-label={tr('Volver a Ajustes')}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         <div className="min-w-0">
-          <h2 className="text-lg font-bold text-primary">{tr('Extensiones')}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <h1 className="text-xl font-bold text-primary">{tr('Extensiones')}</h1>
+          <p className="text-xs text-muted-foreground">
             {tr('Añaden funciones a Frame en este equipo. Se desactivan o se quitan cuando quieras, sin dejar rastro.')}
           </p>
         </div>
+      </div>
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={tr('Buscar extensiones')}
+          aria-label={tr('Buscar extensiones')}
+          className="pl-9"
+          autoFocus
+        />
+      </div>
+
+      <ul className="mt-3 divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
+        {visible.map((row) => {
+          const on = !!row.entry?.enabled;
+          return (
+            <li key={row.id} className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40">
+              <button
+                type="button"
+                onClick={() => setOpen(row.id)}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none"
+                aria-label={tr('Abrir {name}', { name: row.manifest.name })}
+              >
+                <ExtensionIcon id={row.id} manifest={row.manifest} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    {row.manifest.name}
+                    {!row.official && <span className="text-[10px] font-bold text-muted-foreground">{tr('De terceros')}</span>}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">{row.manifest.description}</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+              <Switch
+                checked={on}
+                onCheckedChange={(value) => toggle(row, value)}
+                aria-label={on ? tr('Desactivar {name}', { name: row.manifest.name }) : tr('Activar {name}', { name: row.manifest.name })}
+                className="data-[state=unchecked]:bg-muted-foreground/30"
+              />
+            </li>
+          );
+        })}
+        {visible.length === 0 && (
+          <li className="px-3 py-6 text-center text-xs text-muted-foreground">{tr('Ninguna extensión coincide con «{query}».', { query })}</li>
+        )}
+      </ul>
+
+      <div className="mt-4 flex justify-center">
         <input
           ref={fileRef}
           type="file"
@@ -145,92 +235,17 @@ export default function ExtensionsSection() {
           className="hidden"
           onChange={(e) => void onFile(e.target.files)}
         />
-        <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} title={tr('Extensiones de terceros: un archivo .json')}>
+        <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => fileRef.current?.click()} title={tr('Extensiones de terceros: un archivo .json')}>
           <FileUp className="mr-2 h-4 w-4" />
           {tr('Instalar desde archivo…')}
         </Button>
       </div>
 
-      {shown.length > 0 && (
-        <ul className="mt-4 grid gap-3 xl:grid-cols-2">
-          {shown.map((entry) => {
-            const manifest = manifestOf(entry);
-            if (!manifest) return null;
-            const Panel: ComponentType<{ id: string; manifest: ExtensionManifest }> | undefined =
-              EXTENSION_PANELS[entry.id as OfficialId] ?? (entry.manifest ? ThirdPartyPanel : undefined);
-            return (
-              <li key={entry.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-                <div className="flex items-start gap-3">
-                  <ExtensionIcon id={entry.id} manifest={manifest} />
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-x-2 text-sm font-semibold text-foreground">
-                      {manifest.name}
-                      <span className={cn('text-[10px] font-bold', entry.manifest ? 'text-muted-foreground' : 'text-primary')}>
-                        {entry.manifest ? tr('De terceros · {author}', { author: manifest.author }) : tr('Oficial')}
-                      </span>
-                    </p>
-                    <p className="line-clamp-2 text-xs text-muted-foreground">{manifest.description}</p>
-                  </div>
-                  <Switch
-                    checked={entry.enabled}
-                    onCheckedChange={(on) => setExtensionEnabled(entry.id, on)}
-                    aria-label={entry.enabled ? tr('Desactivar {name}', { name: manifest.name }) : tr('Activar {name}', { name: manifest.name })}
-                    className="mt-1 data-[state=unchecked]:bg-muted-foreground/30"
-                  />
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={tr('Más opciones de {name}', { name: manifest.name })}>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => setDetails(entry)}>
-                        <ShieldCheck className="mr-2 h-4 w-4" />
-                        {tr('Permisos y detalles')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setRemoving(entry)} className="text-destructive focus:text-destructive">
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {tr('Desinstalar')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                {entry.enabled && Panel ? (
-                  <Panel id={entry.id} manifest={manifest} />
-                ) : !entry.enabled ? (
-                  <p className="text-xs text-muted-foreground">{tr('Desactivada: no hace nada y conserva sus ajustes.')}</p>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {notInstalled.length > 0 && (
-        <>
-          <p className="mb-2 mt-5 text-xs font-bold text-muted-foreground">{tr('Catálogo de Asvent')}</p>
-          <ul className="grid gap-3 xl:grid-cols-2">
-            {notInstalled.map((entry) => {
-              const manifest = entry.manifest();
-              return (
-                <li key={entry.id} className="flex items-start gap-3 rounded-lg border border-dashed border-border p-3">
-                  <ExtensionIcon id={entry.id} manifest={manifest} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground">{manifest.name}</p>
-                    <p className="text-xs text-muted-foreground">{manifest.description}</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {manifest.permissions.map((p) => PERMISSIONS[p].title()).join(' · ')}
-                    </p>
-                  </div>
-                  <Button size="sm" onClick={() => setPending({ manifest, official: true, previous: null })}>
-                    {tr('Instalar')}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
+      <Dialog open={!!open} onOpenChange={(value) => !value && setOpen(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          {open && <ExtensionPanel row={open} onToggle={(v) => toggle(open, v)} onRemove={() => open.entry && setRemoving(open.entry)} />}
+        </DialogContent>
+      </Dialog>
 
       <ExtensionInstallDialog
         manifest={pending?.manifest ?? null}
@@ -240,7 +255,7 @@ export default function ExtensionsSection() {
         onAccept={accept}
       />
 
-      <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
+      <AlertDialog open={!!removing} onOpenChange={(value) => !value && setRemoving(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tr('¿Desinstalar {name}?', { name: removing ? manifestOf(removing)?.name ?? '' : '' })}</AlertDialogTitle>
@@ -256,42 +271,81 @@ export default function ExtensionsSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
 
-      <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
-        <DialogContent className="sm:max-w-md">
-          {details && (() => {
-            const manifest = manifestOf(details);
-            if (!manifest) return null;
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle className="text-primary">{manifest.name}</DialogTitle>
-                </DialogHeader>
-                <p className="text-xs text-muted-foreground">
-                  {tr('Versión {version} · {author}', { version: manifest.version, author: manifest.author })}
-                  {' · '}
-                  {tr('Instalada el {date}', { date: new Date(details.installedAt).toLocaleDateString() })}
-                </p>
-                <p className="text-sm">{manifest.description}</p>
-                <ul className="space-y-2">
-                  {details.granted.map((id) => (
-                    <li key={id} className="rounded-lg border border-border/60 px-3 py-2">
-                      <p className="text-sm font-semibold">{PERMISSIONS[id]?.title() ?? id}</p>
-                      <p className="text-xs text-muted-foreground">{PERMISSIONS[id]?.detail()}</p>
-                    </li>
-                  ))}
-                </ul>
-                {manifest.homepage && (
-                  <a href={manifest.homepage} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    {tr('Página de la extensión')}
-                  </a>
-                )}
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-    </section>
+/** El panel propio de una extensión: interruptor, sus ajustes, permisos y desinstalar. */
+function ExtensionPanel({ row, onToggle, onRemove }: { row: Row; onToggle: (on: boolean) => void; onRemove: () => void }) {
+  const { manifest, entry } = row;
+  const on = !!entry?.enabled;
+  const Panel: ComponentType<{ id: string; manifest: ExtensionManifest }> | undefined =
+    EXTENSION_PANELS[row.id as OfficialId] ?? (entry?.manifest ? ThirdPartyPanel : undefined);
+  const permissions = entry?.granted ?? manifest.permissions;
+
+  return (
+    <>
+      <DialogHeader>
+        <div className="flex items-center gap-3 pr-6">
+          <ExtensionIcon id={row.id} manifest={manifest} />
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="text-primary">{manifest.name}</DialogTitle>
+            <p className="text-[11px] text-muted-foreground">
+              {row.official ? tr('Oficial') : tr('De terceros · {author}', { author: manifest.author })}
+              {' · '}
+              {tr('Versión {version}', { version: manifest.version })}
+              {entry && <> · {tr('Instalada el {date}', { date: new Date(entry.installedAt).toLocaleDateString() })}</>}
+            </p>
+          </div>
+          <Switch
+            checked={on}
+            onCheckedChange={onToggle}
+            aria-label={on ? tr('Desactivar {name}', { name: manifest.name }) : tr('Activar {name}', { name: manifest.name })}
+            className="data-[state=unchecked]:bg-muted-foreground/30"
+          />
+        </div>
+        <DialogDescription className="pt-1 text-sm">{manifest.description}</DialogDescription>
+      </DialogHeader>
+
+      {on && Panel ? (
+        <div className="space-y-4">
+          <Panel id={row.id} manifest={manifest} />
+          {row.id === WIRE && <WireSection />}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {entry ? tr('Desactivada: no hace nada y conserva sus ajustes.') : tr('Actívala para instalarla; antes verás los permisos que pide.')}
+        </p>
+      )}
+
+      <div className="space-y-2 border-t border-border/60 pt-3">
+        <p className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
+          <ShieldCheck className="h-4 w-4" />
+          {tr('Permisos')}
+        </p>
+        <ul className="space-y-1.5">
+          {permissions.map((id) => (
+            <li key={id} className="text-xs">
+              <span className="font-semibold text-foreground">{PERMISSIONS[id]?.title() ?? id}</span>
+              <span className="text-muted-foreground"> · {PERMISSIONS[id]?.detail()}</span>
+            </li>
+          ))}
+        </ul>
+        <div className={cn('flex flex-wrap items-center gap-2 pt-1', manifest.homepage ? 'justify-between' : 'justify-end')}>
+          {manifest.homepage && (
+            <a href={manifest.homepage} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+              <ExternalLink className="h-3.5 w-3.5" />
+              {tr('Página de la extensión')}
+            </a>
+          )}
+          {entry && (
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={onRemove}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              {tr('Desinstalar')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

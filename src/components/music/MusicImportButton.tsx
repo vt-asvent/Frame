@@ -227,7 +227,7 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
             <Button
               onClick={() => {
                 setNoSource(false);
-                navigate('/settings#extensiones');
+                navigate('/extensiones');
               }}
             >
               <Puzzle className="mr-2 h-4 w-4" />

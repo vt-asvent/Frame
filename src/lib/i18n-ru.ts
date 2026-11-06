@@ -2088,11 +2088,8 @@ const DICT: Record<string, string> = {
   "Oficial": "Официальное",
   "Desactivar {name}": "Отключить {name}",
   "Activar {name}": "Включить {name}",
-  "Más opciones de {name}": "Другие параметры {name}",
-  "Permisos y detalles": "Разрешения и подробности",
   "Desinstalar": "Удалить",
   "Desactivada: no hace nada y conserva sus ajustes.": "Отключено: ничего не делает и сохраняет настройки.",
-  "Catálogo de Asvent": "Каталог Asvent",
   "¿Desinstalar {name}?": "Удалить {name}?",
   "Se borra todo lo que guardó en este equipo: sus ajustes, la carpeta elegida y sus llaves. Lo que trajo a Frame (tareas, fechas, canciones) se queda. Puedes volver a instalarla cuando quieras.": "Удаляется всё, что расширение сохранило на этом компьютере: его настройки, выбранная папка и ключи. То, что оно перенесло во Frame (задачи, даты, песни), останется. Установить его снова можно в любой момент.",
   "Instalada el {date}": "Установлено {date}",
@@ -2332,6 +2329,16 @@ const DICT: Record<string, string> = {
   "1 enlace": "1 ссылка",
   "EEE d MMM": "EEE, d MMM",
   "d MMM yy": "d MMM yy",
+  "{count} activas": "Включено: {count}",
+  "Añade funciones a Frame": "Добавьте в Frame новые функции",
+  "Volver a Ajustes": "Назад к настройкам",
+  "Buscar extensiones": "Поиск расширений",
+  "Abrir {name}": "Открыть {name}",
+  "De terceros": "Стороннее",
+  "Ninguna extensión coincide con «{query}».": "Нет расширений по запросу «{query}».",
+  "Versión {version}": "Версия {version}",
+  "Actívala para instalarla; antes verás los permisos que pide.": "Включите, чтобы установить; сначала вы увидите, какие разрешения оно запрашивает.",
+  "Permisos": "Разрешения",
 };
 
 export default DICT;

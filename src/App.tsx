@@ -22,6 +22,7 @@ const pages = {
   knowledge: () => import('@/app/(main)/knowledge/page'),
   aklore: () => import('@/app/(main)/aklore/page'),
   settings: () => import('@/app/(main)/settings/page'),
+  extensiones: () => import('@/app/(main)/extensiones/page'),
 };
 
 const TareasPage = lazy(pages.tareas);
@@ -37,6 +38,7 @@ const CursosPage = lazy(pages.cursos);
 const KnowledgePage = lazy(pages.knowledge);
 const AkLorePage = lazy(pages.aklore);
 const SettingsPage = lazy(pages.settings);
+const ExtensionesPage = lazy(pages.extensiones);
 
 function usePrefetchPages() {
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function App() {
           <Route path="/knowledge" element={<KnowledgePage />} />
           <Route path="/aklore" element={<AkLorePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/extensiones" element={<ExtensionesPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

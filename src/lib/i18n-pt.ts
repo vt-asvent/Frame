@@ -2088,11 +2088,8 @@ const DICT: Record<string, string> = {
   "Oficial": "Oficial",
   "Desactivar {name}": "Desativar {name}",
   "Activar {name}": "Ativar {name}",
-  "Más opciones de {name}": "Mais opções de {name}",
-  "Permisos y detalles": "Permissões e detalhes",
   "Desinstalar": "Desinstalar",
   "Desactivada: no hace nada y conserva sus ajustes.": "Desativada: não faz nada e mantém as configurações.",
-  "Catálogo de Asvent": "Catálogo da Asvent",
   "¿Desinstalar {name}?": "Desinstalar {name}?",
   "Se borra todo lo que guardó en este equipo: sus ajustes, la carpeta elegida y sus llaves. Lo que trajo a Frame (tareas, fechas, canciones) se queda. Puedes volver a instalarla cuando quieras.": "Tudo o que ela salvou neste computador é excluído: as configurações, a pasta escolhida e as chaves. O que ela trouxe para o Frame (tarefas, datas, músicas) fica. Você pode instalá-la de novo quando quiser.",
   "Instalada el {date}": "Instalada em {date}",
@@ -2332,6 +2329,16 @@ const DICT: Record<string, string> = {
   "1 enlace": "1 link",
   "EEE d MMM": "EEE, d MMM",
   "d MMM yy": "d MMM yy",
+  "{count} activas": "{count} ativas",
+  "Añade funciones a Frame": "Adicione funções ao Frame",
+  "Volver a Ajustes": "Voltar para Ajustes",
+  "Buscar extensiones": "Buscar extensões",
+  "Abrir {name}": "Abrir {name}",
+  "De terceros": "De terceiros",
+  "Ninguna extensión coincide con «{query}».": "Nenhuma extensão corresponde a “{query}”.",
+  "Versión {version}": "Versão {version}",
+  "Actívala para instalarla; antes verás los permisos que pide.": "Ative para instalar; antes você verá as permissões que ela pede.",
+  "Permisos": "Permissões",
 };
 
 export default DICT;

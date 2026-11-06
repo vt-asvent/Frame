@@ -1822,6 +1822,8 @@ pub fn run() {
 // ============================================================
 // Icono de la barra de tareas según su tema (1.7.3). Windows no adapta el
 // icono de una ventana: con la barra oscura va el logo claro y al revés.
+// Con el logo del 6-nov-2026 ambas variantes son el mismo símbolo (se lee
+// bien en las dos barras); el mecanismo queda por si vuelve a hacer falta.
 // Se mira el modo del sistema (la barra), no el tema de la app.
 // ============================================================
 

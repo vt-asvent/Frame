@@ -2088,11 +2088,8 @@ const DICT: Record<string, string> = {
   "Oficial": "公式",
   "Desactivar {name}": "{name} をオフにする",
   "Activar {name}": "{name} をオンにする",
-  "Más opciones de {name}": "{name} のその他のオプション",
-  "Permisos y detalles": "権限と詳細",
   "Desinstalar": "アンインストール",
   "Desactivada: no hace nada y conserva sus ajustes.": "オフ：何も動作せず、設定は保持されます。",
-  "Catálogo de Asvent": "Asvent カタログ",
   "¿Desinstalar {name}?": "{name} をアンインストールしますか？",
   "Se borra todo lo que guardó en este equipo: sus ajustes, la carpeta elegida y sus llaves. Lo que trajo a Frame (tareas, fechas, canciones) se queda. Puedes volver a instalarla cuando quieras.": "このパソコンに保存したもの（設定、選んだフォルダー、キー）はすべて削除されます。Frame に取り込んだもの（タスク、日付、曲）は残ります。いつでも再インストールできます。",
   "Instalada el {date}": "{date} にインストール",
@@ -2332,6 +2329,16 @@ const DICT: Record<string, string> = {
   "1 enlace": "リンク 1 件",
   "EEE d MMM": "M月d日(EEE)",
   "d MMM yy": "yy年M月d日",
+  "{count} activas": "{count} 個がオン",
+  "Añade funciones a Frame": "Frame に機能を追加",
+  "Volver a Ajustes": "設定に戻る",
+  "Buscar extensiones": "拡張機能を検索",
+  "Abrir {name}": "{name} を開く",
+  "De terceros": "サードパーティ",
+  "Ninguna extensión coincide con «{query}».": "「{query}」に一致する拡張機能はありません。",
+  "Versión {version}": "バージョン {version}",
+  "Actívala para instalarla; antes verás los permisos que pide.": "オンにするとインストールされます。先に必要な権限が表示されます。",
+  "Permisos": "権限",
 };
 
 export default DICT;

@@ -2093,11 +2093,8 @@ const EN: Record<string, string> = {
   "Oficial": "Official",
   "Desactivar {name}": "Turn off {name}",
   "Activar {name}": "Turn on {name}",
-  "Más opciones de {name}": "More options for {name}",
-  "Permisos y detalles": "Permissions and details",
   "Desinstalar": "Uninstall",
   "Desactivada: no hace nada y conserva sus ajustes.": "Turned off: it does nothing and keeps its settings.",
-  "Catálogo de Asvent": "Asvent catalog",
   "¿Desinstalar {name}?": "Uninstall {name}?",
   "Se borra todo lo que guardó en este equipo: sus ajustes, la carpeta elegida y sus llaves. Lo que trajo a Frame (tareas, fechas, canciones) se queda. Puedes volver a instalarla cuando quieras.": "Everything it saved on this computer is deleted: its settings, the chosen folder and its keys. What it brought into Frame (tasks, dates, songs) stays. You can install it again whenever you like.",
   "Instalada el {date}": "Installed on {date}",
@@ -2334,6 +2331,16 @@ const EN: Record<string, string> = {
   "Dice si Frame está lista para conectarse y qué falta.": "Tells whether Frame is ready to connect and what’s missing.",
   "No se pudo abrir Frame. Ábrela tú y vuelve a intentarlo.": "Frame couldn’t be opened. Open it yourself and try again.",
   "Frame cerró la conexión.": "Frame closed the connection.",
+  "{count} activas": "{count} on",
+  "Añade funciones a Frame": "Add features to Frame",
+  "Volver a Ajustes": "Back to Settings",
+  "Buscar extensiones": "Search extensions",
+  "Abrir {name}": "Open {name}",
+  "De terceros": "Third-party",
+  "Ninguna extensión coincide con «{query}».": "No extension matches “{query}”.",
+  "Versión {version}": "Version {version}",
+  "Actívala para instalarla; antes verás los permisos que pide.": "Turn it on to install it; you’ll see the permissions it asks for first.",
+  "Permisos": "Permissions",
 };
 
 export default EN;
