@@ -1770,6 +1770,9 @@ pub fn run() {
                 if let Some(icon) = taskbar_icon() {
                     let _ = window.set_icon(icon);
                 }
+                if let Ok(hwnd) = window.hwnd() {
+                    set_titlebar_icon(hwnd.0 as isize);
+                }
             }
 
 
@@ -1790,6 +1793,9 @@ pub fn run() {
                     tauri::WindowEvent::ThemeChanged(_) | tauri::WindowEvent::Focused(true) => {
                         if let Some(icon) = taskbar_icon() {
                             let _ = window.set_icon(icon);
+                            if let Ok(hwnd) = window.hwnd() {
+                                set_titlebar_icon(hwnd.0 as isize);
+                            }
                         }
                     }
                     tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
@@ -1872,3 +1878,28 @@ fn taskbar_icon() -> Option<tauri::image::Image<'static>> {
     };
     tauri::image::Image::from_bytes(bytes).ok()
 }
+
+/// Icono pequeño de la barra de título (1.7.6): el mismo logo con margen, para
+/// que no se vea más grande que el texto «Frame». La barra de tareas sigue con
+/// el icono sin margen (`set_icon` pone los dos; este reemplaza solo el pequeño).
+#[cfg(windows)]
+fn set_titlebar_icon(hwnd: isize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIcon, SendMessageW, ICON_SMALL, WM_SETICON};
+    let Ok(image) = tauri::image::Image::from_bytes(include_bytes!("../icons/titlebar.png")) else { return };
+    let (w, h) = (image.width() as i32, image.height() as i32);
+    // CreateIcon quiere BGRA; la máscara AND va vacía (manda el alfa).
+    let mut bgra = image.rgba().to_vec();
+    for px in bgra.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+    let mask = vec![0u8; ((w + 15) / 16 * 2 * h) as usize];
+    unsafe {
+        let icon = CreateIcon(std::ptr::null_mut(), w, h, 1, 32, mask.as_ptr(), bgra.as_ptr());
+        if !icon.is_null() {
+            SendMessageW(hwnd as _, WM_SETICON, ICON_SMALL as usize, icon as isize);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_titlebar_icon(_hwnd: isize) {}

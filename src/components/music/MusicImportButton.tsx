@@ -21,6 +21,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { EchoHeader } from '@/components/shared/EchoWord';
 import MusicSourceDialog from '@/components/extensions/MusicSourceDialog';
+import EngineMusicDialog from '@/components/extensions/EngineMusicDialog';
 import { useContributions } from '@/lib/extensions/store';
 import { useCourse } from '@/context/CourseContext';
 import { useToast } from '@/hooks/use-toast';
@@ -56,6 +57,8 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [noSource, setNoSource] = useState(false);
   const activeSource = sources.find((s) => s.id === sourceId) ?? null;
+  // Con una fuente que Frame sabe manejar (1.7.6), «Importar» abre su ventana directamente.
+  const engineSource = sources.find((s) => s.value.engine) ?? null;
   const [stage, setStage] = useState<Stage>('idle');
   const [plan, setPlan] = useState<MusicImportPlan | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, title: '' });
@@ -147,7 +150,20 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
 
   return (
     <>
-      {/* No modal: abrir el menú no bloquea el resto de la pantalla. */}
+      {engineSource ? (
+        variant === 'empty' ? (
+          <Button className="mt-2" onClick={() => setSourceId(engineSource.id)}>
+            <FolderInput className="mr-2 h-4 w-4" />
+            {tr('Importar música')}
+          </Button>
+        ) : (
+          <Button onClick={() => setSourceId(engineSource.id)} title={tr('Descargar canciones o importarlas de tu equipo')}>
+            <FolderInput className="h-4 w-4" />
+            {tr('Importar')}
+          </Button>
+        )
+      ) : (
+      /* No modal: abrir el menú no bloquea el resto de la pantalla. */
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           {variant === 'empty' ? (
@@ -203,8 +219,24 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
 
-      {activeSource && (
+      {activeSource?.value.engine && (
+        <EngineMusicDialog
+          id={activeSource.id}
+          manifest={activeSource.manifest}
+          source={activeSource.value}
+          open={!!activeSource}
+          onOpenChange={(open) => !open && setSourceId(null)}
+          onImport={(picked, quiet) => void importFrom(picked, quiet)}
+          onLocal={(folder) => {
+            setSourceId(null);
+            void choose(folder);
+          }}
+        />
+      )}
+
+      {activeSource && !activeSource.value.engine && (
         <MusicSourceDialog
           id={activeSource.id}
           manifest={activeSource.manifest}

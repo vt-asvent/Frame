@@ -143,6 +143,7 @@ Support is offered for the current stable version and the one immediately before
 
 **${appVersion} — ${releaseDate}**
 
+*1.7.6:* **Extensions as cards** with a preview (videos play on hover) · third-party extensions enabled for everyone that appear when you **search for them by name** · with a compatible download extension, “Import” opens its own window: YouTube video, **320 kbps MP3 download** with cover and lyrics, or a song **CSV** · in Settings, a **custom color** with a professional picker (HEX, RGB, HSL, eyedropper) and a **comparison** of what Advanced mode changes · Wire and AI Connections show their logos · smaller logos in the sidebar and the title bar.
 *1.7.5:* after updating, Frame **leaves no traces** of previous versions on your computer · the sidebar logo shows in full.
 
 *1.7.4:* **final Frame logo** in the app, the taskbar, the installer and the website · **Extensions** move out of Settings into their own section, with a search box: each one is a row with its switch and its own panel (Wire, with its live relay inside).

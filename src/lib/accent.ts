@@ -23,8 +23,8 @@ export type AccentId =
   | 'violeta'
   | 'rosa'
   | 'coral'
-  | 'ambar'
-  | 'grafito';
+  | 'grafito'
+  | 'personal';
 
 /** Valores HSL sin `hsl()`, como los usa globals.css («H S% L%»). */
 interface AccentTone {
@@ -88,12 +88,6 @@ export const ACCENTS: readonly AccentDef[] = [
     dark: { primary: '8 85% 75%', foreground: '8 60% 14%', second: '35 90% 70%' },
   },
   {
-    id: 'ambar',
-    name: 'Ámbar',
-    light: { primary: '30 85% 34%', foreground: WHITE, second: '45 90% 45%' },
-    dark: { primary: '40 92% 66%', foreground: '30 60% 12%', second: '20 90% 68%' },
-  },
-  {
     id: 'grafito',
     name: 'Grafito',
     light: { primary: '220 12% 24%', foreground: WHITE, second: '220 10% 50%' },
@@ -103,6 +97,65 @@ export const ACCENTS: readonly AccentDef[] = [
 
 export const DEFAULT_ACCENT: AccentId = 'marino';
 const STORAGE_KEY = 'frameAccent';
+/** Color propio (1.7.6): el hex que eligió el usuario en el selector. */
+const CUSTOM_KEY = 'frameAccentCustom';
+/** El ámbar salió de la lista en la 1.7.6: quien lo tenía pasa a su color propio. */
+const AMBAR_HEX = '#9E5B0A';
+export const DEFAULT_CUSTOM_HEX = '#2C7BE5';
+
+// ---- Color propio: de un hex a sus tonos claro y oscuro ----
+
+export function hexToHsl(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  const n = m ? parseInt(m[1], 16) : 0x2c7be5;
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, sat = 0;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h *= 60;
+  }
+  return [Math.round(h), Math.round(sat * 100), Math.round(l * 100)];
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Los dos tonos de un color propio: en claro, oscuro lo justo para texto
+ *  blanco encima; en oscuro, claro lo justo para texto oscuro encima. */
+export function customAccent(hex: string): AccentDef {
+  const [h, sat, l] = hexToHsl(hex);
+  const s2 = clamp(sat, 0, 90);
+  const second = (h + 40) % 360;
+  return {
+    id: 'personal',
+    name: 'Color propio',
+    light: { primary: `${h} ${s2}% ${clamp(l, 18, 42)}%`, foreground: WHITE, second: `${second} ${clamp(s2, 30, 80)}% 50%` },
+    dark: { primary: `${h} ${clamp(s2, 0, 85)}% ${clamp(l, 68, 82)}%`, foreground: `${h} 50% 12%`, second: `${second} ${clamp(s2, 30, 80)}% 72%` },
+  };
+}
+
+export function getCustomHex(): string {
+  try {
+    const v = localStorage.getItem(CUSTOM_KEY);
+    if (v && /^#[0-9a-f]{6}$/i.test(v)) return v.toUpperCase();
+  } catch {
+    /* sin almacenamiento */
+  }
+  return DEFAULT_CUSTOM_HEX;
+}
+
+/** Guarda el color propio y lo deja como acento. */
+export function setCustomAccent(hex: string): void {
+  try {
+    localStorage.setItem(CUSTOM_KEY, hex.toUpperCase());
+  } catch {
+    /* se aplica igual en esta sesión */
+  }
+  setAccent('personal');
+}
 /** Hoja ya armada, para que index.html la aplique antes del primer pintado. */
 const CSS_KEY = 'frameAccentCss';
 const STYLE_ID = 'frame-accent';
@@ -111,12 +164,19 @@ const ACCENT_EVENT = 'frame-accent-changed';
 export const ACCENT_CHANGED_EVENT = 'frame:accent-changed';
 
 export function accentById(id: string | null | undefined): AccentDef {
+  if (id === 'personal') return customAccent(getCustomHex());
   return ACCENTS.find((a) => a.id === id) ?? ACCENTS[0];
 }
 
 export function getAccent(): AccentId {
   try {
-    return accentById(localStorage.getItem(STORAGE_KEY)).id;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'ambar') {
+      localStorage.setItem(CUSTOM_KEY, AMBAR_HEX);
+      localStorage.setItem(STORAGE_KEY, 'personal');
+      return 'personal';
+    }
+    return accentById(stored).id;
   } catch {
     return DEFAULT_ACCENT;
   }
@@ -181,7 +241,7 @@ export function readAccentTokens(): { primary: string; foreground: string; secon
 export function initAccent(): void {
   applyAccent();
   window.addEventListener('storage', (event) => {
-    if (event.key === STORAGE_KEY) applyAccent();
+    if (event.key === STORAGE_KEY || event.key === CUSTOM_KEY) applyAccent();
   });
   void (async () => {
     try {

@@ -30,7 +30,8 @@ import { tr } from '@/lib/i18n';
 //     "musicSource": {
 //       "page": "http://127.0.0.1:47321/", // solo este equipo
 //       "label": "Busca y descarga",       // opcional
-//       "folderHint": { "base": "downloads", "path": "Mi carpeta" } // opcional
+//       "folderHint": { "base": "downloads", "path": "Mi carpeta" }, // opcional
+//       "engine": "yt-mp3/1"               // opcional: protocolo que Frame sabe hablar
 //     },
 //     "appearance": {                       // permiso «appearance»
 //       "accent": { "name": "Menta", "light": "#2F8F6B", "dark": "#8FD3B6" },
@@ -119,7 +120,17 @@ export interface MusicSourceContribution {
   label?: string;
   /** Carpeta donde el programa deja lo que descarga (solo para proponerla). */
   folderHint?: FolderHint;
+  /**
+   * Protocolo que el programa habla, si Frame lo conoce. Con «yt-mp3/1» Frame
+   * abre su propia ventana (vídeo incrustado, CSV, descarga en MP3 a 320 kbps)
+   * en lugar de la página del programa. Rutas: GET /status, POST /search,
+   * /info, /song, GET /jobs.
+   */
+  engine?: MusicEngine;
 }
+
+export const MUSIC_ENGINES = ['yt-mp3/1'] as const;
+export type MusicEngine = (typeof MUSIC_ENGINES)[number];
 
 /** Animaciones de Frame que un mod puede variar (extensión Animaciones). */
 export const ANIMATION_BASES = ['constelacion', 'olas', 'aurora'] as const;
@@ -331,7 +342,19 @@ export function parseManifest(raw: string): ManifestResult {
       if (label === null) return fail(tr('El texto de la fuente de música es demasiado largo.'));
       const hint = folderHint(s.folderHint);
       if (hint === null) return fail(tr('La carpeta propuesta de la fuente de música no es válida.'));
-      contributes.musicSource = { page: s.page, ...(label ? { label } : {}), ...(hint ? { folderHint: hint } : {}) };
+      let engine: MusicEngine | undefined;
+      if (s.engine !== undefined) {
+        if (typeof s.engine !== 'string' || !(MUSIC_ENGINES as readonly string[]).includes(s.engine)) {
+          return fail(tr('Esta versión de Frame no conoce el protocolo de la fuente de música.'));
+        }
+        engine = s.engine as MusicEngine;
+      }
+      contributes.musicSource = {
+        page: s.page,
+        ...(label ? { label } : {}),
+        ...(hint ? { folderHint: hint } : {}),
+        ...(engine ? { engine } : {}),
+      };
     }
     if (c.appearance !== undefined) {
       const look = appearance(c.appearance);

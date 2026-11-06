@@ -203,7 +203,7 @@ export function SidebarContent({
                 title={collapsed ? tr('Expandir menú') : tr('Contraer menú')}
                 className="h-10 w-10 rounded-full flex items-center justify-center transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <FrameLogo className="h-9 w-9" />
+                <FrameLogo className="h-8 w-8" />
               </button>
               {!collapsed && <h1 className="select-none text-xl font-bold text-foreground">{tr('FRAME')}</h1>}
             </div>

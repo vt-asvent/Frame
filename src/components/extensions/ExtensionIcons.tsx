@@ -1,4 +1,6 @@
-import { Bot, Library, Music, Palette, Puzzle, Sparkles, Waypoints } from 'lucide-react';
+import { Bot, Library, Music, Palette, Puzzle, Sparkles } from 'lucide-react';
+import wireLogo from '@/assets/extensiones/wire.png';
+import claudeLogo from '@/assets/extensiones/claude.png';
 import { cn } from '@/lib/utils';
 import type { ExtensionManifest } from '@/lib/extensions/manifest';
 
@@ -14,8 +16,8 @@ export function NotionLogo({ className }: { className?: string }) {
 const TILE = 'flex shrink-0 items-center justify-center rounded-lg h-9 w-9';
 
 /**
- * Icono de cada extensión, en su baldosa. Notion lleva su marca (la N negra
- * sobre blanco); las demás de Asvent, el acento de Frame; las de terceros, un
+ * Icono de cada extensión, en su baldosa. Notion, Wire y las Conexiones con IA
+ * (Claude) llevan su marca; las demás de Asvent, el acento de Frame; las de terceros, un
  * icono según lo que aportan, en gris: se distinguen de un vistazo.
  */
 export function ExtensionIcon({ id, manifest, className }: { id?: string; manifest?: ExtensionManifest | null; className?: string }) {
@@ -26,10 +28,17 @@ export function ExtensionIcon({ id, manifest, className }: { id?: string; manife
       </span>
     );
   }
+  // Wire lleva su logo oficial y las Conexiones con IA el de Claude (1.7.6).
+  const logos: Record<string, string> = { 'frame.wire': wireLogo, 'frame.ia': claudeLogo };
+  if (logos[id]) {
+    return (
+      <span className={cn(TILE, 'overflow-hidden', className)}>
+        <img src={logos[id]} alt="" aria-hidden draggable={false} className="h-full w-full object-contain" />
+      </span>
+    );
+  }
   const official: Record<string, typeof Bot> = {
-    'frame.wire': Waypoints,
     'frame.animaciones': Sparkles,
-    'frame.ia': Bot,
     'frame.aklore': Library,
   };
   const Icon = official[id];

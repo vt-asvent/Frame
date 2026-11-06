@@ -22,19 +22,22 @@ import {
   ChevronDown,
   Languages,
   Puzzle,
+  Info,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { accountCode } from '@/lib/account-code';
 import RealNameRow from '@/components/settings/RealNameRow';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/lib/theme';
-import { ACCENTS, getAccent, setAccent, type AccentId } from '@/lib/accent';
+import { ACCENTS, customAccent, getAccent, getCustomHex, setAccent, setCustomAccent, type AccentId } from '@/lib/accent';
+import ColorPicker from '@/components/settings/ColorPicker';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { saveImage } from '@/lib/music-db';
 import { useStoredImage } from '@/hooks/use-stored-image';
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
@@ -141,8 +144,49 @@ function ThemeSelector() {
   );
 }
 
-// Color de acento (1.7.3): ocho opciones, cada una con su versión clara y
-// oscura (lib/accent.ts). Cada muestra enseña el tono del tema actual.
+// Color de acento (1.7.3): siete opciones, cada una con su versión clara y
+// oscura (lib/accent.ts), y desde la 1.7.6 un color propio con su selector
+// (el último círculo). Cada muestra enseña el tono del tema actual.
+function CustomAccentButton({ selected, onApply }: { selected: boolean; onApply: (hex: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const hex = getCustomHex();
+  const tone = customAccent(hex);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selected}
+          title={tr('Color propio')}
+          aria-label={tr('Color propio')}
+          className={cn(
+            'relative h-[18px] w-[18px] overflow-hidden rounded-full border border-border/60 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            selected && 'ring-2 ring-foreground/80 ring-offset-2 ring-offset-background'
+          )}
+          style={selected ? undefined : { background: 'conic-gradient(from 0deg,#f43f5e,#f59e0b,#84cc16,#06b6d4,#6366f1,#d946ef,#f43f5e)' }}
+        >
+          {selected && (
+            <>
+              <span className="absolute inset-0 dark:hidden" style={{ background: `hsl(${tone.light.primary})` }} />
+              <span className="absolute inset-0 hidden dark:block" style={{ background: `hsl(${tone.dark.primary})` }} />
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="w-auto p-3">
+        <ColorPicker
+          initial={hex}
+          onApply={(value) => {
+            onApply(value);
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function AccentSelector() {
   const [accent, setAccentState] = useState<AccentId>(() => getAccent());
   // Con el color de un mod (extensión Animaciones), este queda guardado debajo.
@@ -178,6 +222,13 @@ function AccentSelector() {
             </button>
           );
         })}
+        <CustomAccentButton
+          selected={accent === 'personal'}
+          onApply={(hex) => {
+            setCustomAccent(hex);
+            setAccentState('personal');
+          }}
+        />
       </div>
       {modAccent && <p className="max-w-[11rem] text-center text-[10px] leading-tight text-muted-foreground">{tr('Ahora manda el color de un mod (Extensiones › Animaciones).')}</p>}
     </div>
@@ -200,6 +251,8 @@ function AdvancedModeCard() {
           {tr('Añade el modo Rendimiento (enfoque de 1 a 20 y notas AD, A, B y C), el calendario de calificaciones, el progreso académico, las metas diarias, los informes y la importancia, dificultad, tiempo estimado y avance de las tareas. Al apagarlo no se borra nada: solo se oculta.')}
         </p>
       </div>
+      <div className="flex shrink-0 items-center gap-1">
+      <AdvancedCompareButton />
       <Switch
         id="advanced-mode"
         checked={advancedMode}
@@ -207,7 +260,61 @@ function AdvancedModeCard() {
         aria-label={tr('Modo Avanzado')}
         className="data-[state=unchecked]:bg-muted-foreground/30"
       />
+      </div>
     </div>
+  );
+}
+
+/** Qué cambia con el modo Avanzado, en dos columnas (1.7.6). */
+const ADVANCED_COMPARE: { area: string; basic: string; advanced: string }[] = [
+  { area: 'Estudio', basic: 'Temporizador y sesiones', advanced: 'Además, el modo Rendimiento: enfoque de 1 a 20 y notas AD, A, B y C' },
+  { area: 'Calendario', basic: 'Tareas y fechas', advanced: 'Además, el calendario de calificaciones' },
+  { area: 'Asignaturas', basic: 'Asignaturas, tareas y notas', advanced: 'Además, el progreso académico de cada una' },
+  { area: 'Tareas', basic: 'Título, fecha y asignatura', advanced: 'Además, importancia, dificultad, tiempo estimado y avance' },
+  { area: 'Metas', basic: 'Meta de racha', advanced: 'Además, metas diarias de estudio (en minutos)' },
+  { area: 'Ajustes', basic: 'Tu expediente', advanced: 'Además, los informes de rendimiento y de pendientes' },
+];
+
+function AdvancedCompareButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 text-muted-foreground hover:text-primary"
+        onClick={() => setOpen(true)}
+        title={tr('Qué cambia con el modo Avanzado')}
+        aria-label={tr('Qué cambia con el modo Avanzado')}
+      >
+        <Info className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-primary">{tr('Qué cambia con el modo Avanzado')}</DialogTitle>
+            <DialogDescription>{tr('Al apagarlo no se borra nada: solo se oculta.')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border/60 text-sm">
+            <div className="border-b border-r border-border/60 bg-muted/40 px-3 py-2 font-semibold">{tr('Esencial')}</div>
+            <div className="border-b border-border/60 bg-primary/10 px-3 py-2 font-semibold text-primary">{tr('Avanzado')}</div>
+            {ADVANCED_COMPARE.map((row, i) => (
+              <React.Fragment key={row.area}>
+                <div className={cn('border-r border-border/60 px-3 py-2', i < ADVANCED_COMPARE.length - 1 && 'border-b')}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{tr(row.area)}</p>
+                  <p>{tr(row.basic)}</p>
+                </div>
+                <div className={cn('px-3 py-2', i < ADVANCED_COMPARE.length - 1 && 'border-b border-border/60')}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{tr(row.area)}</p>
+                  <p>{tr(row.advanced)}</p>
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -624,8 +731,24 @@ export default function SettingsPage() {
           </div>
         </div>
         
-        <div className="pt-6">
+        {/* Modo Avanzado (mitad izquierda) y Extensiones (mitad derecha), 1.7.6.
+            La sección de extensiones está en /extensiones. */}
+        <div className="grid grid-cols-1 gap-4 pt-6 md:grid-cols-2">
           <AdvancedModeCard />
+          <button
+            type="button"
+            onClick={() => navigate('/extensiones')}
+            className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
+          >
+            <Puzzle className="h-5 w-5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">{tr('Extensiones')}</span>
+              <span className="block text-xs text-muted-foreground">
+                {extensionsOn > 0 ? tr('{count} activas', { count: extensionsOn }) : tr('Añade funciones a Frame')}
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
         </div>
 
         {/* Metas diarias (minutos) y escala AD/A/B/C: modo Avanzado. Las
@@ -776,25 +899,6 @@ export default function SettingsPage() {
                 </div>
                 )}
             </div>
-        </div>
-
-        {/* Extensiones: una sola fila; su sección propia está en /extensiones
-            (cada una con su panel, Wire con su relevo en vivo). */}
-        <div className="pt-6">
-          <button
-            type="button"
-            onClick={() => navigate('/extensiones')}
-            className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
-          >
-            <Puzzle className="h-5 w-5 shrink-0 text-primary" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-foreground">{tr('Extensiones')}</span>
-              <span className="block truncate text-xs text-muted-foreground">
-                {extensionsOn > 0 ? tr('{count} activas', { count: extensionsOn }) : tr('Añade funciones a Frame')}
-              </span>
-            </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </button>
         </div>
 
         <p className="pt-12 text-xs text-center text-muted-foreground">

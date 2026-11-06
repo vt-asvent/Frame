@@ -151,6 +151,7 @@ Se ofrece soporte para la versión estable vigente y para la inmediatamente ante
 
 **${appVersion} — ${releaseDate}**
 
+*1.7.6:* **Extensiones en tarjetas** con vista previa (los vídeos se reproducen al pasar el cursor) · extensiones de terceros que se activan para todos y aparecen al **buscarlas por su nombre** · con una extensión de descargas compatible, «Importar» abre una ventana propia: vídeo de YouTube, **descarga en MP3 de 320 kbps** con portada y letra, o un **CSV** de canciones · en Ajustes, **color propio** con selector profesional (HEX, RGB, HSL, cuentagotas) y una **comparativa** de lo que cambia el modo Avanzado · Wire y las Conexiones con IA con su logo · logos más pequeños en la barra lateral y en la barra de título.
 *1.7.5:* al actualizarse, Frame **no deja rastros** de las versiones anteriores en el equipo · el logo de la barra lateral se ve entero.
 
 *1.7.4:* **logo definitivo** de Frame en la app, la barra de tareas, el instalador y la web · **Extensiones** salen de Ajustes a su propia sección, con buscador: cada una es una fila con su interruptor y su panel aparte (Wire, con su relevo en vivo dentro).

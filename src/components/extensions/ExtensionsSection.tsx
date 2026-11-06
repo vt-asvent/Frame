@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, ExternalLink, FileUp, Search, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileUp, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -34,17 +34,30 @@ import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { markWireJustInstalled, WireSection } from '@/components/extensions/wire/WireViews';
 import { WIRE } from '@/lib/extensions/wire/relay';
+import { useCatalog } from '@/lib/extensions/remote-catalog';
+
+/** Vistas previas de las oficiales (1.7.6): captura .webp o vídeo .webm de menos de 5 s. */
+const PREVIEW_FILES = import.meta.glob('/src/assets/extensiones/previews/*.{webp,png,webm}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+const PREVIEWS: Record<string, string> = Object.fromEntries(
+  Object.entries(PREVIEW_FILES).map(([file, url]) => [file.split('/').pop()!.replace(/\.(webp|png|webm)$/, ''), url])
+);
 
 // ============================================================
 // Extensiones (1.7.3, rehecho el 6-nov-2026): una sección propia, fuera del
 // menú principal. Se llega desde una sola fila en Ajustes (/extensiones).
 //
 // - Arriba, un buscador. Sin texto se ven solo las oficiales; al escribir se
-//   filtra en vivo entre las oficiales y las de terceros instaladas.
-// - Cada extensión es una fila compacta: logo, nombre, una línea y su
-//   interruptor. Encender una que no está instalada abre la aceptación de
-//   permisos. Tocar la fila abre su propio panel (ajustes, permisos,
-//   desinstalar); nada se despliega dentro de la lista.
+//   filtra en vivo entre las oficiales, las de terceros instaladas y las del
+//   catálogo remoto (1.7.6: estas solo aparecen al buscarlas por su nombre).
+// - Cada extensión es una tarjeta (un tercio del ancho, 1.7.6): arriba su
+//   nombre y su interruptor; abajo una vista previa de lo que hace en Frame
+//   (los vídeos se reproducen al pasar el cursor). Encender una que no está
+//   instalada abre la aceptación de permisos. Tocar la tarjeta abre su propio
+//   panel (ajustes, permisos, desinstalar).
 // - Lo que aporta una extensión activa vive en su sitio natural (Descargar en
 //   Música, AK Lore en la barra lateral), no aquí.
 // - `?ext=<id>` abre directamente el panel de esa extensión.
@@ -62,6 +75,10 @@ interface Row {
   manifest: ExtensionManifest;
   official: boolean;
   entry: InstalledExtension | null;
+  /** Vista previa remota (catálogo), si la tiene. */
+  preview?: string | null;
+  /** Del catálogo remoto y sin instalar: solo se ve al buscarla. */
+  remote?: boolean;
 }
 
 const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -71,6 +88,7 @@ export default function ExtensionsCenter() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const installed = useInstalledExtensions();
+  const catalog = useCatalog();
   const fileRef = useRef<HTMLInputElement>(null);
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState('');
@@ -97,13 +115,25 @@ export default function ExtensionsCenter() {
     });
     const thirdParty: Row[] = installed
       .filter((i) => i.manifest)
-      .map((i) => ({ id: i.id, manifest: i.manifest!, official: false, entry: i }));
-    return [...officials, ...thirdParty];
-  }, [installed, domainHash]);
+      .map((i) => ({
+        id: i.id,
+        manifest: i.manifest!,
+        official: false,
+        entry: i,
+        preview: catalog.find((c) => c.id === i.id)?.preview ?? null,
+      }));
+    const remote: Row[] = catalog
+      .filter((c) => !installed.some((i) => i.id === c.id))
+      .map((c) => ({ id: c.id, manifest: c.manifest, official: false, entry: null, preview: c.preview, remote: true }));
+    return [...officials, ...thirdParty, ...remote];
+  }, [installed, domainHash, catalog]);
 
   const q = normalize(query.trim());
   const visible = q
-    ? rows.filter((r) => normalize(`${r.manifest.name} ${r.manifest.description} ${r.manifest.author}`).includes(q))
+    ? rows.filter((r) =>
+        // Las del catálogo, solo por su nombre (no aparecen buscando «música»).
+        r.remote ? normalize(r.manifest.name).includes(q) : normalize(`${r.manifest.name} ${r.manifest.description} ${r.manifest.author}`).includes(q)
+      )
     : rows.filter((r) => r.official);
 
   const open = rows.find((r) => r.id === openId) ?? null;
@@ -167,63 +197,32 @@ export default function ExtensionsCenter() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-6">
-      <div className="mb-4 flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')} aria-label={tr('Volver a Ajustes')}>
+    <div className="mx-auto w-full max-w-5xl px-4 py-6">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => navigate('/settings')} aria-label={tr('Volver a Ajustes')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-primary">{tr('Extensiones')}</h1>
-          <p className="text-xs text-muted-foreground">
-            {tr('Añaden funciones a Frame en este equipo. Se desactivan o se quitan cuando quieras, sin dejar rastro.')}
-          </p>
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={tr('Buscar extensiones')}
+            aria-label={tr('Buscar extensiones')}
+            className="pl-9"
+            autoFocus
+          />
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={tr('Buscar extensiones')}
-          aria-label={tr('Buscar extensiones')}
-          className="pl-9"
-          autoFocus
-        />
-      </div>
-
-      <ul className="mt-3 divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
-        {visible.map((row) => {
-          const on = !!row.entry?.enabled;
-          return (
-            <li key={row.id} className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40">
-              <button
-                type="button"
-                onClick={() => setOpen(row.id)}
-                className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none"
-                aria-label={tr('Abrir {name}', { name: row.manifest.name })}
-              >
-                <ExtensionIcon id={row.id} manifest={row.manifest} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    {row.manifest.name}
-                    {!row.official && <span className="text-[10px] font-bold text-muted-foreground">{tr('De terceros')}</span>}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">{row.manifest.description}</span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
-              <Switch
-                checked={on}
-                onCheckedChange={(value) => toggle(row, value)}
-                aria-label={on ? tr('Desactivar {name}', { name: row.manifest.name }) : tr('Activar {name}', { name: row.manifest.name })}
-                className="data-[state=unchecked]:bg-muted-foreground/30"
-              />
-            </li>
-          );
-        })}
+      <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        {visible.map((row) => (
+          <ExtensionCard key={row.id} row={row} onOpen={() => setOpen(row.id)} onToggle={(value) => toggle(row, value)} />
+        ))}
         {visible.length === 0 && (
-          <li className="px-3 py-6 text-center text-xs text-muted-foreground">{tr('Ninguna extensión coincide con «{query}».', { query })}</li>
+          <li className="col-span-full rounded-lg border border-border/60 px-3 py-8 text-center text-xs text-muted-foreground">
+            {tr('Ninguna extensión coincide con «{query}».', { query })}
+          </li>
         )}
       </ul>
 
@@ -272,6 +271,72 @@ export default function ExtensionsCenter() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/** Tarjeta de una extensión: nombre e interruptor arriba, vista previa abajo. */
+function ExtensionCard({ row, onOpen, onToggle }: { row: Row; onOpen: () => void; onToggle: (on: boolean) => void }) {
+  const on = !!row.entry?.enabled;
+  const src = PREVIEWS[row.id] ?? row.preview ?? null;
+  const isVideo = !!src && /\.(webm|mp4)(\?|$)/i.test(src);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const play = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    void video.play().catch(() => undefined);
+  };
+  const stop = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.currentTime = 0;
+  };
+
+  return (
+    <li
+      className="group flex flex-col gap-2.5 rounded-xl border border-border/60 bg-card p-3 transition-colors hover:border-primary/40"
+      onMouseEnter={play}
+      onMouseLeave={stop}
+    >
+      <div className="flex items-center gap-2.5">
+        <ExtensionIcon id={row.id} manifest={row.manifest} className="h-7 w-7 rounded-md [&_svg]:h-4 [&_svg]:w-4" />
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-foreground focus-visible:outline-none"
+          title={row.manifest.description}
+        >
+          {row.manifest.name}
+          {!row.official && <span className="ml-2 text-[10px] font-bold text-muted-foreground">{tr('De terceros')}</span>}
+        </button>
+        <Switch
+          checked={on}
+          onCheckedChange={onToggle}
+          aria-label={on ? tr('Desactivar {name}', { name: row.manifest.name }) : tr('Activar {name}', { name: row.manifest.name })}
+          className="data-[state=unchecked]:bg-muted-foreground/30"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        onFocus={play}
+        onBlur={stop}
+        aria-label={tr('Abrir {name}', { name: row.manifest.name })}
+        className="relative aspect-video w-full overflow-hidden rounded-lg border border-border/60 bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {src && isVideo ? (
+          <video ref={videoRef} src={src} muted loop playsInline preload="metadata" className="h-full w-full object-cover" />
+        ) : src ? (
+          <img src={src} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full flex-col items-center justify-center gap-2 p-3">
+            <ExtensionIcon id={row.id} manifest={row.manifest} className="h-12 w-12 rounded-xl [&_svg]:h-7 [&_svg]:w-7" />
+            <span className="line-clamp-2 text-center text-[11px] text-muted-foreground">{row.manifest.description}</span>
+          </span>
+        )}
+      </button>
+    </li>
   );
 }
 

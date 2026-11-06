@@ -1,6 +1,6 @@
 [package]
 name = "frame"
-version = "1.7.5"
+version = "1.7.6"
 description = "Sistema Operativo de Productividad"
 authors = ["Asvent <vt.asvent@gmail.com>"]
 edition = "2021"
@@ -34,7 +34,7 @@ rfd = "0.15"
 [target.'cfg(windows)'.dependencies]
 # «Pegar» del menú propio de los campos de texto: lee el portapapeles.
 # Security_Cryptography: DPAPI, para las llaves de las extensiones (1.7.3).
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_Security_Cryptography", "Win32_System_Registry"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_Security_Cryptography", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 # Binario mínimo: casi todo el trabajo nativo es de entrada y salida (archivos,
