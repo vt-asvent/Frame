@@ -12,6 +12,7 @@ import { startQuickRecording } from '@/lib/quick-recording';
 import type { RecorderState } from '@/components/recordings/RecordingDialog';
 import type { UserProfile } from '@/types';
 import { tr, useLang } from '@/lib/i18n';
+import { ChromePattern, useChromePattern } from '@/components/extensions/animaciones/Mosaic';
 
 // La frase propia (clave `headerQuote`) se retiró en la 1.6.2: la barra ya no
 // muestra un texto escrito a mano sino frases con los datos del usuario. Se
@@ -230,13 +231,17 @@ export default function Header({ userProfile }: HeaderProps) {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, []);
 
+  const chromePattern = useChromePattern('cabecera');
+
   // Para el saludo: el nombre de pila si lo hay; el invitado, sin nombre.
   const greetName = userProfile && !userProfile.isGuest
     ? userProfile.firstNames?.trim() || userProfile.username
     : undefined;
 
   return (
-    <header className="flex h-[60px] flex-shrink-0 items-center justify-between gap-3 border-b bg-background px-4">
+    <header className={cn('flex h-[60px] flex-shrink-0 items-center justify-between gap-3 border-b bg-background px-4', chromePattern && 'relative isolate')}>
+      {/* Figuras de Animaciones detrás de la cabecera (1.8.0), si el usuario las puso aquí. */}
+      {chromePattern && <ChromePattern chrome={chromePattern} size={180} />}
       {/* Los dos extremos miden lo mismo: así la frase queda centrada de verdad. */}
       <div className="flex w-36 shrink-0 items-center justify-start gap-2">
         {/* Crear una tarea o una anotación sin salir de donde estés. */}

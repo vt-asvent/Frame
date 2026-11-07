@@ -154,7 +154,7 @@ For the purposes of these Terms, the following terms have the meaning assigned t
 
 ### Clause 10. Third-Party Services
 
-**10.1.** The Application integrates Third-Party Services, in particular the services of Google LLC —Gmail, YouTube and Classroom— and the infrastructure of **Supabase**.
+**10.1.** The Application integrates Third-Party Services, in particular the services of Google LLC —Gmail, YouTube, Classroom and Drive—, the infrastructure of **Supabase** and, if you connect web AI chats, that of **Cloudflare**.
 
 **10.2.** The use of those services is governed by the terms and policies of their respective owners, which the User accepts directly with them. The Provider is not a party to that relationship.
 
@@ -323,7 +323,7 @@ Frame is designed so that **most of your information never leaves your computer*
 
 ### 3.1 Data that stays exclusively on your device
 
-Subjects, collections, teachers, tasks and their content, resource notes, attachments, study sessions, focus ratings, grades, habits, local calendar events, schedules, goals, voice recordings, images and the music library, with the covers and lyrics that your songs carry or that you add to them.
+Subjects, collections, teachers, tasks and their content, resource notes, attachments, study sessions, focus ratings, grades, habits, local calendar events, schedules, goals, voice recordings, images and the music library, with the covers and lyrics that your songs carry or that you add to them, and what you listen to in it (plays and time per song, playlist and artist, day by day).
 
 **We don’t carry out any processing of this data**: it isn’t transmitted to the Provider or to third parties, except for the subset described in 3.2 when you sign in.
 
@@ -347,6 +347,16 @@ Your email, the installation identifier and the content of your message, exclusi
 
 We don’t collect precise geolocation data —the weather location is set on your computer, whether the Application detects it or you choose it, and only the city, region and country described in 3.4 leave it—, we don’t access your camera, we don’t track your activity outside the Application, we don’t include third-party advertising or tracking tools, and we don’t process special categories of data.
 
+### 3.7 Web AI chats
+
+Only if you connect a web chat —for example, claude.ai or ChatGPT— from the AI Connections extension, and while it stays connected:
+
+**What passes through without being stored.** Each request from the chat and your Frame’s answer —which may include your tasks, subjects, habits, events, sessions, reports and music— travel encrypted through a relay of the Provider hosted on Cloudflare, which delivers them to the Frame you have open and returns the answer to the chat. **The relay doesn’t store the calls or their answers**, nor use them for anything else.
+
+**What is stored so the connection works.** Your Account identifier; the name each chat presents itself with and its return addresses; each chat’s connection codes, authorizations and sessions, as an encrypted fingerprint (SHA-256) and with their dates; the list of tools Frame offers; and, while a Frame is connected to the relay, a random identifier of that device, its system (Windows or Android), the Frame version and the time of its last connection.
+
+**How to cut it off.** “Disconnect the chats”, in the extension, instantly deletes your sessions and codes and voids the accesses in progress. Deleting your Account from a device with the extension does the same; if you delete it from another one, those sessions no longer work and are deleted when they expire. What the chat does with what it receives is governed by its provider’s privacy policy (for example, Anthropic or OpenAI), with whom you deal directly.
+
 ## 4. Purposes and legal bases
 
 **Providing the service.** Account data and the replicated Academic State are processed to authenticate you, keep the backup and synchronize your information between devices. **Legal basis:** performance of the contractual relationship established in the Terms and Conditions. Without this data the Account Services can’t be provided.
@@ -354,6 +364,8 @@ We don’t collect precise geolocation data —the weather location is set on yo
 **Account security.** Access logs are processed to detect unauthorized access and abuse. **Legal basis:** the Provider’s legitimate interest in the security of the service, weighed against your rights.
 
 **Diagnosis and improvement.** The data in section 3.4 is processed to detect failures, measure the use of the functions in aggregate, guide development and **produce aggregated statistics on the Application’s effect on study habits** (for example, how many students use it or how the recorded study time evolves), which may be disseminated only as overall figures in which no person is identifiable. The person responsible for Frame can view these indicators **per student** in an internal panel —next to your username, if you have an Account— to understand how the Application is used and to find where it fails; reports with that detail are for **internal use** and are neither disseminated nor shared. It leaves your computer **pseudonymized and aggregated** —counts, totals and timestamps associated with a random identifier— and **never includes the content of your tasks, notes, recordings or documents**. **Legal basis:** the Provider’s legitimate interest in keeping the Application working and fixing its failures, weighed against your rights and limited to what is strictly necessary for that purpose; it isn’t used for advertising, to build profiles or to make automated decisions that affect you. **You can object at any time** by writing to vt.asvent@gmail.com and stating your installation identifier, which you’ll find in “Settings → System information”: the records associated with that installation will be deleted and those that arrive afterwards won’t be kept. The Application **doesn’t yet include its own switch** to turn off these submissions; until it does, that address is the way to exercise your objection. **Objecting doesn’t affect any function of the Application.**
+
+**Web AI chats.** The data in section 3.7 is processed to connect the chat you chose with your Frame and keep that connection. **Legal basis:** your consent, which you give when connecting the chat and withdraw with “Disconnect the chats”.
 
 **Handling questions and reports.** **Legal basis:** your consent when you write to us and the legitimate interest in assisting you.
 
@@ -375,17 +387,19 @@ If we become aware that data from a minor under fourteen has been collected with
 
 **6.2.** The servers are located in the United States of America (Amazon Web Services region us-west-2, Oregon). This involves a **cross-border flow of personal data**, of which you are hereby informed and for which the safeguards required by Peruvian regulations have been adopted. The updated list of processors and sub-processors appears in Annex B.
 
-**6.3.** When you use the Gmail, YouTube or Classroom interfaces, **you interact directly with Google LLC** under its own privacy policy. In that relationship Google is the data controller and the Provider doesn’t take part.
+**6.3.** When you use the Gmail, YouTube, Classroom or Drive interfaces, **you interact directly with Google LLC** under its own privacy policy. In that relationship Google is the data controller and the Provider doesn’t take part.
 
 **6.4. Limited use commitment.** The Application’s use of information received from Google APIs complies with the *Google API Services User Data Policy*, including its limited use requirements. In particular, that data **is used only to provide or improve user-facing features, isn’t transferred to third parties except to provide those features or when required by law, isn’t used for advertising and isn’t read by humans** except with express consent, a legal requirement or for security reasons.
 
 **6.4 bis. Music, covers and lyrics.** The Application doesn’t download songs, covers or lyrics, or query any service to search for them: it plays the files you import and shows the cover and lyrics those files carry, the ones you add from your device and the ones earlier versions already saved on it, which are kept. None of it leaves your computer.
 
+**6.4 ter. Web AI chats.** The relay in section 3.7 runs on **Cloudflare, Inc.**, which acts as a **data processor**: it processes the calls in the data centers of its worldwide network and keeps the relay’s database in North America. This involves another **cross-border flow of personal data**, of which you are informed when connecting the chat. The chat you connect processes what it receives as the controller of that processing, under its own policy.
+
 **6.5.** We don’t transfer personal data to third parties other than those indicated, except at the request of a competent authority in the exercise of its functions.
 
 ## 7. Retention periods
 
-Account data and replicated Academic State: while the Account remains active. Inactive accounts: up to twenty-four (24) months, with the notice provided for in the Terms. Diagnostic data: a maximum of twelve (12) months from its receipt. Support communications: up to twenty-four (24) months from the closing of the case. Records of acceptance of the Terms: for the duration of the relationship and four (4) years afterwards, as proof of the contract. Security logs: six (6) months.
+Account data and replicated Academic State: while the Account remains active. Inactive accounts: up to twenty-four (24) months, with the notice provided for in the Terms. Diagnostic data: a maximum of twelve (12) months from its receipt. Support communications: up to twenty-four (24) months from the closing of the case. Records of acceptance of the Terms: for the duration of the relationship and four (4) years afterwards, as proof of the contract. Security logs: six (6) months. Web AI chats: connection codes, ten (10) minutes; authorizations, five (5) minutes; sessions, up to one hundred eighty (180) days from their last use or until you disconnect the chats; calls and their answers aren’t kept.
 
 Once the period expires, the data is deleted or irreversibly anonymized.
 
@@ -453,6 +467,7 @@ This annex details, category by category, what is processed and what for. It ful
 | Usage profile: approximate city, region and country, time zone, languages, device type, study hours, streaks and how many items you have in each feature | Understanding where, when and how Frame is used (internal panel of the person responsible) | Pseudonymized; never coordinates or content; you can object by email |
 | Access logs | Account security | Kept for 6 months |
 | Support communications | Handling the case | Kept for 24 months |
+| Web AI chat sessions (Account identifier, chat name, fingerprints and dates) | Connecting the chat you chose with your Frame | Cloudflare, only if you connect a chat; calls aren’t stored |
 
 ## Annex B — Data processors and sub-processors
 
@@ -460,6 +475,7 @@ List in force as of ${effectiveDate}:
 
 - **Supabase** — authentication, database and backup storage — servers in the United States of America (Amazon Web Services region us-west-2, Oregon) — processing contract: to be defined; in the meantime, the data processing agreement incorporated into Supabase’s terms of service applies.
 - **GitHub, Inc.** — hosting of the installers and the update channel — United States.
+- **Cloudflare, Inc.** — relay for web AI chats, only if you connect them (section 3.7) — worldwide network of data centers; database in North America — the data processing agreement incorporated into Cloudflare’s terms of service applies.
 
 Every addition or replacement of a processor will be communicated in accordance with section 12 of the Privacy Policy.
 
@@ -495,7 +511,7 @@ Frame incorporates free and open-source software components, among them the desk
 
 **F.2.** The Application uses local storage on the device to keep your session, your interface preferences and the state of the application. It’s essential for it to work.
 
-**F.3.** The Gmail, YouTube and Classroom interfaces are shown through embedded web components that load Google’s services directly. **Google may install its own cookies and tracking technologies in the context of those components**, in accordance with its privacy policy, over which the Provider has no control or visibility.
+**F.3.** The Gmail, YouTube, Classroom and Drive interfaces are shown through embedded web components that load Google’s services directly. **Google may install its own cookies and tracking technologies in the context of those components**, in accordance with its privacy policy, over which the Provider has no control or visibility.
 
 **F.4.** Signing out of Google from those interfaces removes the corresponding persistent session.`;
 }

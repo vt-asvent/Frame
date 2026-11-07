@@ -556,8 +556,11 @@ const NEW_WINDOW_LINKS_JS: &str = r#"
 /// Páginas de Google incrustadas. Cada perfil de Frame tiene su propia carpeta
 /// de datos (cookies y sesión de Google): en un equipo compartido nadie hereda
 /// el correo ni las clases de quien usó Frame antes (1.6.7).
-const EMBED_LABELS: [&str; 3] = ["gmail-embed", "youtube-embed", "classroom-embed"];
+const EMBED_LABELS: [&str; 4] = ["gmail-embed", "youtube-embed", "classroom-embed", "drive-embed"];
 static EMBED_PROFILE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// La cuenta con que se abrió Drive (la de Wire, 1.8.0): si cambia, se vuelve
+/// a abrir con la nueva.
+static DRIVE_ACCOUNT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 /// Carpeta de datos de las páginas incrustadas de un perfil.
 fn embed_data_dir(app: &tauri::AppHandle, profile: &str) -> Result<std::path::PathBuf, String> {
@@ -618,8 +621,26 @@ fn embed_service(kind: &str) -> Option<(&'static str, &'static str, &'static [&'
         "gmail" => Some(("gmail-embed", "https://mail.google.com/", &["mail.google.com"])),
         "youtube" => Some(("youtube-embed", "https://www.youtube.com/", &["www.youtube.com", "youtube.com", "m.youtube.com"])),
         "classroom" => Some(("classroom-embed", "https://classroom.google.com/", &["classroom.google.com"])),
+        // Drive (1.8.0, con Wire): los documentos que abre en otra ventana van
+        // al navegador, como los enlaces de Classroom.
+        "drive" => Some(("drive-embed", "https://drive.google.com/drive/my-drive", &["drive.google.com"])),
         _ => None,
     }
+}
+
+/// La dirección con que se abre un servicio: en el idioma de Frame (sin `hl`,
+/// Google saldría en el de Windows) y, si se pide, con una cuenta concreta
+/// (`authuser`: Google elige esa entre las que tienen sesión abierta).
+fn embed_url(base: &str, account: Option<&str>) -> Result<tauri::Url, String> {
+    let mut url = base.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("hl", ui("es", "en"));
+        if let Some(account) = account {
+            query.append_pair("authuser", account);
+        }
+    }
+    Ok(url)
 }
 
 /// `google.com/url?q=…` (los enlaces de un correo pasan por ahí): el destino real.
@@ -664,12 +685,18 @@ async fn google_embed_update(
     height: f64,
     visible: bool,
     profile: String,
+    account: Option<String>,
 ) -> Result<(), String> {
     use tauri::{LogicalPosition, LogicalSize};
 
     let (label, base, home) = embed_service(&kind).ok_or("Servicio no permitido.")?;
-    // En el idioma de Frame: sin `hl`, Google saldría en el de Windows.
-    let url = format!("{base}?hl={}", ui("es", "en"));
+    // Solo Drive se abre con una cuenta concreta: la conectada en Wire.
+    let account = if kind == "drive" {
+        account.map(|a| a.trim().to_string()).filter(|a| !a.is_empty() && a.len() <= 320)
+    } else {
+        None
+    };
+    let url = embed_url(base, account.as_deref())?;
 
     // Otro perfil: las páginas del anterior se cierran antes de nada.
     {
@@ -686,6 +713,14 @@ async fn google_embed_update(
 
     if let Some(webview) = app.get_webview(label) {
         if visible {
+            // Otra cuenta en Wire: Drive se vuelve a abrir con ella.
+            if kind == "drive" {
+                let mut last = DRIVE_ACCOUNT.lock().map_err(|e| e.to_string())?;
+                if *last != account {
+                    *last = account.clone();
+                    let _ = webview.navigate(url.clone());
+                }
+            }
             webview
                 .set_size(LogicalSize::new(w, h))
                 .map_err(|e| e.to_string())?;
@@ -711,9 +746,12 @@ async fn google_embed_update(
     // páginas y el botón no hacía nada. El inicio de sesión se abre aquí
     // mismo; un enlace a otro sitio, en el navegador del sistema. Los enlaces
     // `_blank` llegan aquí gracias a NEW_WINDOW_LINKS_JS.
+    if kind == "drive" {
+        *DRIVE_ACCOUNT.lock().map_err(|e| e.to_string())? = account.clone();
+    }
     let app_ = app.clone();
     let builder =
-        tauri::webview::WebviewBuilder::new(label, tauri::WebviewUrl::External(url.parse().unwrap()))
+        tauri::webview::WebviewBuilder::new(label, tauri::WebviewUrl::External(url))
             // Cookies y sesión de Google de ESTE perfil, aparte de las de los demás.
             .data_directory(embed_data_dir(&app, &profile)?)
             // El reproductor vive a veces en un iframe: hay que parchear todos.

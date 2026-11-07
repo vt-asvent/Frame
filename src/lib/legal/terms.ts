@@ -168,7 +168,7 @@ A efectos de estos Términos, los siguientes términos tienen el significado que
 
 ### Cláusula 10. Servicios de Terceros
 
-**10.1.** La Aplicación integra Servicios de Terceros, en particular los servicios de Google LLC —Gmail, YouTube y Classroom— y la infraestructura de **Supabase**.
+**10.1.** La Aplicación integra Servicios de Terceros, en particular los servicios de Google LLC —Gmail, YouTube, Classroom y Drive—, la infraestructura de **Supabase** y, si conectas chats de IA en la web, la de **Cloudflare**.
 
 **10.2.** El uso de dichos servicios se rige por los términos y políticas de sus respectivos titulares, que el Usuario acepta directamente con ellos. El Proveedor no es parte de esa relación.
 
@@ -337,7 +337,7 @@ Frame está diseñada para que **la mayor parte de tu información nunca salga d
 
 ### 3.1 Datos que permanecen exclusivamente en tu dispositivo
 
-Asignaturas, colecciones, profesores, tareas y su contenido, notas de recursos, adjuntos, sesiones de estudio, valoraciones de enfoque, calificaciones, hábitos, eventos del calendario local, horarios, metas, grabaciones de voz, imágenes y biblioteca de música, con las portadas y letras que traen tus canciones o que tú les añades.
+Asignaturas, colecciones, profesores, tareas y su contenido, notas de recursos, adjuntos, sesiones de estudio, valoraciones de enfoque, calificaciones, hábitos, eventos del calendario local, horarios, metas, grabaciones de voz, imágenes y biblioteca de música, con las portadas y letras que traen tus canciones o que tú les añades, y lo que escuchas en ella (reproducciones y tiempo por canción, playlist y artista, día a día).
 
 **Sobre estos datos no realizamos tratamiento alguno**: no se transmiten al Proveedor ni a terceros, salvo el subconjunto descrito en 3.2 cuando inicias sesión.
 
@@ -361,6 +361,16 @@ Tu correo, el identificador de instalación y el contenido de tu mensaje, exclus
 
 No recogemos datos de geolocalización precisa —la ubicación del clima se fija en tu equipo, la detecte la Aplicación o la elijas tú, y de ella solo sale la ciudad, la región y el país descritos en 3.4—, no accedemos a tu cámara, no rastreamos tu actividad fuera de la Aplicación, no incorporamos herramientas publicitarias ni de seguimiento de terceros, y no tratamos categorías especiales de datos.
 
+### 3.7 Chats de IA en la web
+
+Solo si conectas un chat de la web —por ejemplo, claude.ai o ChatGPT— desde la extensión Conexiones con IA, y mientras siga conectado:
+
+**Lo que pasa sin guardarse.** Cada pedido del chat y la respuesta de tu Frame —que pueden incluir tus tareas, asignaturas, hábitos, eventos, sesiones, informes y música— viajan cifrados por un relé del Proveedor alojado en Cloudflare, que los entrega a la Frame que tengas abierta y devuelve la respuesta al chat. **El relé no guarda las llamadas ni sus respuestas**, ni las usa para nada más.
+
+**Lo que se guarda para que la conexión funcione.** El identificador de tu Cuenta; el nombre con que se presenta cada chat y sus direcciones de retorno; los códigos de conexión, las autorizaciones y las sesiones de cada chat, como huella cifrada (SHA-256) y con sus fechas; la lista de herramientas que ofrece Frame; y, mientras una Frame está conectada al relé, un identificador aleatorio de ese equipo, su sistema (Windows o Android), la versión de Frame y la hora de su última conexión.
+
+**Cómo se corta.** «Desconectar los chats», en la extensión, borra al instante tus sesiones y códigos y anula los accesos en curso. Al eliminar tu Cuenta desde un equipo con la extensión pasa lo mismo; si la eliminas desde otro, esas sesiones ya no sirven y se borran al caducar. Lo que el chat hace con lo que recibe se rige por la política de privacidad de su proveedor (por ejemplo, Anthropic u OpenAI), con quien te relacionas directamente.
+
 ## 4. Finalidades y bases legales
 
 **Prestar el servicio.** Los datos de cuenta y el Estado Académico replicado se tratan para autenticarte, mantener la copia de seguridad y sincronizar tu información entre dispositivos. **Base legal:** ejecución de la relación contractual establecida en los Términos y Condiciones. Sin estos datos los Servicios de Cuenta no pueden prestarse.
@@ -368,6 +378,8 @@ No recogemos datos de geolocalización precisa —la ubicación del clima se fij
 **Seguridad de la cuenta.** Los registros de acceso se tratan para detectar accesos no autorizados y abusos. **Base legal:** interés legítimo del Proveedor en la seguridad del servicio, ponderado con tus derechos.
 
 **Diagnóstico y mejora.** Los datos del apartado 3.4 se tratan para detectar fallos, medir de forma agregada el uso de las funciones, orientar el desarrollo y **elaborar estadísticas agregadas sobre el efecto de la Aplicación en los hábitos de estudio** (por ejemplo, cuántos estudiantes la usan o cómo evoluciona el tiempo de estudio registrado), que pueden difundirse únicamente como cifras de conjunto en las que ninguna persona es identificable. El responsable de Frame puede consultar estos indicadores **por estudiante** en un panel interno —junto al nombre de usuario, si tienes Cuenta— para entender cómo se usa la Aplicación y detectar dónde falla; los informes con ese detalle son de **uso interno** y no se difunden ni se ceden. Salen de tu equipo **seudonimizados y agregados** —recuentos, totales y marcas temporales asociados a un identificador aleatorio— y **nunca incluyen el contenido de tus tareas, notas, grabaciones ni documentos**. **Base legal:** el interés legítimo del Proveedor en mantener la Aplicación en funcionamiento y corregir sus fallos, ponderado con tus derechos y limitado a lo estrictamente necesario para esa finalidad; no se emplean con fines publicitarios, ni para elaborar perfiles, ni para tomar decisiones automatizadas que te afecten. **Puedes oponerte en cualquier momento** escribiendo a vt.asvent@gmail.com e indicando tu identificador de instalación, que encontrarás en «Ajustes → Información del sistema»: se suprimirán los registros asociados a esa instalación y no se conservarán los que lleguen después. La Aplicación **no incorpora todavía un interruptor propio** para desactivar estos envíos; mientras no exista, esa dirección es la vía para ejercer tu oposición. **Oponerte no afecta a ninguna función de la Aplicación.**
+
+**Chats de IA en la web.** Los datos del apartado 3.7 se tratan para conectar con tu Frame el chat que tú elegiste y mantener esa conexión. **Base legal:** tu consentimiento, que das al conectar el chat y retiras con «Desconectar los chats».
 
 **Atención de consultas y reportes.** **Base legal:** tu consentimiento al escribirnos y el interés legítimo en atenderte.
 
@@ -389,17 +401,19 @@ Si tenemos conocimiento de que se han recogido datos de un menor de catorce año
 
 **6.2.** Los servidores se ubican en Estados Unidos de América (región de Amazon Web Services us-west-2, Oregón). Ello supone un **flujo transfronterizo de datos personales**, del que quedas informado y respecto del cual se han adoptado las garantías exigidas por la normativa peruana. La relación actualizada de encargados y subencargados figura en el Anexo B.
 
-**6.3.** Cuando utilizas las interfaces de Gmail, YouTube o Classroom, **interactúas directamente con Google LLC** conforme a su propia política de privacidad. En esa relación Google es responsable del tratamiento y el Proveedor no interviene.
+**6.3.** Cuando utilizas las interfaces de Gmail, YouTube, Classroom o Drive, **interactúas directamente con Google LLC** conforme a su propia política de privacidad. En esa relación Google es responsable del tratamiento y el Proveedor no interviene.
 
 **6.4. Compromiso de uso limitado.** El uso que la Aplicación hace de la información recibida de las API de Google se ajusta a la *Google API Services User Data Policy*, incluidos sus requisitos de uso limitado. En particular, esos datos **se emplean únicamente para proveer o mejorar las funciones visibles al usuario, no se transfieren a terceros salvo para prestar esas funciones o por exigencia legal, no se usan con fines publicitarios y no se someten a lectura humana** salvo consentimiento expreso, requerimiento legal o razones de seguridad.
 
 **6.4 bis. Música, portadas y letras.** La Aplicación no descarga canciones, portadas ni letras, ni consulta ningún servicio para buscarlas: reproduce los archivos que tú importas y muestra la portada y la letra que traen esos archivos, las que tú añades desde tu dispositivo y las que versiones anteriores ya guardaron en él, que se conservan. Nada de ello sale de tu equipo.
 
+**6.4 ter. Chats de IA en la web.** El relé del apartado 3.7 funciona sobre **Cloudflare, Inc.**, que actúa como **encargado de tratamiento**: procesa las llamadas en los centros de datos de su red mundial y guarda la base de datos del relé en Norteamérica. Ello supone otro **flujo transfronterizo de datos personales**, del que quedas informado al conectar el chat. El chat que conectas trata lo que recibe como responsable de ese tratamiento, conforme a su propia política.
+
 **6.5.** No cedemos datos personales a terceros distintos de los indicados, salvo requerimiento de autoridad competente en el ejercicio de sus funciones.
 
 ## 7. Plazos de conservación
 
-Datos de cuenta y Estado Académico replicado: mientras la Cuenta permanezca activa. Cuentas inactivas: hasta veinticuatro (24) meses, con el preaviso previsto en los Términos. Datos de diagnóstico: máximo doce (12) meses desde su recepción. Comunicaciones de soporte: hasta veinticuatro (24) meses desde el cierre del caso. Registros de aceptación de los Términos: mientras dure la relación y cuatro (4) años después, como prueba del contrato. Registros de seguridad: seis (6) meses.
+Datos de cuenta y Estado Académico replicado: mientras la Cuenta permanezca activa. Cuentas inactivas: hasta veinticuatro (24) meses, con el preaviso previsto en los Términos. Datos de diagnóstico: máximo doce (12) meses desde su recepción. Comunicaciones de soporte: hasta veinticuatro (24) meses desde el cierre del caso. Registros de aceptación de los Términos: mientras dure la relación y cuatro (4) años después, como prueba del contrato. Registros de seguridad: seis (6) meses. Chats de IA en la web: códigos de conexión, diez (10) minutos; autorizaciones, cinco (5) minutos; sesiones, hasta ciento ochenta (180) días desde su último uso o hasta que desconectes los chats; las llamadas y sus respuestas no se conservan.
 
 Vencido el plazo, los datos se suprimen o se anonimizan de forma irreversible.
 
@@ -467,6 +481,7 @@ Este anexo detalla, categoría por categoría, qué se trata y para qué. Cumple
 | Perfil de uso: ciudad, región y país aproximados, zona horaria, idiomas, tipo de equipo, horas de estudio, rachas y cuántos elementos tienes de cada función | Entender dónde, cuándo y cómo se usa Frame (panel interno del responsable) | Seudonimizado; nunca coordenadas ni contenido; puedes oponerte por correo |
 | Registros de acceso | Seguridad de la Cuenta | Conservación de 6 meses |
 | Comunicaciones de soporte | Atención del caso | Conservación de 24 meses |
+| Sesiones de los chats de IA en la web (identificador de la Cuenta, nombre del chat, huellas y fechas) | Conectar con tu Frame el chat que elegiste | Cloudflare, solo si conectas un chat; las llamadas no se guardan |
 
 ## Anexo B — Encargados de tratamiento y subencargados
 
@@ -474,6 +489,7 @@ Relación vigente a ${effectiveDate}:
 
 - **Supabase** — autenticación, base de datos y almacenamiento de la copia de seguridad — servidores en Estados Unidos de América (región de Amazon Web Services us-west-2, Oregón) — contrato de encargo: por definir; rige entretanto el acuerdo de tratamiento de datos incorporado a las condiciones de servicio de Supabase.
 - **GitHub, Inc.** — alojamiento de los instaladores y del canal de actualizaciones — Estados Unidos.
+- **Cloudflare, Inc.** — relé de los chats de IA en la web, solo si los conectas (apartado 3.7) — red mundial de centros de datos; base de datos en Norteamérica — rige el acuerdo de tratamiento de datos incorporado a las condiciones de servicio de Cloudflare.
 
 Toda incorporación o sustitución de encargado se comunicará conforme al apartado 12 de la Política de Privacidad.
 
@@ -509,7 +525,7 @@ Frame incorpora componentes de software libre y abierto, entre ellos el marco de
 
 **F.2.** La Aplicación emplea almacenamiento local en el dispositivo para conservar tu sesión, tus preferencias de interfaz y el estado de la aplicación. Es imprescindible para su funcionamiento.
 
-**F.3.** Las interfaces de Gmail, YouTube y Classroom se muestran mediante componentes web incrustados que cargan directamente los servicios de Google. **Google puede instalar sus propias cookies y tecnologías de seguimiento en el contexto de esos componentes**, conforme a su política de privacidad, sobre la que el Proveedor no tiene control ni visibilidad.
+**F.3.** Las interfaces de Gmail, YouTube, Classroom y Drive se muestran mediante componentes web incrustados que cargan directamente los servicios de Google. **Google puede instalar sus propias cookies y tecnologías de seguimiento en el contexto de esos componentes**, conforme a su política de privacidad, sobre la que el Proveedor no tiene control ni visibilidad.
 
 **F.4.** Cerrar sesión en Google desde esas interfaces elimina la sesión persistente correspondiente.`;
 }

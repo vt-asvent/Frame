@@ -16,6 +16,7 @@ import { isSessionEditable } from '@/lib/session-edit';
 import { DEFAULT_EVENT_COLOR, EVENT_KIND_META, getEventsForDay, kindLabelOf } from '@/lib/calendar-events';
 import { richNoteToPlain } from '@/lib/rich-note';
 import { songMatches } from '@/lib/music-search';
+import { listeningBetween, periodRange } from '@/lib/listening';
 import { buildPerformanceDoc, buildReport, rangeLabel, reportRange, type ReportScope } from '@/lib/performance-report';
 import { buildPendingReport, pendingReportFileBase } from '@/lib/pending-report';
 import { renderDocMarkdown } from '@/lib/report-doc';
@@ -882,6 +883,28 @@ const HANDLERS: Record<string, Handler> = {
       playlists: [...ctx.playlists]
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((p) => ({ id: p.id, nombre: p.name, canciones_en_este_equipo: p.songIds.filter((id) => ids.has(id)).length })),
+    });
+  },
+
+  estadisticas_de_musica: async (args, env) => {
+    const owner = env.ctx().userProfile?.id;
+    if (!owner) fail('No hay ninguna sesión abierta en Frame.');
+    const scope = choice(args, 'periodo', ['semana', 'mes', 'anio'] as const) ?? 'semana';
+    const day = dayArg(args, 'fecha');
+    const limit = num(args, 'limite', 1, 50) ?? 10;
+    const { from, to } = periodRange(scope, day ? dateOfDay(day) : new Date());
+    const stats = await listeningBetween(owner, from, to);
+    const minutes = (seconds: number) => Math.round((seconds / 60) * 10) / 10;
+    return json({
+      periodo: { desde: format(from, 'yyyy-MM-dd'), hasta: format(to, 'yyyy-MM-dd') },
+      minutos_escuchados: minutes(stats.seconds),
+      reproducciones: stats.plays,
+      canciones_distintas: stats.songs.length,
+      artistas_distintos: stats.artists.length,
+      canciones: stats.songs.slice(0, limit).map((x) => ({ titulo: x.title, artista: x.artist || null, minutos: minutes(x.seconds), reproducciones: x.plays })),
+      artistas: stats.artists.slice(0, limit).map((x) => ({ nombre: x.name, horas: Math.round((x.seconds / 3600) * 100) / 100, reproducciones: x.plays })),
+      playlists: stats.lists.slice(0, limit).map((x) => ({ id: x.id, nombre: x.name, minutos: minutes(x.seconds), reproducciones: x.plays })),
+      nota: 'Una reproducción cuenta a los 30 s escuchados (a la mitad si la canción dura menos de un minuto).',
     });
   },
 

@@ -16,6 +16,7 @@ const pages = {
   gmail: () => import('@/app/(main)/gmail/page'),
   youtube: () => import('@/app/(main)/youtube/page'),
   classroom: () => import('@/app/(main)/classroom/page'),
+  drive: () => import('@/app/(main)/drive/page'),
   music: () => import('@/app/(main)/music/page'),
   playlists: () => import('@/app/(main)/playlists/page'),
   cursos: () => import('@/app/(main)/cursos/page'),
@@ -32,6 +33,7 @@ const CalendarioPage = lazy(pages.calendario);
 const GmailPage = lazy(pages.gmail);
 const YoutubePage = lazy(pages.youtube);
 const ClassroomPage = lazy(pages.classroom);
+const DrivePage = lazy(pages.drive);
 const MusicPage = lazy(pages.music);
 const PlaylistsPage = lazy(pages.playlists);
 const CursosPage = lazy(pages.cursos);
@@ -66,6 +68,7 @@ export default function App() {
           <Route path="/gmail" element={<GmailPage />} />
           <Route path="/youtube" element={<YoutubePage />} />
           <Route path="/classroom" element={<ClassroomPage />} />
+          <Route path="/drive" element={<DrivePage />} />
           <Route path="/music" element={<MusicPage />} />
           <Route path="/playlists" element={<PlaylistsPage />} />
           <Route path="/cursos" element={<CursosPage />} />

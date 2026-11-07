@@ -61,7 +61,7 @@ Frame distinguishes three storage places. Knowing the difference is what prevent
 
 **In your account, if you signed in.** Your **academic state** —subjects, tasks, sessions, grades, habits, events, playlists with their order, study videos and settings— is replicated in the cloud and merged across devices: each change reaches your other devices in under a second, encrypted. This replica is what lets you switch machines, or use your phone, without losing anything. The **language**, the **image proportion** of the cards and the weather city you pick by hand also follow your account; the theme belongs to each device. Your **profile picture** and the **schedule image** travel in a private folder of your account; the images from **Frame’s gallery** that you give your playlists, subjects and collections travel as a reference (which one it is and how you cropped it) and each device recreates it.
 
-**Nowhere but your computer, always.** **Music** (with its covers and lyrics), **voice recordings**, **attachments** and **the images you upload yourself** to playlists, subjects and collections are excluded from the cloud because of their size. To have your music on another device, copy your files there and import them. The bell tells you what isn’t the same on your devices, where and why (sync checker).
+**Nowhere but your computer, always.** **Music** (with its covers and lyrics), **voice recordings**, **attachments** and **the images you upload yourself** to playlists, subjects and collections are excluded from the cloud because of their size. Your **listening stats** don’t leave your computer either. To have your music on another device, copy your files there and import them. The bell tells you what isn’t the same on your devices, where and why (sync checker).
 
 **A guest profile has nothing in the cloud.** “Continue as a guest” creates a local profile to try Frame instantly: all of its information lives only on this computer. To keep it safe, link your account with Google or with your email (the “G” next to your profile, at the bottom of the menu, or Settings → gear → “Link my account”): everything moves to your account, is added to what it already had without deleting anything and gets backed up.
 
@@ -89,11 +89,11 @@ Each session is a card with its subject, its time and its performance, and it op
 
 ### 4.3 Analysis and reports
 
-The top bar shows phrases with your recent data that change on their own. Home sums up your day: weather, schedule, yesterday’s grade, streak, weekly average, next task, “Your week in data” and the competency matrix (pending workload per subject, not a measure of knowledge). Habits with times of day, rings, a typical week and a consistency map. Performance and pending-tasks **reports** in PDF and Word —weekly, monthly or yearly—, in Settings, with a summary and the real preview of the document.
+The top bar shows phrases with your recent data that change on their own. Home sums up your day: weather, schedule, a Pomodoro with what you studied today and yesterday, your most-played playlist, your streak and “Pending tasks” (the two due soonest); in Advanced mode, also “Your week in data” —pace with the weekly average, consistency and completed tasks— and the competency matrix (pending workload per subject, not a measure of knowledge). Habits with times of day, rings, a typical week and a consistency map. Performance and pending-tasks **reports** in PDF and Word —weekly, monthly or yearly—, in Settings, with a summary and the real preview of the document.
 
 ### 4.4 Calendar, Google and music
 
-An offline local calendar, with cells that adapt to the window’s height: one-day or multi-day events, with a time and the same reminder as tasks (days, time and repetition), cell colors and selecting several days at once by dragging; **YouTube, Gmail and Classroom** built into the sidebar. A library with **your own music**: “Import” brings loose songs or whole folders from your computer —MP3, M4A, AAC, OGG, Opus, FLAC, WAV and WebM— with their cover (the one the file carries, an image with the same name or the folder’s) and their lyrics (the ones in their tags, or an .lrc or .txt with the same name); it separates the title from the artist even if the file has no tags and warns you about what it can’t play. It plays with synced lyrics —which you can also add later, from a file of yours, in “Now playing”—, playlists with their total length and favorites; clicking the playlist name in the player finds the song that’s playing. Voice recording from any screen (\`Ctrl+Shift+F\`), with the limit you choose, up to 4 hours. Updates show their size, the estimated time and the real progress before and during installation.
+An offline local calendar, with cells that adapt to the window’s height: one-day or multi-day events, with a time and the same reminder as tasks (days, time and repetition), cell colors and selecting several days at once by dragging; **YouTube, Gmail and Classroom** built into the sidebar, and **Drive** under Classroom while Wire is on. A library with **your own music**: “Import” brings loose songs or whole folders from your computer —MP3, M4A, AAC, OGG, Opus, FLAC, WAV and WebM— with their cover (the one the file carries, an image with the same name or the folder’s) and their lyrics (the ones in their tags, or an .lrc or .txt with the same name); it separates the title from the artist even if the file has no tags and warns you about what it can’t play. It plays with synced lyrics —which you can also add later, from a file of yours, in “Now playing”—, playlists with their total length and favorites, and **“Your music in numbers”**: how much you listen to each song, playlist and artist by week, month or year, counting only what really plays; clicking the playlist name in the player finds the song that’s playing. Voice recording from any screen (\`Ctrl+Shift+F\`), with the limit you choose, up to 4 hours. Updates show their size, the estimated time and the real progress before and during installation.
 
 ---
 
@@ -121,9 +121,11 @@ Google’s screens require a connection and being signed in to Google, and how t
 
 Frame is built on third-party software distributed under open licenses, listed in full in the **Third-party notices** section of the Terms and Conditions.
 
-Google’s services —Gmail, YouTube and Classroom— are operated by Google LLC; their availability, content and terms depend on Google. Cloud backup and authentication run on **Supabase** infrastructure.
+Google’s services —Gmail, YouTube, Classroom and Drive— are operated by Google LLC; their availability, content and terms depend on Google. Cloud backup and authentication run on **Supabase** infrastructure.
 
 The weather forecast comes from **Open-Meteo**.
+
+Web AI chats (claude.ai, ChatGPT and others) reach Frame through a relay hosted on **Cloudflare**, which passes each call along without storing it (Privacy Policy, 3.7). Claude is a trademark of Anthropic, PBC; ChatGPT, of OpenAI; and Gemini, of Google LLC. Frame isn’t affiliated with or endorsed by those companies.
 
 Notion is a trademark of Notion Labs, Inc.; the extension only reads the files you export yourself and doesn’t connect to its service.
 
@@ -143,7 +145,10 @@ Support is offered for the current stable version and the one immediately before
 
 **${appVersion} — ${releaseDate}**
 
+*1.8.0:* **Your music in numbers**: how much you listen to each song, playlist and artist by week, month or year —only what really plays, and without leaving your computer—, with the plays and time of each playlist and of the song in “Now playing” · **A new Home**: a Pomodoro with what you studied today and yesterday, your most-played playlist, your streak and “Pending tasks”; in Advanced mode, pace, consistency and completed tasks · in Settings, Advanced mode is explained in one line · **Extensions** at a third of the width, with a search bar that counts the ones in use and a page of their own for each · **Animations**: Northern lights, Rising Matrix, Type aurora and Shape mosaic; shapes in the sidebar and the header, background image framing and heading font · **web AI chats**: claude.ai, ChatGPT and other chats with connectors drive Frame through its cloud (Privacy Policy 5.3) · **Drive** in the menu, under Classroom, with Wire’s account.
+
 *1.7.6:* **Extensions as cards** with a preview (videos play on hover) · third-party extensions enabled for everyone that appear when you **search for them by name** · with a compatible download extension, “Import” opens its own window: YouTube video, **320 kbps MP3 download** with cover and lyrics, or a song **CSV** · in Settings, a **custom color** with a professional picker (HEX, RGB, HSL, eyedropper) and a **comparison** of what Advanced mode changes · Wire and AI Connections show their logos · smaller logos in the sidebar and the title bar.
+
 *1.7.5:* after updating, Frame **leaves no traces** of previous versions on your computer · the sidebar logo shows in full.
 
 *1.7.4:* **final Frame logo** in the app, the taskbar, the installer and the website · **Extensions** move out of Settings into their own section, with a search box: each one is a row with its switch and its own panel (Wire, with its live relay inside).

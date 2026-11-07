@@ -7,11 +7,15 @@ import { tr } from '@/lib/i18n';
 // Extensión Animaciones (1.7.3): el fondo de la app como un «mod» de
 // apariencia, solo en este equipo.
 //
-//   · Animaciones: las de Frame (Constelación, que vuelve; Olas; Aurora) y
+//   · Animaciones: las de Frame (Constelación, que vuelve; Olas; Aurora y,
+//     desde 1.8.0, Aurora boreal, Matrix ascendente, Tipoaurora y Mosaico) y
 //     las variantes que traen los mods. Se eligen una o varias; con varias,
 //     se alternan cada día o cada vez que se abre Frame.
 //   · Fondo propio: una imagen del usuario (o la de un mod), velada con el
-//     color del tema para que todo se siga leyendo.
+//     color del tema para que todo se siga leyendo. Desde 1.8.0 ocupa solo
+//     el área de contenido y el usuario elige qué parte se ve (encuadre).
+//   · Barra lateral y cabecera (1.8.0): figuras repetidas, en las dos o en una.
+//   · Tipografía (1.8.0): la de los títulos; el resto del texto no cambia.
 //   · Color de un mod: se pone ENCIMA del acento elegido en Ajustes (que no
 //     se toca ni viaja); al quitar el mod o la extensión, vuelve el de antes.
 //
@@ -22,7 +26,7 @@ import { tr } from '@/lib/i18n';
 export const ANIMACIONES = 'frame.animaciones';
 
 export interface AnimationChoice {
-  /** 'constelacion' | 'olas' | 'aurora' | `mod:<id de la extensión>` */
+  /** El de una animación de Frame ('constelacion', 'matrix'…) o `mod:<id de la extensión>`. */
   id: string;
   name: string;
   base: AnimationBase;
@@ -35,7 +39,46 @@ export const officialAnimations = (): AnimationChoice[] => [
   { id: 'constelacion', name: tr('Constelación'), base: 'constelacion', params: {}, from: null },
   { id: 'olas', name: tr('Olas'), base: 'olas', params: {}, from: null },
   { id: 'aurora', name: tr('Aurora'), base: 'aurora', params: {}, from: null },
+  { id: 'boreal', name: tr('Aurora boreal'), base: 'boreal', params: {}, from: null },
+  { id: 'matrix', name: tr('Matrix ascendente'), base: 'matrix', params: {}, from: null },
+  { id: 'tipoaurora', name: tr('Tipoaurora'), base: 'tipoaurora', params: {}, from: null },
+  { id: 'mosaico', name: tr('Mosaico de figuras'), base: 'mosaico', params: {}, from: null },
 ];
+
+/** Encuadre de la imagen de fondo: qué parte queda a la vista (0–1) y cuánto se acerca. */
+export interface BackgroundFocus {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export const DEFAULT_FOCUS: BackgroundFocus = { x: 0.5, y: 0.5, zoom: 1 };
+
+/** Figuras en la barra lateral y la cabecera. */
+export interface ChromeLook {
+  pattern: 'none' | 'figuras';
+  where: 'ambas' | 'lateral' | 'cabecera';
+  /** 0,2–1: cuánto se notan. */
+  strength: number;
+}
+
+export type HeadingFont = 'poppins' | 'serif' | 'mono' | 'sistema' | 'condensada';
+
+/**
+ * Tipografías de los títulos: solo fuentes que ya trae el sistema (Windows y
+ * Android), así no hay que descargar nada y, si alguna falta, el navegador
+ * pasa a la siguiente de la lista. El texto de la interfaz no cambia.
+ */
+export const HEADING_FONTS: { id: HeadingFont; stack: string | null }[] = [
+  { id: 'poppins', stack: null },
+  { id: 'serif', stack: "Georgia, 'Noto Serif', 'Droid Serif', 'Times New Roman', serif" },
+  { id: 'sistema', stack: "system-ui, 'Segoe UI', Roboto, 'Noto Sans', sans-serif" },
+  { id: 'condensada', stack: "Bahnschrift, 'Roboto Condensed', 'Arial Narrow', sans-serif-condensed, sans-serif" },
+  { id: 'mono', stack: "'Cascadia Code', Consolas, 'Roboto Mono', 'Droid Sans Mono', ui-monospace, monospace" },
+];
+
+export const headingFontName = (id: HeadingFont): string =>
+  id === 'serif' ? tr('Clásica') : id === 'sistema' ? tr('Del sistema') : id === 'condensada' ? tr('Estrecha') : id === 'mono' ? tr('Monoespaciada') : 'Poppins';
 
 export interface LookSettings {
   /** Las animaciones elegidas (vacío: ninguna). */
@@ -46,10 +89,14 @@ export interface LookSettings {
   intensity: number;
   /** 0,5–1,6: lo deprisa que va. */
   speed: number;
-  background: { source: 'own' | string; dim: number; blur: boolean } | null;
+  background: { source: 'own' | string; dim: number; blur: boolean; focus?: BackgroundFocus } | null;
   /** El mod cuyo color se usa (null: el acento de Ajustes). */
   accentFrom: string | null;
+  chrome: ChromeLook;
+  headingFont: HeadingFont;
 }
+
+export const DEFAULT_CHROME: ChromeLook = { pattern: 'none', where: 'ambas', strength: 0.5 };
 
 export const DEFAULT_LOOK: LookSettings = {
   chosen: ['constelacion'],
@@ -58,6 +105,8 @@ export const DEFAULT_LOOK: LookSettings = {
   speed: 1,
   background: null,
   accentFrom: null,
+  chrome: DEFAULT_CHROME,
+  headingFont: 'poppins',
 };
 
 /** El velo mínimo sobre una imagen de fondo: por debajo, el texto pierde. */
@@ -76,7 +125,9 @@ const notify = () => listeners.forEach((fn) => fn());
 export function readLook(): LookSettings {
   if (!cache) {
     const saved = extRead<Partial<LookSettings>>(ANIMACIONES, 'settings', {});
-    cache = { ...DEFAULT_LOOK, ...saved };
+    const look: LookSettings = { ...DEFAULT_LOOK, ...saved, chrome: { ...DEFAULT_CHROME, ...(saved.chrome ?? {}) } };
+    if (!HEADING_FONTS.some((f) => f.id === look.headingFont)) look.headingFont = 'poppins';
+    cache = look;
   }
   return cache;
 }
@@ -85,7 +136,15 @@ export function setLook(patch: Partial<LookSettings>): void {
   const next = { ...readLook(), ...patch };
   next.intensity = clamp(next.intensity, 0.2, 1);
   next.speed = clamp(next.speed, 0.5, 1.6);
-  if (next.background) next.background = { ...next.background, dim: clamp(next.background.dim, MIN_DIM, 0.92) };
+  if (next.background) {
+    const focus = next.background.focus;
+    next.background = {
+      ...next.background,
+      dim: clamp(next.background.dim, MIN_DIM, 0.92),
+      ...(focus ? { focus: { x: clamp(focus.x, 0, 1), y: clamp(focus.y, 0, 1), zoom: clamp(focus.zoom, 1, 4) } } : {}),
+    };
+  }
+  next.chrome = { ...DEFAULT_CHROME, ...next.chrome, strength: clamp(next.chrome?.strength ?? DEFAULT_CHROME.strength, 0.2, 1) };
   cache = next;
   extWrite(ANIMACIONES, 'settings', next);
   notify();
@@ -177,6 +236,21 @@ export function resolveParams(choice: AnimationChoice, look: LookSettings): Anim
     color: col('color'),
     color2: col('color2'),
   };
+}
+
+/**
+ * Dónde va una imagen que cubre una caja con su encuadre: cubre siempre la
+ * caja entera (como `object-fit: cover`), acercada `zoom` veces, y `x`/`y`
+ * dicen qué parte queda a la vista (0 = el borde izquierdo o el de arriba,
+ * 1 = el derecho o el de abajo). El mismo cálculo sirve para el fondo real y
+ * para el encuadre del panel: lo que se elige es lo que se ve.
+ */
+export function placeCover(natW: number, natH: number, boxW: number, boxH: number, focus: BackgroundFocus = DEFAULT_FOCUS) {
+  if (natW <= 0 || natH <= 0 || boxW <= 0 || boxH <= 0) return { left: 0, top: 0, width: boxW, height: boxH };
+  const scale = Math.max(boxW / natW, boxH / natH) * clamp(focus.zoom, 1, 4);
+  const width = natW * scale;
+  const height = natH * scale;
+  return { left: (boxW - width) * clamp(focus.x, 0, 1), top: (boxH - height) * clamp(focus.y, 0, 1), width, height };
 }
 
 // ------------------------------------------------------------

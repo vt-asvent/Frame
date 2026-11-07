@@ -40,3 +40,6 @@ supabase/.temp/
 
 # Paquete de Microsoft Store (scripts/empaquetar-msix.ps1)
 /dist-msix
+
+# Estado local de wrangler (nube-ia/)
+.wrangler/

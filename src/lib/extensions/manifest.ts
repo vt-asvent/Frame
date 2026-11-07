@@ -133,7 +133,7 @@ export const MUSIC_ENGINES = ['yt-mp3/1'] as const;
 export type MusicEngine = (typeof MUSIC_ENGINES)[number];
 
 /** Animaciones de Frame que un mod puede variar (extensión Animaciones). */
-export const ANIMATION_BASES = ['constelacion', 'olas', 'aurora'] as const;
+export const ANIMATION_BASES = ['constelacion', 'olas', 'aurora', 'matrix', 'mosaico', 'boreal', 'tipoaurora'] as const;
 export type AnimationBase = (typeof ANIMATION_BASES)[number];
 
 export interface AppearanceContribution {

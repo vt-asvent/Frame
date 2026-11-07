@@ -1,0 +1,29 @@
+# Frame · IA en la nube: MCP remoto para claude.ai y los demás chats que
+# admiten conectores. Aquí no viven los datos de Frame: cada llamada pasa, por
+# un relé de cada cuenta (Durable Object), a una Frame abierta y vuelve.
+# Plan gratis de Cloudflare. Los secretos van con `wrangler secret put`
+# (FRAME_IA_KEY, SUPABASE_URL, SUPABASE_ANON_KEY) y nunca en este archivo.
+name = "frame-ia"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "frame-ia"
+database_id = "PENDIENTE"
+migrations_dir = "migraciones"
+
+# Un relé por cuenta: guarda la lista de herramientas que publicó Frame y
+# mantiene el WebSocket con cada Frame abierta (hiberna mientras espera).
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "FrameRelay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["FrameRelay"]
+
+# Limpieza diaria de códigos, permisos y sesiones caducados.
+[triggers]
+crons = ["17 9 * * *"]

@@ -1,0 +1,2 @@
+# Los guiones de bash fallan con CRLF («$'': command not found»): siempre LF.
+*.sh text eol=lf

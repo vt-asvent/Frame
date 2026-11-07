@@ -19,6 +19,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useToast } from '@/hooks/use-toast';
 import { wipeLocalAccountData } from '@/lib/account';
 import { markAccountDeletion } from '@/lib/account-deletion';
+import { listInstalled } from '@/lib/extensions/store';
+import { IA } from '@/lib/extensions/ia/tools';
+import { revokeCloud } from '@/lib/extensions/ia/cloud';
 import { disconnectGoogle } from '@/lib/google/auth';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { deleteRemoteAccount, signOut, type DeleteAccountMode } from '@/lib/supabase/auth';
@@ -157,6 +160,10 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
       let remoteError: string | null = null;
 
       if (isCloud) {
+        // Los chats de la web (1.8.0) pierden el permiso ANTES de que la cuenta
+        // desaparezca: después ya no habría sesión para pedirlo. Solo si este
+        // equipo tiene Conexiones con IA (la única forma de haberlos conectado).
+        if (listInstalled().some((e) => e.id === IA)) await revokeCloud().catch(() => undefined);
         const result = await deleteRemoteAccount(userProfile.id);
         mode = result.mode;
         remoteError = result.error;

@@ -298,6 +298,14 @@ export const IA_TOOLS: IaTool[] = [
   ),
   tool('listar_playlists', 'Listar playlists', 'Playlists con cuántas canciones tienen en este equipo.', {}, [], READ),
   tool(
+    'estadisticas_de_musica',
+    'Estadísticas de música',
+    'Lo que de verdad se escuchó en Frame (sin saltos ni pausas) en una semana, un mes o un año: tiempo total, reproducciones, y las canciones, artistas y playlists más escuchados. Se mide desde Frame 1.8.0, en este equipo.',
+    { periodo: SCOPE, fecha: day('Un día del periodo (por defecto, hoy).'), limite: int('Cuántos de cada lista (por defecto 10).', 1, 50) },
+    [],
+    READ
+  ),
+  tool(
     'reproducir_playlist',
     'Reproducir playlist',
     'Pone a sonar una playlist desde el principio o en orden aleatorio.',

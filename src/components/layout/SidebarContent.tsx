@@ -36,8 +36,11 @@ import GuestLinkBadge from '@/components/layout/GuestLinkBadge';
 import { useStoredImage } from '@/hooks/use-stored-image';
 import { GmailNavIcon } from '@/components/integrations/GmailPanel';
 import { ClassroomNavIcon } from '@/components/integrations/ClassroomIcon';
+import { DriveNavIcon } from '@/components/integrations/DriveIcon';
+import { useExtensionOn } from '@/lib/extensions/store';
 import { YoutubeNavIcon } from '@/components/integrations/YoutubeIcon';
 import { tr } from '@/lib/i18n';
+import { ChromePattern, useChromePattern } from '@/components/extensions/animaciones/Mosaic';
 import { usernameLabel } from '@/lib/enum-labels';
 
 interface NavItem {
@@ -72,10 +75,17 @@ const navItems: NavItem[] = [
 
 /** Extensión AK Lore (1.7.3): tras Calendario, solo para cuentas del colegio. */
 const akLoreItem: NavItem = { href: '/aklore', label: 'AK Lore', icon: Library, group: 1 };
-const withAkLore = (() => {
-  const at = navItems.findIndex((i) => i.href === '/calendario') + 1;
-  return [...navItems.slice(0, at), akLoreItem, ...navItems.slice(at)];
-})();
+
+/** Extensión Wire (1.8.0): Drive, con la cuenta conectada en Wire, bajo Classroom. */
+const driveItem: NavItem = { href: '/drive', label: 'Drive', icon: DriveNavIcon, group: 2 };
+
+/** Los elementos del menú con los de las extensiones que tocan. */
+function menuItems(akLore: boolean, drive: boolean): NavItem[] {
+  const items = [...navItems];
+  if (akLore) items.splice(items.findIndex((i) => i.href === '/calendario') + 1, 0, akLoreItem);
+  if (drive) items.splice(items.findIndex((i) => i.href === '/classroom') + 1, 0, driveItem);
+  return items;
+}
 
 /**
  * Testigo de sesión de estudio en el sidebar. Gira mientras el cronómetro
@@ -114,7 +124,9 @@ export function SidebarContent({
   hostDialogs?: boolean;
 }) {
   const pathname = usePathname();
-  const items = useAkLoreAccess(userProfile?.email) === 'allowed' ? withAkLore : navItems;
+  const akLore = useAkLoreAccess(userProfile?.email) === 'allowed';
+  const drive = useExtensionOn('frame.wire');
+  const items = React.useMemo(() => menuItems(akLore, drive), [akLore, drive]);
   const {
     showAlert,
     isTimerActive,
@@ -177,10 +189,13 @@ export function SidebarContent({
 
   const isSettingsActive = pathname === '/settings';
   const updateAvailable = useUpdateAvailable();
+  // Figuras de Animaciones detrás del menú (1.8.0), si el usuario las puso aquí.
+  const chromePattern = useChromePattern('lateral');
 
   return (
     <>
-      <div className={cn('flex flex-col flex-1 min-h-0 bg-card h-full', collapsed ? 'p-2' : 'p-4')}>
+      <div className={cn('flex flex-col flex-1 min-h-0 bg-card h-full', collapsed ? 'p-2' : 'p-4', chromePattern && 'relative isolate')}>
+        {chromePattern && <ChromePattern chrome={chromePattern} />}
         {/* Marca: siempre fija arriba, nunca se desplaza.
             `pt-2` al contraerse: el carril pasa de p-4 a p-2 y el logo se
             quedaba pegado al borde superior mientras abajo respiraba el doble.

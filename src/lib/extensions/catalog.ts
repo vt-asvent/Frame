@@ -70,7 +70,7 @@ export const OFFICIAL_EXTENSIONS: OfficialExtension[] = [
       'frame.ia',
       () => tr('Conexiones con IA'),
       () =>
-        tr('Deja que Claude, Gemini y otras IA manejen Frame en este equipo: tareas, asignaturas, hábitos, calendario, sesiones, informes y música. Para borrar, Frame te pide confirmación.'),
+        tr('Deja que Claude, ChatGPT, Gemini y otras IA manejen Frame, en este equipo o desde la web: tareas, asignaturas, hábitos, calendario, sesiones, informes y música. Para borrar, Frame te pide confirmación.'),
       ['data.read', 'data.write']
     ),
   },

@@ -32,6 +32,8 @@ import { songTitle } from '@/lib/music-search';
 import { cn } from '@/lib/utils';
 import { decimalText, tr } from '@/lib/i18n';
 import { artistLabel } from '@/lib/enum-labels';
+import { formatListened, listeningAllTime, playsText, useListening } from '@/lib/listening';
+import { songKey } from '@/lib/song-keys';
 
 // ============================================================
 // «Reproduciendo»: la canción a pantalla completa DENTRO de Frame.
@@ -211,8 +213,12 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
     repeatMode,
     setRepeatMode,
     toggleSongFavorite,
+    userProfile,
   } = useCourse();
   const { progress, duration } = usePlaybackPosition();
+  // Cuánto ha sonado esta canción desde que Frame lo mide (1.8.0).
+  const allTime = useListening(open ? userProfile?.id : null, listeningAllTime, []);
+  const songStats = allTime && currentSong ? allTime.songs.find((s) => s.key === songKey(currentSong)) : undefined;
   const [lyrics, setLyrics] = useState<SongLyrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [lyricsNote, setLyricsNote] = useState<string | null>(null);
@@ -318,6 +324,11 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
           <p className="w-full max-w-md truncate text-base font-semibold text-white/75" title={artist}>
             {artist}
           </p>
+          {songStats && (songStats.plays > 0 || songStats.seconds >= 60) && (
+            <p className="mt-1 text-xs tabular-nums text-white/55">
+              {tr('{plays} · {time} en total', { plays: playsText(songStats.plays), time: formatListened(songStats.seconds) })}
+            </p>
+          )}
 
           <div className="mt-6 w-full max-w-sm space-y-3">
             <div>

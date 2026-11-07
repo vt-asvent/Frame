@@ -2,6 +2,7 @@ import { closeMusicDB, MUSIC_DB_NAME } from '@/lib/music-db';
 import { disconnectGoogle } from '@/lib/google/auth';
 import { FILE_HANDLES_DB_NAME } from '@/lib/file-handles';
 import { wipeProfileMedia } from '@/lib/profile-scope';
+import { closeListeningDb, deleteListening, LISTENING_DB_NAME } from '@/lib/listening';
 import { forgetAllExtensions } from '@/lib/extensions/store';
 
 /** Base del antiguo módulo Conocimiento (Aether KN): sin pantalla desde la
@@ -90,6 +91,8 @@ export async function wipeLocalAccountData(uid?: string): Promise<void> {
     // Su música e imágenes también (1.6.7: son de cada perfil). Antes que sus
     // claves, porque de ellas salen los ids.
     await wipeProfileMedia(uid).catch(() => undefined);
+    // Su escucha (1.8.0): cuánto oyó cada canción, playlist y artista.
+    await deleteListening(uid).catch(() => undefined);
     try {
       const suffix = `_${uid}`;
       const doomed: string[] = [];
@@ -117,9 +120,12 @@ export async function wipeLocalAccountData(uid?: string): Promise<void> {
 
   // Sin cerrar la conexión del módulo, `deleteDatabase` quedaría bloqueado.
   closeMusicDB();
+  closeListeningDb();
 
   await Promise.all([
     deleteIndexedDb(MUSIC_DB_NAME),
+    // Las estadísticas de escucha (1.8.0).
+    deleteIndexedDb(LISTENING_DB_NAME),
     deleteIndexedDb(KNOWLEDGE_DB_NAME),
     // Copias y manejadores de los archivos adjuntos a tareas. Se quedaba atrás:
     // "eliminar todo mi rastro" dejaba en el equipo los documentos adjuntados.

@@ -52,6 +52,8 @@ import { setEntityImage, type ImageSource } from '@/lib/image-refs';
 import { useStoredImage } from '@/hooks/use-stored-image';
 import { cn } from '@/lib/utils';
 import { formatHoursMinutes } from '@/lib/duration';
+import { easedMask, easedVeil } from '@/lib/eased-fade';
+import { formatListened, listeningAllTime, playsText, useListening } from '@/lib/listening';
 import type { Playlist, Song } from '@/types';
 import { useCourse } from '@/context/CourseContext';
 import SongPickerGrid from '@/components/music/SongPickerGrid';
@@ -61,21 +63,10 @@ import { EchoHeader } from '@/components/shared/EchoWord';
 import { tr } from '@/lib/i18n';
 import { artistLabel } from '@/lib/enum-labels';
 
-/**
- * Curva suave (entrada y salida lentas) para los degradados de la cabecera:
- * con dos o tres paradas lineales se ve el escalón donde empieza la imagen.
- * [posición %, opacidad].
- */
-const EASED_STOPS: [number, number][] = [
-  [0, 0], [8.1, 0.013], [15.5, 0.049], [22.5, 0.104], [29, 0.175], [35.3, 0.259], [41.2, 0.352], [47.1, 0.45],
-  [52.9, 0.55], [58.8, 0.648], [64.7, 0.741], [71, 0.825], [77.5, 0.896], [84.5, 0.951], [91.9, 0.987], [100, 1],
-];
 /** La imagen: transparente (= fondo de la app) a la izquierda, entera a la derecha. */
-const HEADER_IMAGE_MASK = `linear-gradient(to right, ${EASED_STOPS.map(([at, alpha]) => `rgba(0,0,0,${alpha}) ${at}%`).join(', ')})`;
+const HEADER_IMAGE_MASK = easedMask('to right');
 /** El velo: color del fondo a la izquierda, transparente a la derecha. */
-const HEADER_BACKGROUND_VEIL = `linear-gradient(to right, ${EASED_STOPS.map(
-  ([at, alpha]) => `hsl(var(--background) / ${Math.round((1 - alpha) * 1000) / 1000}) ${at}%`
-).join(', ')})`;
+const HEADER_BACKGROUND_VEIL = easedVeil('to right');
 
 const SortablePlaylistSongCard = ({ song, onPlay, onRemove, highlighted }: { song: Song; onPlay: () => void; onRemove: () => void; highlighted?: boolean }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: song.id });
@@ -192,6 +183,10 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
   
   const [isEditing, setIsEditing] = useState(false);
   const [editedPlaylistName, setEditedPlaylistName] = useState('');
+
+  // Cuánto ha sonado esta playlist desde que Frame lo mide (1.8.0).
+  const listened = useListening(userProfile?.id, listeningAllTime, []);
+  const listStats = listened && playlist ? listened.lists.find((l) => l.id === playlist.id) : undefined;
 
   const [isAddSongsOpen, setAddSongsOpen] = useState(false);
   const [addSongsSearch, setAddSongsSearch] = useState('');
@@ -441,6 +436,11 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
             <h1 className="truncate text-center font-headline text-4xl font-bold leading-[3rem] text-primary" title={playlist.name}>
               {playlist.name}
             </h1>
+          )}
+          {listStats && listStats.seconds >= 60 && !isEditing && (
+            <p className="-mt-3 text-center text-xs tabular-nums text-muted-foreground">
+              {tr('Escuchada {time} · {plays}', { time: formatListened(listStats.seconds), plays: playsText(listStats.plays) })}
+            </p>
           )}
 
           <div className="relative">

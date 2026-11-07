@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Music, Heart, Trash2, Shuffle, LoaderCircle, Search } from 'lucide-react';
 import { useCourse } from '@/context/CourseContext';
 import MusicImportButton from '@/components/music/MusicImportButton';
+import ListeningStatsButton from '@/components/music/ListeningStats';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -250,6 +251,8 @@ export default function MusicLibrary() {
           >
             <Heart className={cn('h-5 w-5', showOnlyFavorites && 'fill-current')} />
           </Button>
+
+          <ListeningStatsButton />
 
           <MusicImportButton />
         </div>

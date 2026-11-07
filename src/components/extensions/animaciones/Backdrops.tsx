@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import Constellation from '@/components/extensions/animaciones/Constellation';
+import { BorealAurora, MatrixRain, TypeAurora } from '@/components/extensions/animaciones/CanvasScenes';
+import { MosaicBackdrop } from '@/components/extensions/animaciones/Mosaic';
 import WaveBackdrop from '@/components/courses/WaveBackdrop';
 import { useContributions, useExtensionOn } from '@/lib/extensions/store';
 import {
   ANIMACIONES,
   animationsWith,
   applyModAccent,
+  DEFAULT_FOCUS,
   effectiveLook,
+  HEADING_FONTS,
   loadOwnBackground,
   pickAnimation,
+  placeCover,
   resolveParams,
   useBackgroundVersion,
   useLook,
   type AnimationChoice,
+  type BackgroundFocus,
   type LookSettings,
 } from '@/lib/extensions/animaciones';
 import { cn } from '@/lib/utils';
@@ -22,6 +28,10 @@ import { cn } from '@/lib/utils';
 // fondo (velada con el color del tema) a -z-20 y la animación a -z-10. Las
 // tarjetas son opacas, así que solo asoma por los huecos: la interfaz se lee
 // igual que sin ella.
+//
+// 1.8.0: la imagen ocupa solo el área de contenido (antes iba a toda la
+// ventana y la tapaban la barra lateral y la cabecera) y se coloca con el
+// encuadre que eligió el usuario. También aplica la tipografía de títulos.
 // ============================================================
 
 const BLOBS = [
@@ -70,6 +80,11 @@ function Aurora({
 /** Una animación con los ajustes del usuario y los parámetros de su mod. */
 export function AnimationView({ choice, look, contained = false }: { choice: AnimationChoice; look: LookSettings; contained?: boolean }) {
   const p = resolveParams(choice, look);
+  const scene = { intensity: p.intensity, speed: p.speed, density: p.density, color: p.color, color2: p.color2, contained };
+  if (choice.base === 'boreal') return <BorealAurora {...scene} />;
+  if (choice.base === 'matrix') return <MatrixRain {...scene} />;
+  if (choice.base === 'tipoaurora') return <TypeAurora {...scene} />;
+  if (choice.base === 'mosaico') return <MosaicBackdrop intensity={p.intensity} speed={p.speed} color={p.color} contained={contained} />;
   if (choice.base === 'constelacion') {
     return <Constellation intensity={p.intensity} speed={p.speed} density={p.density} linkDistance={contained ? p.linkDistance * 0.6 : p.linkDistance} color={p.color} contained={contained} />;
   }
@@ -113,12 +128,90 @@ export function useBackgroundImage(look: LookSettings, enabled: boolean): string
   return mods.find((m) => m.id === source)?.value.background?.image ?? null;
 }
 
+export interface ContentRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Dónde está el área de contenido de la app (lo que queda a la derecha de la
+ * barra lateral, bajo la cabecera y sobre el reproductor): la marca
+ * `data-frame-content` del diseño principal. Se sigue al cambiar de tamaño.
+ */
+export function useContentRect(enabled: boolean): ContentRect | null {
+  const [rect, setRect] = useState<ContentRect | null>(null);
+  useEffect(() => {
+    if (!enabled) {
+      setRect(null);
+      return;
+    }
+    let watched: Element | null = null;
+    const measure = () => {
+      const element = document.querySelector('[data-frame-content]');
+      if (!element) return;
+      if (element !== watched) {
+        if (watched) observer.unobserve(watched);
+        observer.observe(element);
+        watched = element;
+      }
+      const box = element.getBoundingClientRect();
+      const next = { left: Math.round(box.left), top: Math.round(box.top), width: Math.round(box.width), height: Math.round(box.height) };
+      setRect((prev) => (prev && prev.left === next.left && prev.top === next.top && prev.width === next.width && prev.height === next.height ? prev : next));
+    };
+    const observer = new ResizeObserver(measure);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [enabled]);
+  return rect;
+}
+
+/**
+ * La imagen colocada en su caja con el encuadre elegido (lo mismo que se ve
+ * en el panel de Animaciones). Hasta saber su tamaño, cubre la caja centrada.
+ */
+export function FramedImage({ src, width, height, focus, blur }: { src: string; width: number; height: number; focus?: BackgroundFocus; blur: boolean }) {
+  const [natural, setNatural] = useState<{ src: string; width: number; height: number } | null>(null);
+  const size = natural?.src === src ? natural : null;
+  const place = size ? placeCover(size.width, size.height, width, height, focus ?? DEFAULT_FOCUS) : null;
+  return (
+    <div className={cn('absolute inset-0', blur && 'scale-110 blur-lg')}>
+      <img
+        key={src}
+        src={src}
+        alt=""
+        draggable={false}
+        onLoad={(event) => setNatural({ src, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+        className={cn('absolute max-w-none select-none', !place && 'inset-0 h-full w-full object-cover')}
+        style={place ? { left: place.left, top: place.top, width: place.width, height: place.height } : undefined}
+      />
+    </div>
+  );
+}
+
 /** Montado en el diseño principal: no pinta nada si la extensión no está activa. */
 export default function AppBackdrop() {
   const on = useExtensionOn(ANIMACIONES);
   const mods = useContributions('appearance');
   const look = effectiveLook(useLook(), mods);
   const image = useBackgroundImage(look, on);
+  const rect = useContentRect(on && !!image);
+
+  // La tipografía de los títulos (1.8.0): una variable que lee `font-headline`.
+  const headingFont = on ? (HEADING_FONTS.find((f) => f.id === look.headingFont)?.stack ?? null) : null;
+  useEffect(() => {
+    if (!headingFont) return;
+    const root = document.documentElement.style;
+    root.setProperty('--font-headline', headingFont);
+    return () => {
+      root.removeProperty('--font-headline');
+    };
+  }, [headingFont]);
 
   // El color de un mod va encima del acento de Ajustes; sin el mod, sin la
   // extensión o apagada, se quita y vuelve el de antes.
@@ -133,9 +226,9 @@ export default function AppBackdrop() {
   const animation = pickAnimation(animationsWith(mods), look);
   return (
     <>
-      {image && look.background && (
-        <div className="pointer-events-none fixed inset-0 -z-20 overflow-hidden" aria-hidden>
-          <img src={image} alt="" className={cn('h-full w-full object-cover', look.background.blur && 'scale-110 blur-lg')} />
+      {image && look.background && rect && (
+        <div className="pointer-events-none fixed -z-20 overflow-hidden" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} aria-hidden>
+          <FramedImage src={image} width={rect.width} height={rect.height} focus={look.background.focus} blur={look.background.blur} />
           <div className="absolute inset-0 bg-background" style={{ opacity: look.background.dim }} />
         </div>
       )}

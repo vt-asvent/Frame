@@ -5,8 +5,8 @@ import { activeProfileId } from '@/lib/profile-scope';
 import { tr } from '@/lib/i18n';
 
 // ============================================================
-// Recuadro anfitrión de un servicio de Google REAL (Gmail, YouTube, Classroom)
-// incrustado vía webview hijo de Tauri.
+// Recuadro anfitrión de un servicio de Google REAL (Gmail, YouTube, Classroom
+// y, con Wire, Drive) incrustado vía webview hijo de Tauri.
 //
 // - Se recorta contra el contenedor con scroll de la app: nunca se
 //   superpone a la barra superior fija ni al reproductor de música.
@@ -35,10 +35,13 @@ const SERVICE_LABEL: Record<GoogleEmbedProps['kind'], string> = {
   gmail: 'Gmail',
   youtube: 'YouTube',
   classroom: 'Google Classroom',
+  drive: 'Google Drive',
 };
 
 interface GoogleEmbedProps {
-  kind: 'gmail' | 'youtube' | 'classroom';
+  kind: 'gmail' | 'youtube' | 'classroom' | 'drive';
+  /** Cuenta con que se abre (solo Drive: la de Wire). Si cambia, se vuelve a abrir con ella. */
+  account?: string | null;
   /** alto del recuadro (clase Tailwind), p. ej. "h-[620px]" */
   heightClass: string;
   /** contenido a mostrar dentro del recuadro cuando no hay internet */
@@ -57,6 +60,7 @@ interface GoogleEmbedProps {
 
 export default function GoogleEmbed({
   kind,
+  account = null,
   heightClass,
   offlineContent,
   allowInModal = false,
@@ -99,6 +103,7 @@ export default function GoogleEmbed({
         kind,
         // Cada perfil, su propia sesión de Google (1.6.7).
         profile: activeProfileId() ?? 'sin-perfil',
+        account,
         x: Math.round(r.left * 2) / 2,
         y: Math.round(top * 2) / 2,
         width: Math.round(r.width * 2) / 2,
@@ -150,7 +155,7 @@ export default function GoogleEmbed({
         visible: false,
       }).catch(() => {});
     };
-  }, [kind, allowInModal, paused]);
+  }, [kind, account, allowInModal, paused]);
 
   return (
     <div ref={boxRef} className={`flex w-full items-center justify-center ${heightClass}`}>

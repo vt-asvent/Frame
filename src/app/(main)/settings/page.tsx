@@ -247,8 +247,9 @@ function AdvancedModeCard() {
         <label htmlFor="advanced-mode" className="cursor-pointer text-sm font-semibold text-foreground">
           {tr('Modo Avanzado')}
         </label>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {tr('Añade el modo Rendimiento (enfoque de 1 a 20 y notas AD, A, B y C), el calendario de calificaciones, el progreso académico, las metas diarias, los informes y la importancia, dificultad, tiempo estimado y avance de las tareas. Al apagarlo no se borra nada: solo se oculta.')}
+        {/* Una línea (1.8.0, Diego): el detalle está en «Qué cambia con el modo Avanzado». */}
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {tr('Notas, informes, metas y más detalle en las tareas. Apagarlo no borra nada.')}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1">

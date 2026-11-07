@@ -12,7 +12,9 @@ export default {
         // Poppins no trae cirílico ni japonés (1.7.3): esas letras salen de
         // las fuentes del sistema que siguen, letra por letra.
         body: ['Poppins', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
-        headline: ['Poppins', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
+        // `--font-headline`: la tipografía de títulos de Animaciones (1.8.0);
+        // sin ella, Poppins como siempre.
+        headline: ['var(--font-headline, Poppins)', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
         display: ['Poppins', 'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', 'sans-serif'],
         code: ['monospace'],
       },

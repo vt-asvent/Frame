@@ -125,6 +125,19 @@
   }
 }
 
+/* Mosaico de figuras (extensión Animaciones, 1.8.0): la capa sobra una
+   baldosa por cada lado y se mueve una baldosa entera en diagonal, así que el
+   bucle no tiene costura. Solo transform. */
+@keyframes frame-mosaic-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(var(--tile), var(--tile), 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame-mosaic {
+    animation: none !important;
+  }
+}
+
 /* Nombre de la asignatura repetido al fondo de su cabecera: deriva de izquierda
    a derecha. La pista mide dos mitades idénticas, así que al llegar a 0 el
    bucle no tiene costura. */

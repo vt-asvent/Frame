@@ -242,8 +242,9 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
                 {userProfile && !userProfile.isGuest && <ConnectionNotice uid={userProfile.id} />}
                 <div className="flex-1 flex flex-col min-h-0">
                     {/* `relative` envuelve SOLO el área con scroll, siempre
-                        por encima del reproductor de música. */}
-                    <div className="relative flex min-h-0 flex-1 flex-col">
+                        por encima del reproductor de música. `data-frame-content`:
+                        aquí va la imagen de fondo de Animaciones (1.8.0). */}
+                    <div data-frame-content className="relative flex min-h-0 flex-1 flex-col">
                     <div className="flex-1 overflow-y-auto">
                         {/* h-full: las interfaces incrustadas (Calendario,
                             Gmail, YouTube, Drive) se centran verticalmente en

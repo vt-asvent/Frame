@@ -1,0 +1,307 @@
+// Frame · IA en la nube: OAuth con el código de Frame, MCP y el relé a las
+// Frame abiertas (respaldo entre equipos, cortes, permisos retirados, frenos).
+import { createHash, randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { type Arnes, CLAUDE, crearArnes, esperar, ORIGEN, sesion, VERIFICADOR } from './ayuda';
+
+let a: Arnes;
+beforeAll(async () => {
+  a = await crearArnes();
+});
+afterAll(async () => {
+  await a?.cerrar();
+});
+
+/** Una cuenta nueva por prueba: los relés no se pisan. */
+const cuenta = () => randomUUID();
+const pkce = (v: string) => createHash('sha256').update(v).digest('base64url');
+
+async function autorizar(cliente: string, codigo: string) {
+  return a.pedir('/authorize', {
+    headers: { 'accept-language': 'es-PE,es;q=0.9' },
+    form: { client_id: cliente, redirect_uri: CLAUDE, state: 'e', code_challenge: pkce(VERIFICADOR), code_challenge_method: 'S256', response_type: 'code', code: codigo },
+  });
+}
+
+describe('descubrimiento y OAuth', () => {
+  it('anuncia el recurso y el servidor de autorización', async () => {
+    const r = await a.pedir('/.well-known/oauth-protected-resource/mcp');
+    expect(r.datos.resource).toBe(`${ORIGEN}/mcp`);
+    expect(r.datos.authorization_servers).toEqual([ORIGEN]);
+    const s = await a.pedir('/.well-known/oauth-authorization-server');
+    expect(s.datos.code_challenge_methods_supported).toEqual(['S256']);
+    expect(s.datos.registration_endpoint).toBe(`${ORIGEN}/register`);
+    expect((await a.pedir('/')).datos.mcp).toBe(`${ORIGEN}/mcp`);
+  });
+
+  it('pide autorización a quien llama a /mcp sin acceso válido', async () => {
+    const r = await a.pedir('/mcp', { json: { jsonrpc: '2.0', id: 1, method: 'initialize' } });
+    expect(r.estado).toBe(401);
+    expect(r.r.headers.get('www-authenticate')).toBe(`Bearer resource_metadata="${ORIGEN}/.well-known/oauth-protected-resource"`);
+    expect((await a.rpc('esto.no', 'ping')).estado).toBe(401);
+    // Un pase de la app no sirve como acceso de un chat.
+    expect((await a.rpc(await a.pase(cuenta()), 'ping')).estado).toBe(401);
+  });
+
+  it('solo registra chats conocidos o herramientas locales', async () => {
+    for (const uri of ['https://evil.example/cb', 'http://claude.ai/cb', 'https://claude.ai.evil.example/cb', 'javascript:alert(1)']) {
+      expect((await a.pedir('/register', { json: { client_name: 'X', redirect_uris: [uri] } })).estado).toBe(400);
+    }
+    expect((await a.pedir('/register', { json: { client_name: 'X', redirect_uris: [] } })).estado).toBe(400);
+    for (const uri of [CLAUDE, 'https://chatgpt.com/connector_platform_oauth_redirect', 'http://localhost:3334/cb', 'http://127.0.0.1:9/cb']) {
+      expect((await a.pedir('/register', { json: { client_name: 'X', redirect_uris: [uri] } })).estado).toBe(201);
+    }
+  });
+
+  it('la app solo entra con una sesión de Frame válida', async () => {
+    expect((await a.pedir('/app/pair', { method: 'POST' })).estado).toBe(401);
+    expect((await a.pedir('/app/pair', { method: 'POST', token: 'otra-cosa-cualquiera-larga' })).estado).toBe(401);
+    expect((await a.pedir('/app/status', { token: sesion('no-es-un-uuid') })).estado).toBe(401);
+    const r = await a.pedir('/app/pair', { method: 'POST', token: sesion(cuenta()) });
+    expect(r.estado).toBe(200);
+    expect(r.datos.code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+    expect(r.datos.expires).toBeGreaterThan(Date.now() + 9 * 60_000);
+  });
+
+  it('la página de autorización dice quién pide y adónde se vuelve', async () => {
+    const reg = await a.pedir('/register', { json: { client_name: 'Claude <b>', redirect_uris: [CLAUDE] } });
+    const q = new URLSearchParams({ client_id: reg.datos.client_id, redirect_uri: CLAUDE, response_type: 'code', code_challenge: 'x'.repeat(43), code_challenge_method: 'S256', state: 's' });
+    const es = await a.pedir(`/authorize?${q}`, { headers: { 'accept-language': 'es-PE,es;q=0.9' } });
+    expect(es.estado).toBe(200);
+    expect(es.texto).toContain('Conectar con Frame');
+    expect(es.texto).toContain('Claude &#60;b&#62;');
+    expect(es.texto).toContain('<b>claude.ai</b>');
+    expect(es.r.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    expect((await a.pedir(`/authorize?${q}`, { headers: { 'accept-language': 'de-DE' } })).texto).toContain('Connect to Frame');
+    q.set('code_challenge_method', 'plain');
+    expect((await a.pedir(`/authorize?${q}`)).estado).toBe(400);
+    q.set('code_challenge_method', 'S256');
+    q.set('redirect_uri', 'https://claude.ai/otra');
+    expect((await a.pedir(`/authorize?${q}`)).estado).toBe(400);
+  });
+
+  it('conecta con el código de Frame; el código y la autorización valen una vez', async () => {
+    const yo = cuenta();
+    const par = await a.pedir('/app/pair', { method: 'POST', token: sesion(yo) });
+    const cliente = (await a.pedir('/register', { json: { client_name: 'Claude', redirect_uris: [CLAUDE] } })).datos.client_id as string;
+    const mal = await autorizar(cliente, 'ZZZZ-ZZZZ');
+    expect(mal.estado).toBe(400);
+    expect(mal.texto).toContain('no es válido');
+    // Da igual mayúsculas o guion.
+    const bien = await autorizar(cliente, String(par.datos.code).toLowerCase().replace('-', ''));
+    expect(bien.estado).toBe(302);
+    const vuelta = new URL(bien.r.headers.get('location')!);
+    expect(vuelta.origin + vuelta.pathname).toBe(CLAUDE);
+    expect(vuelta.searchParams.get('state')).toBe('e');
+    expect((await autorizar(cliente, par.datos.code)).estado).toBe(400);
+
+    const code = vuelta.searchParams.get('code')!;
+    const malPkce = await a.pedir('/token', { form: { grant_type: 'authorization_code', code, redirect_uri: CLAUDE, client_id: cliente, code_verifier: 'otro-verificador-cualquiera-de-longitud-suficiente-123' } });
+    expect(malPkce.datos.error).toBe('invalid_grant');
+    // La autorización se gastó con el intento fallido.
+    const otra = await a.pedir('/token', { form: { grant_type: 'authorization_code', code, redirect_uri: CLAUDE, client_id: cliente, code_verifier: VERIFICADOR } });
+    expect(otra.datos.error).toBe('invalid_grant');
+
+    const { acceso, refresco } = await a.conectar(yo);
+    expect(acceso.split('.')).toHaveLength(2);
+    expect(refresco.length).toBeGreaterThan(30);
+  });
+
+  it('veinte fallos anulan los códigos vigentes', async () => {
+    const par = await a.pedir('/app/pair', { method: 'POST', token: sesion(cuenta()) });
+    const cliente = (await a.pedir('/register', { json: { client_name: 'Claude', redirect_uris: [CLAUDE] } })).datos.client_id as string;
+    for (let i = 0; i < 20; i++) await autorizar(cliente, `MALO-${String(i).padStart(4, '0')}`);
+    expect((await autorizar(cliente, par.datos.code)).estado).toBe(400);
+  });
+
+  it('pedir códigos nuevos anula los más viejos', async () => {
+    const yo = cuenta();
+    const codigos: string[] = [];
+    for (let i = 0; i < 4; i++) codigos.push((await a.pedir('/app/pair', { method: 'POST', token: sesion(yo) })).datos.code);
+    const cliente = (await a.pedir('/register', { json: { client_name: 'Claude', redirect_uris: [CLAUDE] } })).datos.client_id as string;
+    expect((await autorizar(cliente, codigos[0]!)).estado).toBe(400);
+    expect((await autorizar(cliente, codigos[3]!)).estado).toBe(302);
+  });
+
+  it('refresca, y el refresco anterior vale un momento', async () => {
+    const yo = cuenta();
+    const { refresco, cliente } = await a.conectar(yo);
+    const r1 = await a.pedir('/token', { form: { grant_type: 'refresh_token', refresh_token: refresco, client_id: cliente } });
+    expect(r1.estado).toBe(200);
+    expect((await a.rpc(r1.datos.access_token, 'ping')).datos.result).toEqual({});
+    const r2 = await a.pedir('/token', { form: { grant_type: 'refresh_token', refresh_token: refresco, client_id: cliente } });
+    expect(r2.estado).toBe(200);
+    const otro = (await a.pedir('/register', { json: { client_name: 'Otro', redirect_uris: [CLAUDE] } })).datos.client_id as string;
+    expect((await a.pedir('/token', { form: { grant_type: 'refresh_token', refresh_token: refresco, client_id: otro } })).datos.error).toBe('invalid_grant');
+  });
+});
+
+describe('relé', () => {
+  it('sin Frame abierta: se conecta, ofrece el estado y explica qué falta', async () => {
+    const { acceso } = await a.conectar(cuenta());
+    const init = await a.rpc(acceso, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'claude-ai' } });
+    expect(init.datos.result.protocolVersion).toBe('2025-06-18');
+    expect(init.datos.result.serverInfo.name).toBe('frame');
+    expect((await a.rpc(acceso, 'initialize', { protocolVersion: '1999-01-01' })).datos.result.protocolVersion).toBe('2025-11-25');
+    const lista = await a.rpc(acceso, 'tools/list');
+    expect(lista.datos.result.tools.map((t: { name: string }) => t.name)).toEqual(['estado_de_frame']);
+    const estado = await a.mcp(acceso, 'estado_de_frame');
+    expect(estado.error).toBe(true);
+    expect(estado.text).toContain('no está abierta');
+  });
+
+  it('pasa cada llamada a la Frame abierta y devuelve su respuesta', async () => {
+    const yo = cuenta();
+    const f = await a.frame(yo);
+    const { acceso } = await a.conectar(yo, { nombre: 'Claude' });
+    const lista = await a.rpc(acceso, 'tools/list');
+    expect(lista.datos.result.tools.map((t: { name: string }) => t.name)).toEqual(['listar_tareas', 'crear_tarea']);
+    const init = await a.rpc(acceso, 'initialize', { protocolVersion: '2025-11-25' });
+    expect(init.datos.result.instructions).toContain('Frame es la app de estudio.');
+    expect(init.datos.result.instructions).toContain('a través de la nube');
+    expect(init.datos.result.serverInfo.version).toBe('1.8.0');
+
+    const hecho = await a.mcp(acceso, 'crear_tarea', { titulo: 'Leer el capítulo 3' });
+    expect(hecho).toMatchObject({ error: false, text: 'hecho: crear_tarea {"titulo":"Leer el capítulo 3"}' });
+    expect(f.llamadas[0]).toMatchObject({ tool: 'crear_tarea', client: 'Claude', args: { titulo: 'Leer el capítulo 3' } });
+
+    f.respuesta = () => ({ ok: false, error: 'No existe esa asignatura.' });
+    expect(await a.mcp(acceso, 'listar_tareas')).toMatchObject({ error: true, text: 'No existe esa asignatura.' });
+    f.respuesta = () => ({ ok: true, text: 'x'.repeat(400_000) });
+    expect((await a.mcp(acceso, 'listar_tareas')).text.length).toBe(300_000);
+
+    expect((await a.rpc(acceso, 'tools/call', { name: 'borrar_todo', arguments: {} })).datos.error.code).toBe(-32602);
+    expect((await a.rpc(acceso, 'tools/call', { name: 'crear_tarea', arguments: [1] })).datos.error.code).toBe(-32602);
+    expect((await a.rpc(acceso, 'metodo/raro')).datos.error.code).toBe(-32601);
+    expect((await a.rpc(acceso, 'notifications/initialized', undefined, null)).estado).toBe(202);
+    const lote = await a.pedir('/mcp', { token: acceso, json: [{ jsonrpc: '2.0', id: 'a', method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/initialized' }, { jsonrpc: '2.0', id: 'b', method: 'tools/list' }] });
+    expect(lote.datos.map((m: { id: string }) => m.id)).toEqual(['a', 'b']);
+    expect((await a.pedir('/mcp', { token: acceso, body: '{roto', method: 'POST' })).datos.error.code).toBe(-32700);
+    expect((await a.mcp(acceso, 'estado_de_frame')).text).toBe('Frame está abierta y lista (Laptop).');
+    expect((await a.pedir('/mcp', { token: acceso, method: 'GET' })).estado).toBe(405);
+
+    // El chat de otra cuenta no llega a esta Frame.
+    const ajeno = await a.conectar(cuenta());
+    expect((await a.mcp(ajeno.acceso, 'estado_de_frame')).error).toBe(true);
+    expect(f.llamadas).toHaveLength(3);
+    f.cerrar();
+  });
+
+  it('responde la Frame más reciente; la que vuelve a primer plano pasa al frente', async () => {
+    const yo = cuenta();
+    const laptop = await a.frame(yo, 'Laptop');
+    const celular = await a.frame(yo, 'Celular');
+    const { acceso } = await a.conectar(yo);
+    await a.mcp(acceso, 'listar_tareas');
+    expect([laptop.llamadas.length, celular.llamadas.length]).toEqual([0, 1]);
+    laptop.enviar({ t: 'focus' });
+    await new Promise((r) => setTimeout(r, 50));
+    await a.mcp(acceso, 'listar_tareas');
+    expect([laptop.llamadas.length, celular.llamadas.length]).toEqual([1, 1]);
+    const estado = await a.pedir('/app/status', { token: sesion(yo) });
+    expect(estado.datos.devices.map((d: { name: string }) => d.name)).toEqual(['Laptop', 'Celular']);
+    expect(estado.datos.chats).toEqual([{ name: 'Claude', since: expect.any(Number), latest: expect.any(Number) }]);
+    expect(estado.datos.devices[0].id).toBe('id-Laptop');
+    laptop.cerrar();
+    celular.cerrar();
+  });
+
+  it('si la conexión elegida está muerta, lo que solo lee prueba con otra y lo que cambia no se repite', async () => {
+    const yo = cuenta();
+    const viva = await a.frame(yo, 'Laptop');
+    const muerta = await a.frame(yo, 'Celular');
+    muerta.modo = 'calla';
+    const { acceso } = await a.conectar(yo);
+    const leida = await a.mcp(acceso, 'listar_tareas');
+    expect(leida.error).toBe(false);
+    expect([viva.llamadas.length, muerta.llamadas.length]).toEqual([1, 1]);
+    await esperar(() => muerta.cerrada !== null);
+
+    const otra = await a.frame(yo, 'Tablet');
+    otra.modo = 'calla';
+    const cambio = await a.mcp(acceso, 'crear_tarea', { titulo: 'Repasar' });
+    expect(cambio.error).toBe(true);
+    expect(cambio.text).toContain('antes de repetirlo');
+    expect(viva.llamadas).toHaveLength(1);
+    // La siguiente ya va a la que sigue viva.
+    expect((await a.mcp(acceso, 'crear_tarea', { titulo: 'Repasar' })).error).toBe(false);
+    expect(viva.llamadas).toHaveLength(2);
+    viva.cerrar();
+  });
+
+  it('si Frame se cierra a mitad de una llamada, lo dice', async () => {
+    const yo = cuenta();
+    const f = await a.frame(yo);
+    f.modo = 'acusa';
+    const { acceso } = await a.conectar(yo);
+    const pendiente = a.mcp(acceso, 'crear_tarea', { titulo: 'Algo' });
+    await esperar(() => f.llamadas.length === 1);
+    f.cerrar();
+    const r = await pendiente;
+    expect(r.error).toBe(true);
+    expect(r.text).toContain('Se perdió la conexión');
+    expect((await a.mcp(acceso, 'listar_tareas')).text).toContain('no está abierta');
+  });
+
+  it('retirar los permisos corta los accesos vivos y avisa a la app', async () => {
+    const yo = cuenta();
+    const f = await a.frame(yo);
+    const { acceso, refresco, cliente } = await a.conectar(yo);
+    expect((await a.rpc(acceso, 'ping')).estado).toBe(200);
+    expect((await a.pedir('/app/revoke', { method: 'POST', token: sesion(yo) })).datos).toEqual({ ok: true });
+    expect((await a.rpc(acceso, 'ping')).estado).toBe(401);
+    expect((await a.pedir('/token', { form: { grant_type: 'refresh_token', refresh_token: refresco, client_id: cliente } })).datos.error).toBe('invalid_grant');
+    await esperar(() => f.mensajes.some((m) => m.t === 'revoked'));
+    expect((await a.pedir('/app/status', { token: sesion(yo) })).datos.chats).toEqual([]);
+    // Se puede volver a conectar con un código nuevo.
+    const nuevo = await a.conectar(yo);
+    expect((await a.mcp(nuevo.acceso, 'listar_tareas')).error).toBe(false);
+    f.cerrar();
+  });
+
+  it('el pase del WebSocket vale una vez, es de su cuenta y no se falsifica', async () => {
+    const yo = cuenta();
+    const pase = await a.pase(yo);
+    expect((await a.socket(pase)).estado).toBe(101);
+    expect((await a.socket(pase)).estado).toBe(401);
+    const [cuerpo, firma] = pase.split('.');
+    const otro = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(cuerpo!, 'base64url').toString()), o: cuenta(), n: 'nuevo' })).toString('base64url');
+    expect((await a.socket(`${otro}.${firma}`)).estado).toBe(401);
+    const { acceso } = await a.conectar(yo);
+    expect((await a.socket(acceso)).estado).toBe(401);
+    expect((await a.pedir('/app/socket?ticket=x')).estado).toBe(426);
+  });
+
+  it('no acepta un catálogo inválido ni mensajes enormes', async () => {
+    const yo = cuenta();
+    const { acceso } = await a.conectar(yo);
+    const f = await a.frame(yo, 'Laptop', [{ name: 'mal nombre', inputSchema: {} }, { name: 'sin_esquema' }]);
+    expect((await a.rpc(acceso, 'tools/list')).datos.result.tools.map((t: { name: string }) => t.name)).toEqual(['estado_de_frame']);
+    expect((await a.mcp(acceso, 'estado_de_frame')).error).toBe(true);
+    f.enviar('z'.repeat(2 * 1024 * 1024 + 10));
+    await esperar(() => f.cerrada !== null);
+  });
+
+  it('pone freno a las ráfagas', async () => {
+    const yo = cuenta();
+    const f = await a.frame(yo);
+    const { acceso } = await a.conectar(yo);
+    // 60 de golpe y luego una por segundo: en una ráfaga de 80, las últimas se frenan.
+    const textos: string[] = [];
+    for (let i = 0; i < 80; i++) textos.push((await a.mcp(acceso, 'listar_tareas')).text);
+    expect(textos.slice(0, 60).every((t) => t.startsWith('hecho'))).toBe(true);
+    expect(textos.filter((t) => t.includes('Demasiadas llamadas')).length).toBeGreaterThanOrEqual(10);
+    f.cerrar();
+  });
+
+  it('la limpieza diaria quita lo caducado y los registros sin usar', async () => {
+    const viejo = Date.now() - 2 * 86_400_000;
+    await a.sql("INSERT INTO clients(id, name, redirects, created, used) VALUES('sin-usar', 'X', '[]', ?, 0), ('usado', 'Y', '[]', ?, 1)", viejo, viejo);
+    await a.sql("INSERT INTO pairings(code, owner, expires) VALUES('viejo', 'o', ?)", viejo);
+    await a.sql("INSERT INTO sessions(token, client, owner, expires, since) VALUES('vieja', 'usado', 'o', ?, ?)", viejo, viejo);
+    await a.cron();
+    expect(await a.sql("SELECT id FROM clients WHERE id IN ('sin-usar', 'usado')")).toEqual([{ id: 'usado' }]);
+    expect(await a.sql("SELECT * FROM pairings WHERE code='viejo'")).toEqual([]);
+    expect(await a.sql("SELECT * FROM sessions WHERE token='vieja'")).toEqual([]);
+  });
+});

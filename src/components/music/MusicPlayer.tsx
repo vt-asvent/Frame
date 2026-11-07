@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import NowPlayingView from '@/components/music/NowPlayingView';
 import { playbackClock } from '@/lib/playback-clock';
+import { installListeningGuards, listening, playlistIdFromHref } from '@/lib/listening';
 import { songTitle } from '@/lib/music-search';
 import { cn } from '@/lib/utils';
 import { withSong } from '@/hooks/use-song-highlight';
@@ -49,6 +50,7 @@ export default function MusicPlayer() {
         isPlayerVisible,
         setPlayerVisible,
         playbackHistory,
+        userProfile,
     } = useCourse();
     const router = useRouter();
     const audioRef = useRef<HTMLAudioElement>(null);
@@ -195,8 +197,26 @@ export default function MusicPlayer() {
             setDuration(audio.duration);
             // Otras vistas (letras, escucha previa) siguen el avance desde aquí.
             playbackClock.publish(audio.currentTime, audio.duration);
+            // Estadísticas de escucha (1.8.0): solo lo que suena de verdad.
+            if (!audio.paused && currentSong) {
+                const listId = playlistIdFromHref(playingContextHref);
+                listening.tick({
+                    owner: userProfile?.id,
+                    song: currentSong,
+                    list: listId ? { id: listId, name: playingContext } : null,
+                    time: audio.currentTime,
+                    duration: audio.duration,
+                    rate: audio.playbackRate,
+                });
+            }
         }
     };
+
+    // Lo escuchado se guarda también al ocultar o cerrar la ventana.
+    useEffect(() => {
+        installListeningGuards();
+        return () => listening.pause();
+    }, []);
 
     // …y pueden pedir un salto sin tener acceso al <audio>.
     useEffect(
@@ -223,6 +243,8 @@ export default function MusicPlayer() {
 
     const handleEnded = () => {
         const audio = audioRef.current;
+        // Terminó: si vuelve a sonar (repetir), es otra reproducción.
+        listening.ended();
 
         if (audio && repeatMode.mode === 'infinite') {
             audio.currentTime = 0;
@@ -356,6 +378,7 @@ export default function MusicPlayer() {
                     onTimeUpdate={handleTimeUpdate}
                     onLoadedMetadata={handleTimeUpdate}
                     onEnded={handleEnded}
+                    onPause={() => listening.pause()}
                     onError={handleAudioError}
                 />
                 
