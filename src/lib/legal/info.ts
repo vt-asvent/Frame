@@ -29,7 +29,7 @@ export function infoDocument({
 Sistema de productividad académica para Windows y Android
 Desarrollado por **Asvent**, entidad de desarrollo de software en formación · Perú
 
-Disponible en español e inglés (Ajustes → «Idioma»).
+Disponible en español, inglés, alemán, francés, italiano, portugués, ruso y japonés (Ajustes → «Idioma»).
 
 Frame reúne en una sola aplicación lo que normalmente exige cinco: gestión de asignaturas y tareas, cronometraje del estudio con calificación diaria, seguimiento de hábitos, calendario, reproductor de tu propia música, grabación de voz y los servicios de Google. Su núcleo académico funciona sin conexión, toda tu información se guarda primero en tu propio equipo y, con una cuenta, se sincroniza en segundos con Frame para Android.
 

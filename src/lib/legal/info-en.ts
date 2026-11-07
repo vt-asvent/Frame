@@ -21,7 +21,7 @@ export function infoDocumentEn({
 Academic productivity system for Windows and Android
 Developed by **Asvent**, a software development entity in formation · Peru
 
-Available in Spanish and English (Settings → “Language”).
+Available in Spanish, English, German, French, Italian, Portuguese, Russian and Japanese (Settings → “Language”).
 
 Frame brings together in a single application what usually takes five: managing subjects and tasks, timing your study with a daily grade, habit tracking, a calendar, a player for your own music, voice recording and Google’s services. Its academic core works offline, all your information is saved first on your own computer and, with an account, it syncs in seconds with Frame for Android.
 
