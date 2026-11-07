@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Music, Heart, Trash2, Shuffle, LoaderCircle,
 import { useCourse } from '@/context/CourseContext';
 import MusicImportButton from '@/components/music/MusicImportButton';
 import ListeningStatsButton from '@/components/music/ListeningStats';
+import DownloadIndicator from '@/components/music/DownloadIndicator';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -230,6 +231,9 @@ export default function MusicLibrary() {
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
+          {/* Descarga en curso (1.8.1): su resumen, a la izquierda de «Aleatorio». */}
+          <DownloadIndicator />
+
           <Button
             variant="fantasma"
             size="icon"

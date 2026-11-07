@@ -7,6 +7,6 @@
 // otros.
 // ============================================================
 
-export const TERMS_VERSION = '5.3';
+export const TERMS_VERSION = '5.4';
 export const INFO_VERSION = '5.7';
 export const SUPPORT_VERSION = '3.3';

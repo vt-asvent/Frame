@@ -141,8 +141,34 @@ export const pickMusic = (folder: boolean): Promise<PickedSource | null> =>
 /** Al terminar, lo elegido deja de poder leerse. */
 export const releasePickedMusic = (): Promise<void> => invoke<void>('music_pick_release').catch(() => undefined);
 
-const readBytes = async (file: PickedFile, max?: number): Promise<ArrayBuffer> =>
-  invoke<ArrayBuffer>('music_read', { path: file.path, max: max ?? null });
+// Archivos que no están en una carpeta elegida sino que llegan ya leídos: lo
+// que entrega un programa de descargas al terminar (1.8.1). Se importan como
+// cualquier otro, con las mismas reglas, sin abrir el explorador.
+const MEMORY_PREFIX = 'memoria:';
+const memoryFiles = new Map<string, ArrayBuffer>();
+
+export function memorySource(name: string, files: { name: string; bytes: ArrayBuffer }[]): PickedSource {
+  return {
+    kind: 'files',
+    name,
+    files: files.map((file) => {
+      const path = `${MEMORY_PREFIX}${crypto.randomUUID()}/${file.name}`;
+      memoryFiles.set(path, file.bytes);
+      return { path, rel: file.name, name: file.name, size: file.bytes.byteLength };
+    }),
+  };
+}
+
+/** Al terminar, sus bytes se sueltan. */
+export function releaseMemorySource(source: PickedSource): void {
+  for (const file of source.files) memoryFiles.delete(file.path);
+}
+
+const readBytes = async (file: PickedFile, max?: number): Promise<ArrayBuffer> => {
+  const memory = memoryFiles.get(file.path);
+  if (memory) return max != null && max < memory.byteLength ? memory.slice(0, max) : memory;
+  return invoke<ArrayBuffer>('music_read', { path: file.path, max: max ?? null });
+};
 
 const readText = async (file: PickedFile): Promise<string> =>
   decodeTextFile(new Uint8Array(await readBytes(file, 8 * 1024 * 1024)));

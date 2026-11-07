@@ -1,19 +1,21 @@
 // ============================================================
-// Protocolo «yt-mp3/1» de una fuente de música (1.7.6).
+// Protocolo «yt-mp3/1» de una fuente de música (1.7.6; 1.8.1: cola propia).
 //
 // Un programa de descargas de ESTE equipo (127.0.0.1) que lo declara en su
 // manifiesto deja que Frame le hable directamente, con su propia ventana, en
 // lugar de mostrar la página del programa. Frame no descarga nada: le pide
 // al programa que baje una canción en MP3 (320 kbps, con portada y letra) y
-// después la trae de su carpeta con la importación de siempre.
+// después recoge el archivo terminado y lo importa como cualquier otro.
 //
 // Rutas (POST con JSON; responden JSON, `{ error }` si algo falla):
 //   /status                          → { version, busy, music_dir }
 //   /search { q, limit }             → [{ id, url, title, channel, duration, thumbnail }]
-//   /info   { url }                  → { id, title, channel, duration, artist, track, album, year, thumbnail_max }
-//   /song   { url, title, artist, album?, track?, cover?, lyrics?, folder?, bitrate? } → { job }
-//   /jobs                            → [{ id, title, status, progress, error }]
-//   /fetch  { url, binary? }         → { status, text } | { status, mime, base64 } (servicios de letras y portadas)
+//   /info   { url }                  → { id, title, channel, duration, artist, track, album, year, thumbnail_max, audio_size }
+//   /song   { url, title, artist, album?, track?, year?, album_artist?, cover?, lyrics?, folder?, bitrate?, expected? } → { job }
+//   /jobs   { ids? }                 → [{ id, title, status, progress, downloaded, total, speed, eta, size, error }]
+//   /pause · /resume · /cancel { id } → { ok }
+//   /file   { id }                   → el archivo terminado, tal cual (desde la 1.1.0 del programa)
+//   /fetch  { url, method?, headers?, body?, binary? } → { status, text } | { status, mime, base64 } (servicios de letras y portadas)
 // ============================================================
 
 export interface EngineVideo {
@@ -28,14 +30,27 @@ export interface EngineVideo {
   track?: string | null;
   album?: string | null;
   year?: number | null;
+  /** Bytes del mejor audio de origen (lo que se baja antes de convertir). */
+  audioSize?: number | null;
 }
+
+export type EngineJobStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
 
 export interface EngineJob {
   id: number;
   title: string;
-  /** queued · running · paused · done · failed · cancelled */
-  status: string;
+  status: EngineJobStatus;
+  /** 0–1: hasta 0,9 la descarga; luego conversión y etiquetas. */
   progress: number;
+  /** Bytes de origen bajados y totales (reales o estimados). */
+  downloaded: number;
+  total: number | null;
+  /** Bytes por segundo del propio trabajo. */
+  speed: number;
+  /** Lo que ocupa en disco lo terminado (MP3 y .lrc); desde la 1.1.0 del programa. */
+  size?: number | null;
+  /** Ruta del archivo terminado (solo para su nombre). */
+  file?: string | null;
   error?: string | null;
 }
 
@@ -45,13 +60,51 @@ export interface SongOrder {
   artist: string;
   album?: string;
   track?: number;
+  year?: number;
+  album_artist?: string;
+  /** Portada como data URL. */
   cover?: string;
+  /** LRC (con tiempos) o texto. */
   lyrics?: string;
+  /** Subcarpeta (la playlist) dentro de la carpeta de música del programa. */
   folder?: string;
+  /** Bytes de origen esperados (para que el avance sea el del archivo entero). */
+  expected?: number;
 }
+
+export interface EngineStatus {
+  version: string;
+  busy: number;
+}
+
+// ------------------------------------------------------------
+// Pesos
+// ------------------------------------------------------------
 
 /** Peso de un MP3 de 320 kbps: 40 000 bytes por segundo. */
 export const mp3Bytes = (seconds: number) => Math.round(seconds * 40_000);
+
+/** Audio de origen de YouTube (Opus o AAC, ~130 kbps) por segundo, mientras no se sepa el real. */
+export const SOURCE_BYTES_PER_SECOND = 16_500;
+/** Portada típica (600–1000 px en JPEG) mientras no se tenga. */
+export const COVER_BYTES_GUESS = 160_000;
+/** Letra típica mientras no se tenga. */
+export const LYRICS_BYTES_GUESS = 3_000;
+/** Marcos ID3 (título, artista, álbum…) y la cabecera del MP3. */
+const TAG_BYTES = 2_048;
+
+/**
+ * Lo que ocupará en disco una canción: el MP3 de 320 kbps con su portada, su
+ * letra y sus datos dentro, más la letra con tiempos en un .lrc al lado.
+ */
+export function songBytes(seconds: number, coverBytes?: number | null, lyricsBytes?: number | null, synced = true): number {
+  const lyrics = lyricsBytes ?? LYRICS_BYTES_GUESS;
+  return mp3Bytes(seconds) + (coverBytes ?? COVER_BYTES_GUESS) + lyrics * (synced ? 2 : 1) + TAG_BYTES;
+}
+
+// ------------------------------------------------------------
+// Enlaces
+// ------------------------------------------------------------
 
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 
@@ -76,38 +129,57 @@ export function youtubeId(text: string): string | null {
   return id && YT_ID.test(id) ? id : null;
 }
 
-export const embedUrl = (id: string) => `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1`;
+export const watchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
+/** Miniatura 16:9 de 320 px (la de las tarjetas). */
+export const thumbnailUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+
+// ------------------------------------------------------------
+// Cliente
+// ------------------------------------------------------------
 
 export class EngineClient {
   constructor(private readonly page: string) {}
 
-  private async call<T>(path: string, body: unknown = {}, timeoutMs = 60_000): Promise<T> {
+  private url(path: string): string {
+    return new URL(path, this.page).toString();
+  }
+
+  private async post(path: string, body: unknown, timeoutMs: number): Promise<Response> {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(new URL(path, this.page).toString(), {
+      return await fetch(this.url(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         cache: 'no-store',
         signal: controller.signal,
       });
-      const data = (await response.json().catch(() => ({}))) as T & { error?: string };
-      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-      return data;
     } finally {
       window.clearTimeout(timer);
     }
   }
 
+  private async call<T>(path: string, body: unknown = {}, timeoutMs = 60_000): Promise<T> {
+    const response = await this.post(path, body, timeoutMs);
+    const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+    if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+    return data;
+  }
+
   /** ¿Está abierto y deja hablar a Frame? */
   async alive(): Promise<boolean> {
     try {
-      await this.call('/status', {}, 2500);
+      await this.status();
       return true;
     } catch {
       return false;
     }
+  }
+
+  async status(): Promise<EngineStatus> {
+    const data = await this.call<Record<string, unknown>>('/status', {}, 2500);
+    return { version: String(data.version ?? ''), busy: Number(data.busy ?? 0) || 0 };
   }
 
   async search(q: string, limit = 6): Promise<EngineVideo[]> {
@@ -118,9 +190,10 @@ export class EngineClient {
   async info(url: string): Promise<EngineVideo> {
     const data = await this.call<Record<string, unknown>>('/info', { url });
     const id = String(data.id ?? '');
+    const audio = typeof data.audio_size === 'number' && data.audio_size > 0 ? data.audio_size : null;
     return {
       id,
-      url: `https://www.youtube.com/watch?v=${id}`,
+      url: watchUrl(id),
       title: String(data.title ?? ''),
       channel: typeof data.channel === 'string' ? data.channel : null,
       duration: typeof data.duration === 'number' ? data.duration : null,
@@ -129,35 +202,46 @@ export class EngineClient {
       track: typeof data.track === 'string' ? data.track : null,
       album: typeof data.album === 'string' ? data.album : null,
       year: typeof data.year === 'number' ? data.year : null,
+      audioSize: audio,
     };
   }
 
+  /** Pide la canción en MP3 de 320 kbps. Devuelve el número de trabajo. */
   async song(order: SongOrder): Promise<number> {
     const data = await this.call<{ job: number }>('/song', { ...order, bitrate: 320, dest: 'music' });
     return data.job;
   }
 
-  async jobs(): Promise<EngineJob[]> {
-    const list = await this.call<unknown>('/jobs', {}, 5000);
+  /** Trabajos del programa (solo esos ids, si se dan). */
+  async jobs(ids?: number[]): Promise<EngineJob[]> {
+    const list = await this.call<unknown>('/jobs', ids ? { ids } : {}, 8000);
     return Array.isArray(list) ? (list as EngineJob[]) : [];
   }
 
-  /** Letra de LRCLIB (sincronizada si la hay), a través del programa. */
-  async lyrics(artist: string, title: string, seconds?: number | null): Promise<string | undefined> {
-    const params = new URLSearchParams({ artist_name: artist, track_name: title });
-    if (seconds) params.set('duration', String(Math.round(seconds)));
-    try {
-      const res = await this.call<{ status: number; text?: string }>('/fetch', { url: `https://lrclib.net/api/get?${params}` }, 20_000);
-      if (res.status !== 200 || !res.text) return undefined;
-      const data = JSON.parse(res.text) as { syncedLyrics?: string | null; plainLyrics?: string | null };
-      return (data.syncedLyrics || data.plainLyrics || undefined) ?? undefined;
-    } catch {
-      return undefined;
+  pause = (id: number) => this.call('/pause', { id }, 8000);
+  resume = (id: number) => this.call('/resume', { id }, 8000);
+  cancel = (id: number) => this.call('/cancel', { id }, 8000);
+
+  /** El archivo terminado de un trabajo, tal cual. */
+  async file(id: number): Promise<ArrayBuffer> {
+    const response = await this.post('/file', { id }, 120_000);
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data?.error || `HTTP ${response.status}`);
     }
+    return response.arrayBuffer();
+  }
+
+  /** Texto de un servicio de letras o portadas, a través del programa (sin CORS). */
+  async text(url: string, init: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string } = {}): Promise<string> {
+    const res = await this.call<{ status: number; text?: string }>('/fetch', { url, ...init }, 20_000);
+    if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
+    return res.text ?? '';
   }
 
   /** Imagen como data URL, a través del programa (solo servicios de portadas). */
-  async image(url: string): Promise<string | undefined> {
+  async image(url: string | null | undefined): Promise<string | undefined> {
+    if (!url) return undefined;
     try {
       const res = await this.call<{ status: number; mime?: string; base64?: string }>('/fetch', { url, binary: true }, 20_000);
       if (res.status !== 200 || !res.base64 || !/^image\/(jpeg|png|webp)/.test(res.mime ?? '')) return undefined;
@@ -169,22 +253,6 @@ export class EngineClient {
 }
 
 // ------------------------------------------------------------
-// Título y artista de un vídeo suelto
-// ------------------------------------------------------------
-
-const NOISE = /\s*[([](official|oficial|video|vídeo|audio|lyrics?|letra|visualizer|hd|4k|mv|m\/v)[^)\]]*[)\]]/gi;
-
-/** «Artista - Canción (Official Video)» → { artist, title }. */
-export function songOf(video: EngineVideo): { artist: string; title: string } {
-  if (video.artist && video.track) return { artist: video.artist.split(',')[0].trim(), title: video.track };
-  const clean = video.title.replace(NOISE, '').trim();
-  const split = clean.split(/\s+[-–—|]\s+/);
-  if (split.length >= 2) return { artist: split[0].trim(), title: split.slice(1).join(' - ').trim() };
-  const channel = (video.channel ?? '').replace(/\s*-\s*Topic$|VEVO$/i, '').trim();
-  return { artist: channel || '—', title: clean || video.title };
-}
-
-// ------------------------------------------------------------
 // CSV de canciones (Exportify / Spotify, o uno propio)
 // ------------------------------------------------------------
 
@@ -192,11 +260,15 @@ export interface CsvSong {
   title: string;
   artist: string;
   album?: string;
+  albumArtist?: string;
   track?: number;
+  year?: number;
   /** Segundos, si el CSV la trae. */
   duration?: number;
   url?: string;
   cover?: string;
+  /** Id de la canción en Spotify (el «Track URI» de Exportify). */
+  spotifyId?: string;
 }
 
 /** Filas de un CSV (comillas, comas y saltos dentro de comillas; ; o , como separador). */
@@ -249,10 +321,14 @@ export function parseSongsCsv(text: string, limit = 500): CsvSong[] {
   const iTitle = col('track name', 'title', 'titulo', 'name', 'nombre', 'cancion', 'song', 'track');
   const iArtist = col('artist name s', 'artist names', 'artist name', 'artist', 'artists', 'artista', 'artistas');
   const iAlbum = col('album name', 'album');
+  const iAlbumArtist = col('album artist name s', 'album artist names', 'album artist', 'artista del album');
   const iNumber = col('track number', 'numero', 'pista', 'n');
   const iMs = col('duration ms', 'track duration ms', 'duracion ms');
+  const iSeconds = col('duration', 'duracion', 'seconds', 'segundos');
+  const iDate = col('album release date', 'release date', 'fecha de lanzamiento', 'year', 'ano');
   const iUrl = col('url', 'youtube', 'link', 'enlace');
   const iCover = col('album image url', 'cover', 'portada', 'image');
+  const iUri = col('track uri', 'spotify uri', 'uri');
   if (iTitle < 0 && iUrl < 0) return [];
   const songs: CsvSong[] = [];
   for (const r of table.slice(1)) {
@@ -261,49 +337,26 @@ export function parseSongsCsv(text: string, limit = 500): CsvSong[] {
     const url = cell(iUrl);
     if (!title && !youtubeId(url)) continue;
     const ms = Number(cell(iMs));
+    const clock = cell(iSeconds).match(/^(\d{1,2}):(\d{2})$/);
+    const seconds = ms > 0 ? ms / 1000 : clock ? Number(clock[1]) * 60 + Number(clock[2]) : Number(cell(iSeconds)) || 0;
     const track = Number(cell(iNumber));
+    const year = Number(cell(iDate).slice(0, 4));
     const cover = cell(iCover);
+    const spotify = cell(iUri).match(/^spotify:track:([A-Za-z0-9]{22})$/)?.[1];
+    const albumArtist = cell(iAlbumArtist).split(/[,;]/)[0].trim();
     songs.push({
       title,
       artist: cell(iArtist).split(/[,;]/)[0].trim(),
       ...(cell(iAlbum) ? { album: cell(iAlbum) } : {}),
+      ...(albumArtist ? { albumArtist } : {}),
       ...(track > 0 ? { track } : {}),
-      ...(ms > 0 ? { duration: ms / 1000 } : {}),
+      ...(year > 1900 && year < 2100 ? { year } : {}),
+      ...(seconds > 0 ? { duration: seconds } : {}),
       ...(youtubeId(url) ? { url } : {}),
       ...(/^https:\/\//.test(cover) ? { cover } : {}),
+      ...(spotify ? { spotifyId: spotify } : {}),
     });
     if (songs.length >= limit) break;
   }
   return songs;
-}
-
-const AVOID = /\b(live|en vivo|cover|karaoke|instrumental|remix|sped up|slowed|8d|nightcore|reaction|tutorial|lesson)\b/;
-
-/**
- * El mejor resultado de YouTube para una canción, o null si ninguno es fiable
- * (mejor no bajar nada que bajar otra versión).
- */
-export function bestMatch(song: CsvSong, results: EngineVideo[]): EngineVideo | null {
-  const want = norm(song.title);
-  const wantArtist = norm(song.artist);
-  let best: { video: EngineVideo; score: number } | null = null;
-  for (const video of results) {
-    const title = norm(video.title);
-    const channel = norm(video.channel ?? '');
-    let score = 0;
-    if (want && title.includes(want)) score += 4;
-    else if (want && want.split(' ').filter((w) => w.length > 2 && title.includes(w)).length >= Math.ceil(want.split(' ').length / 2)) score += 2;
-    else continue;
-    if (wantArtist && (title.includes(wantArtist) || channel.includes(wantArtist))) score += 3;
-    if (/ topic$/.test(channel) || /official audio|audio oficial/.test(title)) score += 2;
-    const extra = title.match(AVOID);
-    if (extra && !want.includes(extra[0])) score -= 5;
-    if (song.duration && video.duration) {
-      const diff = Math.abs(song.duration - video.duration);
-      if (diff > 20) continue;
-      score += diff <= 3 ? 3 : diff <= 8 ? 1 : 0;
-    }
-    if (!best || score > best.score) best = { video, score };
-  }
-  return best && best.score >= 4 ? best.video : null;
 }

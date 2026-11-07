@@ -119,7 +119,7 @@ El radar de competencias y las calificaciones diarias se calculan exclusivamente
 
 La música, las grabaciones, los adjuntos y las imágenes que subes tú no se respaldan en la nube: se quedan en el dispositivo donde los añadiste.
 
-Frame no busca ni descarga música, vídeos, portadas ni letras: muestra la letra y la portada que traen tus archivos o las que tú añades; lo que versiones anteriores ya guardaron en tu equipo se conserva. Los formatos que el motor de audio de Windows no reproduce (WMA, AIFF, ALAC, APE y otros) no se importan, y Frame dice cuáles quedaron fuera.
+Por sí mismo, Frame no busca ni descarga música, vídeos, portadas ni letras: muestra la letra y la portada que traen tus archivos o las que tú añades; lo que versiones anteriores ya guardaron en tu equipo se conserva. Si activas una extensión de descargas —un programa de terceros que instalas aparte y que funciona en tu propio equipo—, «+ Añadir» de Música le pide cada canción que añades, y es ese programa el que la descarga (en MP3 de 320 kbps) y consulta servicios públicos de letras y portadas para completarla; Frame solo importa el archivo que entrega. Los formatos que el motor de audio de Windows no reproduce (WMA, AIFF, ALAC, APE y otros) no se importan, y Frame dice cuáles quedaron fuera.
 
 Las interfaces de Google requieren conexión y sesión iniciada en Google, y su funcionamiento depende íntegramente de Google.
 
@@ -152,6 +152,8 @@ Se ofrece soporte para la versión estable vigente y para la inmediatamente ante
 ## 8 · Historial de versiones
 
 **${appVersion} — ${releaseDate}**
+
+*1.8.1:* **Música → «+ Añadir»** con una extensión de descargas: YouTube incrustado a la derecha y, a la izquierda, la cola de descargas con «Añadir» (el vídeo que tienes abierto) e «Iniciar descarga»; cada canción en MP3 de 320 kbps con su portada y su letra oficiales, y el peso de cada una · **CSV de canciones** (por ejemplo, una playlist de Spotify): un resumen antes de empezar y su playlist en el mismo orden · **indicador de descargas** junto a «Aleatorio»: descargadas, faltantes y con errores, la velocidad y qué tal es, el tamaño total, el tiempo que falta y una pausa · la descarga sigue al cerrar la ventana o cambiar de interfaz, y continúa al volver a abrir Frame · **Términos y Política de Privacidad 5.4**: el apartado 6.4 bis explica las extensiones de descargas.
 
 *1.8.0:* **Tu música en datos**: cuánto escuchas cada canción, playlist y artista por semana, mes o año —solo lo que suena de verdad, y sin salir de tu equipo—, con las reproducciones y el tiempo de cada playlist y de la canción en «Reproduciendo» · **Inicio renovado**: un pomodoro con lo estudiado hoy y ayer, tu playlist más escuchada, la racha y «Tareas pendientes»; en modo Avanzado, ritmo, constancia y tareas culminadas · en Ajustes, el modo Avanzado se explica en una línea · **Extensiones** a un tercio del ancho, con un buscador que cuenta las que tienes en uso y una página propia para cada una · **Animaciones**: Aurora boreal, Matrix ascendente, Tipoaurora y Mosaico de figuras; figuras en la barra lateral y la cabecera, encuadre de la imagen de fondo y letra de los títulos · **chats de IA en la web**: claude.ai, ChatGPT y otros chats con conectores manejan Frame a través de su nube (Política de Privacidad 5.3) · **Drive** en el menú, bajo Classroom, con la cuenta de Wire.
 

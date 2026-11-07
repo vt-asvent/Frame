@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Download, FileAudio, FolderOpen, FolderInput, LoaderCircle, Puzzle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Download, FileAudio, FolderOpen, FolderInput, LoaderCircle, Plus, Puzzle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,8 +21,9 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { EchoHeader } from '@/components/shared/EchoWord';
 import MusicSourceDialog from '@/components/extensions/MusicSourceDialog';
-import EngineMusicDialog from '@/components/extensions/EngineMusicDialog';
+import MusicAddDialog from '@/components/extensions/MusicAddDialog';
 import { useContributions } from '@/lib/extensions/store';
+import { requestDownloadsDialog, useDownloadsOpenRequests } from '@/lib/extensions/yt-mp3-downloads';
 import { useCourse } from '@/context/CourseContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -45,6 +46,10 @@ import { errorText, tr } from '@/lib/i18n';
 //   · «Descargar»: la página de un programa de descargas de este equipo, que
 //     aporta una extensión «fuente de música» (Ajustes → Extensiones). Lo
 //     que descarga se trae de su carpeta con esta misma importación.
+// Con una fuente «yt-mp3/1» (1.8.1) es «+ Añadir» y abre su ventana: YouTube
+// incrustado, la cola de descargas y el CSV (components/extensions/
+// MusicAddDialog.tsx). La ventana la abre siempre el botón de la cabecera
+// (el del estado vacío desaparece en cuanto entra la primera canción).
 // ============================================================
 
 type Stage = 'idle' | 'reading' | 'confirm' | 'importing' | 'done';
@@ -59,6 +64,16 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
   const activeSource = sources.find((s) => s.id === sourceId) ?? null;
   // Con una fuente que Frame sabe manejar (1.7.6), «Importar» abre su ventana directamente.
   const engineSource = sources.find((s) => s.value.engine) ?? null;
+  const [addOpen, setAddOpen] = useState(false);
+  // «Ver la cola» (indicador de descargas) o el botón del estado vacío piden abrirla.
+  const openRequests = useDownloadsOpenRequests();
+  const seenRequests = useRef(openRequests);
+  const engineId = engineSource?.id ?? null;
+  useEffect(() => {
+    if (variant !== 'button' || openRequests === seenRequests.current) return;
+    seenRequests.current = openRequests;
+    if (engineId) setAddOpen(true);
+  }, [openRequests, variant, engineId]);
   const [stage, setStage] = useState<Stage>('idle');
   const [plan, setPlan] = useState<MusicImportPlan | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, title: '' });
@@ -152,14 +167,14 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
     <>
       {engineSource ? (
         variant === 'empty' ? (
-          <Button className="mt-2" onClick={() => setSourceId(engineSource.id)}>
-            <FolderInput className="mr-2 h-4 w-4" />
-            {tr('Importar música')}
+          <Button className="mt-2" onClick={requestDownloadsDialog}>
+            <Plus className="mr-2 h-4 w-4" />
+            {tr('Añadir música')}
           </Button>
         ) : (
-          <Button onClick={() => setSourceId(engineSource.id)} title={tr('Descargar canciones o importarlas de tu equipo')}>
-            <FolderInput className="h-4 w-4" />
-            {tr('Importar')}
+          <Button onClick={() => setAddOpen(true)} title={tr('Descargar canciones de YouTube o de un CSV, o añadirlas de tu equipo')}>
+            <Plus className="h-4 w-4" />
+            {tr('Añadir')}
           </Button>
         )
       ) : (
@@ -221,16 +236,15 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
       </DropdownMenu>
       )}
 
-      {activeSource?.value.engine && (
-        <EngineMusicDialog
-          id={activeSource.id}
-          manifest={activeSource.manifest}
-          source={activeSource.value}
-          open={!!activeSource}
-          onOpenChange={(open) => !open && setSourceId(null)}
-          onImport={(picked, quiet) => void importFrom(picked, quiet)}
+      {engineSource && variant === 'button' && (
+        <MusicAddDialog
+          id={engineSource.id}
+          manifest={engineSource.manifest}
+          source={engineSource.value}
+          open={addOpen}
+          onOpenChange={setAddOpen}
           onLocal={(folder) => {
-            setSourceId(null);
+            setAddOpen(false);
             void choose(folder);
           }}
         />

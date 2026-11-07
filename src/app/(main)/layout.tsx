@@ -39,6 +39,7 @@ import InterfaceErrorBoundary from '@/components/layout/InterfaceErrorBoundary';
 import UpdateDialog from '@/components/layout/UpdateDialog';
 import WireRuntime from '@/components/extensions/wire/WireRuntime';
 import IaRuntime from '@/components/extensions/ia/IaRuntime';
+import MusicDownloadsRuntime from '@/components/music/MusicDownloadsRuntime';
 import AppBackdrop from '@/components/extensions/animaciones/Backdrops';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { getActiveSession, onAuthChange, tidyName, updatePersonNames, updateUsername } from '@/lib/supabase/auth';
@@ -302,6 +303,8 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
             <StudyVideoHost />
             <WireRuntime />
             <IaRuntime />
+            {/* Cola de descargas de Música (1.8.1): sigue al cambiar de interfaz. */}
+            <MusicDownloadsRuntime />
 
             {/*
                 This silent audio element provides a robust way to prevent system sleep

@@ -111,7 +111,7 @@ The competency radar and the daily grades are calculated exclusively from the da
 
 Music, recordings, attachments and the images you upload yourself aren’t backed up in the cloud: they stay on the device where you added them.
 
-Frame doesn’t search for or download music, videos, covers or lyrics: it shows the lyrics and cover that your files carry or the ones you add; what earlier versions already saved on your computer is kept. Formats that the Windows audio engine doesn’t play (WMA, AIFF, ALAC, APE and others) aren’t imported, and Frame tells you which ones were left out.
+On its own, Frame doesn’t search for or download music, videos, covers or lyrics: it shows the lyrics and cover that your files carry or the ones you add; what earlier versions already saved on your computer is kept. If you turn on a download extension —a third-party program you install separately and that runs on your own computer—, Music’s “+ Add” asks it for each song you add, and it’s that program that downloads it (as a 320 kbps MP3) and queries public lyrics and cover services to complete it; Frame only imports the file it hands over. Formats that the Windows audio engine doesn’t play (WMA, AIFF, ALAC, APE and others) aren’t imported, and Frame tells you which ones were left out.
 
 Google’s screens require a connection and being signed in to Google, and how they work depends entirely on Google.
 
@@ -144,6 +144,8 @@ Support is offered for the current stable version and the one immediately before
 ## 8 · Version history
 
 **${appVersion} — ${releaseDate}**
+
+*1.8.1:* **Music → “+ Add”** with a download extension: YouTube embedded on the right and, on the left, the download queue with “Add” (the video you have open) and “Start download”; each song as a 320 kbps MP3 with its official cover and lyrics, and the size of each one · **song CSVs** (for example, a Spotify playlist): a summary before starting and its playlist in the same order · **download indicator** next to “Shuffle”: downloaded, remaining and failed songs, the speed and how good it is, the total size, the time left and a pause · the download keeps going when you close the window or switch screens, and continues when you open Frame again · **Terms and Privacy Policy 5.4**: section 6.4 bis explains download extensions.
 
 *1.8.0:* **Your music in numbers**: how much you listen to each song, playlist and artist by week, month or year —only what really plays, and without leaving your computer—, with the plays and time of each playlist and of the song in “Now playing” · **A new Home**: a Pomodoro with what you studied today and yesterday, your most-played playlist, your streak and “Pending tasks”; in Advanced mode, pace, consistency and completed tasks · in Settings, Advanced mode is explained in one line · **Extensions** at a third of the width, with a search bar that counts the ones in use and a page of their own for each · **Animations**: Northern lights, Rising Matrix, Type aurora and Shape mosaic; shapes in the sidebar and the header, background image framing and heading font · **web AI chats**: claude.ai, ChatGPT and other chats with connectors drive Frame through its cloud (Privacy Policy 5.3) · **Drive** in the menu, under Classroom, with Wire’s account.
 
