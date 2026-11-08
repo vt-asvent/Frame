@@ -49,9 +49,10 @@ const listKey = (uid: string) => `timetables_${uid}`;
 const selectedKey = (uid: string) => `timetableSelected_${uid}`;
 export const timetableImageKey = (id: string) => `timetableImage_${id}`;
 
-/** Clave en el almacén local de la foto de un horario. */
-export const localImageKey = (uid: string, timetable: Pick<Timetable, 'image'>) =>
-  timetable.image === 'scheduleImage' ? scheduleImageKey(uid) : timetable.image;
+/** Clave en el almacén local de la foto de un horario: sale del id, nunca de
+ *  lo guardado (un respaldo manipulado no puede apuntar a otra imagen). */
+export const localImageKey = (uid: string, timetable: Pick<Timetable, 'id' | 'image'>) =>
+  timetable.image === 'scheduleImage' ? scheduleImageKey(uid) : timetableImageKey(timetable.id);
 
 // ------------------------------------------------------------
 // Horas
@@ -137,8 +138,9 @@ function sanitize(raw: unknown): Timetable | null {
   const value = raw as Record<string, unknown>;
   const id = text(value.id, 64);
   const month = typeof value.month === 'string' && /^\d{4}-\d{2}$/.test(value.month) ? value.month : '';
-  const image = text(value.image, 120);
-  if (!id || !month || !image) return null;
+  if (!id || !month) return null;
+  // Solo la foto de antes o la propia del horario: nada de otras claves.
+  const image = value.image === 'scheduleImage' ? 'scheduleImage' : timetableImageKey(id);
   const read: ReadState = value.read === 'done' || value.read === 'failed' ? value.read : 'pending';
   return {
     id,

@@ -307,7 +307,8 @@ describe('relé', () => {
 });
 
 describe('lector de horarios', () => {
-  const foto = (marca = '') => ({ image: `${marca}${'A'.repeat(160)}`, mime: 'image/jpeg' });
+  // «/9j/4AAQSkZJRg» es el comienzo de un JPEG (FF D8 FF E0 … JFIF) en base64.
+  const foto = (marca = '') => ({ image: `/9j/4AAQSkZJRg${marca}${'A'.repeat(160)}`, mime: 'image/jpeg' });
   const hoy = () => new Date().toISOString().slice(0, 10);
 
   it('solo con sesión de Frame y una imagen válida', async () => {
@@ -316,6 +317,10 @@ describe('lector de horarios', () => {
     expect((await a.pedir('/app/horario', { token: yo, json: { image: 'corta', mime: 'image/jpeg' } })).datos).toEqual({ error: 'image' });
     expect((await a.pedir('/app/horario', { token: yo, json: { ...foto(), mime: 'image/gif' } })).estado).toBe(400);
     expect((await a.pedir('/app/horario', { token: yo, json: { image: `<${'A'.repeat(160)}`, mime: 'image/jpeg' } })).estado).toBe(400);
+    // Base64 válido, pero no es un JPEG (ni un PNG que dice ser JPEG).
+    expect((await a.pedir('/app/horario', { token: yo, json: { image: 'A'.repeat(160), mime: 'image/jpeg' } })).datos).toEqual({ error: 'image' });
+    expect((await a.pedir('/app/horario', { token: yo, json: { image: `iVBORw0KGgo${'A'.repeat(160)}`, mime: 'image/jpeg' } })).estado).toBe(400);
+    expect((await a.pedir('/app/horario', { token: yo, json: { image: `iVBORw0KGgo${'A'.repeat(160)}`, mime: 'image/png' } })).estado).toBe(200);
   });
 
   it('devuelve las clases sin los recreos y sin guardar la foto', async () => {
@@ -329,12 +334,14 @@ describe('lector de horarios', () => {
     expect(await a.sql('SELECT owner, day, n FROM lecturas WHERE owner=?', yo)).toEqual([{ owner: yo, day: hoy(), n: 1 }]);
   });
 
-  it('cada cuenta tiene un cupo diario; lo que falla no lo gasta', async () => {
+  it('cada cuenta tiene un cupo diario; solo la cuota agotada de Cloudflare no lo gasta', async () => {
     const yo = cuenta();
-    expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('bXVkbw') })).datos).toEqual({ error: 'busy' });
     expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('Y3Vwbw') })).datos).toEqual({ error: 'daily' });
     expect(await a.sql('SELECT n FROM lecturas WHERE owner=?', yo)).toEqual([{ n: 0 }]);
-    for (let i = 0; i < 12; i++) expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto() })).estado).toBe(200);
+    // El modelo trabajó aunque no saliera nada legible: cuenta (si no, sería gratis abusar).
+    expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('bXVkbw') })).datos).toEqual({ error: 'busy' });
+    expect(await a.sql('SELECT n FROM lecturas WHERE owner=?', yo)).toEqual([{ n: 1 }]);
+    for (let i = 0; i < 11; i++) expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto() })).estado).toBe(200);
     const pasado = await a.pedir('/app/horario', { token: sesion(yo), json: foto() });
     expect(pasado.estado).toBe(429);
     expect(pasado.datos).toEqual({ error: 'quota', limit: 12 });

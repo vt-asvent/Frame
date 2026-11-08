@@ -122,7 +122,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 export class IA extends WorkerEntrypoint {
   async run(model, input) {
     const foto = input.messages[0].content.find((p) => p.type === 'image_url').image_url.url;
-    if (model !== '@cf/google/gemma-4-26b-a4b-it' || !foto.startsWith('data:image/jpeg;base64,') || !input.response_format) throw new Error('pedido mal formado');
+    if (model !== '@cf/google/gemma-4-26b-a4b-it' || !/^data:image\\/(jpeg|png|webp);base64,/.test(foto) || !input.response_format) throw new Error('pedido mal formado');
     if (foto.includes('Y3Vwbw')) throw new Error('3036: Account limited: you have used up your daily free allocation of 10,000 neurons');
     if (foto.includes('bXVkbw')) return { choices: [{ message: { content: 'No puedo.' } }] };
     const classes = [

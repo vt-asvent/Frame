@@ -15,7 +15,23 @@ import { type Env, json } from './util';
 export const MODEL = '@cf/google/gemma-4-26b-a4b-it';
 export const DAILY_LIMIT = 12;
 const MAX_IMAGE = 4_000_000;
-const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** Los primeros bytes de la foto dicen si de verdad es del tipo que declara. */
+const MAGIC = new Map<string, (b: number[]) => boolean>([
+  ['image/jpeg', (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
+  ['image/png', (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47],
+  ['image/webp', (b) => String.fromCharCode(...b.slice(0, 4)) === 'RIFF' && String.fromCharCode(...b.slice(8, 12)) === 'WEBP'],
+]);
+
+function isImage(image: string, mime: string): boolean {
+  const check = MAGIC.get(mime);
+  if (!check) return false;
+  try {
+    return check([...atob(image.slice(0, 16))].map((c) => c.charCodeAt(0)));
+  } catch {
+    return false;
+  }
+}
 
 const SCHEMA = {
   type: 'object',
@@ -79,7 +95,7 @@ export async function readTimetable(req: Request, env: Env, owner: string): Prom
   const image = typeof body?.image === 'string' ? body.image : '';
   const mime = typeof body?.mime === 'string' ? body.mime : '';
   // Solo el comienzo: revisar 1 MB de base64 gastaría el CPU del plan gratis.
-  if (image.length < 100 || image.length > MAX_IMAGE || !/^[A-Za-z0-9+/]+$/.test(image.slice(0, 100)) || !TYPES.includes(mime)) {
+  if (image.length < 100 || image.length > MAX_IMAGE || !/^[A-Za-z0-9+/]+$/.test(image.slice(0, 100)) || !isImage(image, mime)) {
     return json({ error: 'image' }, 400);
   }
 
@@ -88,7 +104,6 @@ export async function readTimetable(req: Request, env: Env, owner: string): Prom
     .bind(owner, day)
     .first<number>('n');
   if ((used ?? 0) > DAILY_LIMIT) return json({ error: 'quota', limit: DAILY_LIMIT }, 429);
-  const refund = () => env.DB.prepare('UPDATE lecturas SET n = n - 1 WHERE owner = ? AND day = ?').bind(owner, day).run();
 
   let out: unknown;
   try {
@@ -108,16 +123,18 @@ export async function readTimetable(req: Request, env: Env, owner: string): Prom
       max_completion_tokens: 4096,
     });
   } catch (e) {
-    await refund();
     const why = String(e).slice(0, 200);
     console.error('horario', why);
-    // La cuota gratuita de Cloudflare es de todo Frame y vuelve cada día.
-    return /neuron|allocation|3036|4006/i.test(why) ? json({ error: 'daily' }, 429) : json({ error: 'busy' }, 503);
-  }
-  const classes = classesOf(out);
-  if (!classes) {
-    await refund();
+    // La cuota gratuita de Cloudflare es de todo Frame y vuelve cada día. Si se
+    // agotó, el modelo no llegó a trabajar: esa lectura no se le cuenta a nadie.
+    if (/neuron|allocation|3036|4006/i.test(why)) {
+      await env.DB.prepare('UPDATE lecturas SET n = n - 1 WHERE owner = ? AND day = ?').bind(owner, day).run();
+      return json({ error: 'daily' }, 429);
+    }
     return json({ error: 'busy' }, 503);
   }
-  return json({ classes });
+  // Lo demás cuenta aunque no salga nada legible: si no, cualquiera usaría el
+  // modelo sin límite enviando fotos que no son horarios.
+  const classes = classesOf(out);
+  return classes ? json({ classes }) : json({ error: 'busy' }, 503);
 }
