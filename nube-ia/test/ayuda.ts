@@ -112,22 +112,53 @@ export interface Arnes {
 
 const pkce = (v: string) => createHash('sha256').update(v).digest('base64url');
 
+/**
+ * Workers AI de mentira, por RPC como el de verdad. Responde un horario con un
+ * recreo; «Y3Vwbw» en la foto simula la cuota gratuita agotada y «bXVkbw», un
+ * modelo que no contesta con JSON. Un pedido mal formado falla.
+ */
+const IA_FALSA = `
+import { WorkerEntrypoint } from 'cloudflare:workers';
+export class IA extends WorkerEntrypoint {
+  async run(model, input) {
+    const foto = input.messages[0].content.find((p) => p.type === 'image_url').image_url.url;
+    if (model !== '@cf/google/gemma-4-26b-a4b-it' || !foto.startsWith('data:image/jpeg;base64,') || !input.response_format) throw new Error('pedido mal formado');
+    if (foto.includes('Y3Vwbw')) throw new Error('3036: Account limited: you have used up your daily free allocation of 10,000 neurons');
+    if (foto.includes('bXVkbw')) return { choices: [{ message: { content: 'No puedo.' } }] };
+    const classes = [
+      { day: 1, start: '08:00', end: '09:30', subject: 'Matemática', room: 'A-1', kind: 'class' },
+      { day: 1, start: '09:30', end: '09:45', subject: 'Recreo', kind: 'break' },
+      { day: 2, start: '08:00', end: '09:30', subject: 'Historia', teacher: 'Prof. Ríos', kind: 'class' },
+    ];
+    return { choices: [{ message: { content: 'Aquí está: ' + JSON.stringify({ classes }) } }] };
+  }
+}
+export default { fetch: () => new Response('ia') };
+`;
+
 export async function crearArnes(): Promise<Arnes> {
   const mf = new Miniflare({
-    modules: true,
-    scriptPath: join(RAIZ, 'dist', 'index.js'),
-    compatibilityDate: '2026-08-01',
-    d1Databases: { DB: 'frame-ia-pruebas' },
-    durableObjects: { RELAY: { className: 'FrameRelay', useSQLite: true } },
-    bindings: { FRAME_IA_KEY: 'clave-de-pruebas-que-no-es-secreta', SUPABASE_URL: 'https://supabase.prueba/', SUPABASE_ANON_KEY: 'anon-de-pruebas' },
-    outboundService: async (pedido: any) => {
-      const url = new URL(pedido.url);
-      const auth = pedido.headers.get('authorization') ?? '';
-      if (url.hostname !== 'supabase.prueba' || url.pathname !== '/auth/v1/user' || pedido.headers.get('apikey') !== 'anon-de-pruebas' || !auth.startsWith('Bearer sb-')) {
-        return new Response(JSON.stringify({ msg: 'invalid' }), { status: 401 }) as never;
-      }
-      return new Response(JSON.stringify({ id: auth.slice(10), aud: 'authenticated' }), { headers: { 'content-type': 'application/json' } }) as never;
-    },
+    workers: [
+      {
+        name: 'frame-ia',
+        modules: true,
+        scriptPath: join(RAIZ, 'dist', 'index.js'),
+        compatibilityDate: '2026-08-01',
+        d1Databases: { DB: 'frame-ia-pruebas' },
+        durableObjects: { RELAY: { className: 'FrameRelay', useSQLite: true } },
+        bindings: { FRAME_IA_KEY: 'clave-de-pruebas-que-no-es-secreta', SUPABASE_URL: 'https://supabase.prueba/', SUPABASE_ANON_KEY: 'anon-de-pruebas' },
+        serviceBindings: { AI: { name: 'ia-falsa', entrypoint: 'IA' } },
+        outboundService: async (pedido: any) => {
+          const url = new URL(pedido.url);
+          const auth = pedido.headers.get('authorization') ?? '';
+          if (url.hostname !== 'supabase.prueba' || url.pathname !== '/auth/v1/user' || pedido.headers.get('apikey') !== 'anon-de-pruebas' || !auth.startsWith('Bearer sb-')) {
+            return new Response(JSON.stringify({ msg: 'invalid' }), { status: 401 }) as never;
+          }
+          return new Response(JSON.stringify({ id: auth.slice(10), aud: 'authenticated' }), { headers: { 'content-type': 'application/json' } }) as never;
+        },
+      },
+      { name: 'ia-falsa', modules: true, compatibilityDate: '2026-08-01', script: IA_FALSA },
+    ],
   });
   const db = await mf.getD1Database('DB');
   for (const archivo of readdirSync(join(RAIZ, 'migraciones')).filter((f) => f.endsWith('.sql')).sort()) {

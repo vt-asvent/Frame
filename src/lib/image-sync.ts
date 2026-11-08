@@ -24,6 +24,7 @@ import { tr } from '@/lib/i18n';
 //   · portada de playlist     playlistImage_<id>
 //   · imagen de asignatura    courseImage_<id>
 //   · imagen de colección     spaceImage_<id>
+//   · horarios por mes        timetableImage_<id> (1.9.0)
 //
 // SOLO lo del perfil activo (1.6.7, ver profile-scope.ts): en un equipo
 // compartido, las imágenes de otro perfil nunca se suben a esta nube, y las
@@ -83,7 +84,8 @@ function isSyncedImageKey(key: string): boolean {
     key.startsWith('profileAvatar_') ||
     key.startsWith('playlistImage_') ||
     key.startsWith('courseImage_') ||
-    key.startsWith('spaceImage_')
+    key.startsWith('spaceImage_') ||
+    key.startsWith('timetableImage_')
   );
 }
 

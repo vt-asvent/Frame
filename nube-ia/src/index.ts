@@ -1,7 +1,9 @@
 // Frame · IA en la nube: MCP remoto para claude.ai (web, escritorio y
 // celular) y los demás chats que admiten conectores. Aquí no viven los datos:
 // cada llamada pasa, por el relé de la cuenta, a una Frame abierta, y la
-// respuesta vuelve igual. Ver README.md.
+// respuesta vuelve igual. También lee la foto de los horarios (horario.ts).
+// Ver README.md.
+import { readTimetable } from './horario';
 import { accessFrom, authorize, metadata, newPairing, ownerStatus, register, revokeOwner, token } from './oauth';
 import { ownerFromApp } from './supabase';
 import { type Env, json, random, relayOf, signToken, verifyToken } from './util';
@@ -54,6 +56,8 @@ async function app(req: Request, env: Env, path: string): Promise<Response> {
     case 'POST /app/revoke':
       await revokeOwner(env, owner);
       return json({ ok: true });
+    case 'POST /app/horario':
+      return readTimetable(req, env, owner);
     default:
       return json({ error: 'not_found' }, 404);
   }
@@ -100,7 +104,7 @@ export default {
     }
   },
 
-  /** Cada día: fuera lo caducado y los registros de chats que nunca se conectaron. */
+  /** Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas de días pasados. */
   async scheduled(_event: ScheduledController, env: Env, wait: ExecutionContext): Promise<void> {
     const now = Date.now();
     wait.waitUntil(
@@ -109,6 +113,7 @@ export default {
         env.DB.prepare('DELETE FROM grants WHERE expires<?').bind(now),
         env.DB.prepare('DELETE FROM sessions WHERE expires<?').bind(now),
         env.DB.prepare('DELETE FROM clients WHERE used=0 AND created<?').bind(now - 86_400_000),
+        env.DB.prepare('DELETE FROM lecturas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
       ]).then(() => undefined),
     );
   },

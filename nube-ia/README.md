@@ -13,9 +13,10 @@ respuesta vuelve igual. No se guardan argumentos ni respuestas.
 | `/.well-known/*`, `/register`, `/authorize`, `/token` | OAuth 2.1 con registro dinámico y PKCE; se autoriza con el código de 8 letras que muestra Frame (10 min, un uso; 20 fallos anulan los vivos). |
 | `/mcp` | MCP por HTTP (JSON-RPC sin sesiones). |
 | `/app/pair`, `/app/ticket`, `/app/status`, `/app/revoke` | Lo que pide la app con su sesión de Supabase. |
+| `/app/horario` | Inicio → Horario: lee las clases de una foto con Gemma 4 (Workers AI, sin retención de datos); 12 al día por cuenta. La foto no se guarda. |
 | `/app/socket?ticket=` | El WebSocket de cada Frame (pase de 1 min y un solo uso). |
 
-- D1 (`migraciones/`): chats registrados, códigos, autorizaciones y sesiones; los códigos y llaves, como huella SHA-256.
+- D1 (`migraciones/`): chats registrados, códigos, autorizaciones y sesiones; los códigos y llaves, como huella SHA-256. Y cuántos horarios lee cada cuenta hoy (`lecturas`).
 - Relé (`src/relay.ts`): guarda la lista de herramientas que publicó Frame (los chats la ven con Frame cerrada) y la generación de permisos (retirar permisos corta también los accesos vivos). Responde la Frame más reciente o la que volvió a primer plano; si no confirma la llamada en 6 s, lo que solo lee prueba con otra y lo que cambia no se repite. Máximo 60 llamadas por minuto y cuenta.
 - La app (`src/lib/extensions/ia/cloud.ts`): pide el código, abre el WebSocket, publica las herramientas y atiende las llamadas con el mismo motor que el puente local, confirmación para borrar incluida.
 

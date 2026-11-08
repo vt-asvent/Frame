@@ -10,13 +10,13 @@
 // sesión de Supabase.
 // ============================================================
 
+import { NUBE as IA_CLOUD } from '@/lib/nube';
 import { getActiveSession } from '@/lib/supabase/auth';
 import { extRead, extWrite } from '@/lib/extensions/store';
 import { deviceId } from '@/lib/sync-delta';
 import { APP_VERSION } from '@/lib/version';
 import { IA, IA_INSTRUCTIONS, IA_TOOLS } from './tools';
 
-export const IA_CLOUD = 'https://frame-ia.vtasvent.workers.dev';
 /** La dirección que se pega en el chat como conector. */
 export const IA_CLOUD_MCP = `${IA_CLOUD}/mcp`;
 /** Cambió el interruptor de este equipo o se retiraron los permisos. */

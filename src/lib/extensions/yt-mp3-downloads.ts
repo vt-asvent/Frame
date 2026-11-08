@@ -14,6 +14,7 @@ import {
   type EngineVideo,
   type SongOrder,
 } from '@/lib/extensions/yt-mp3';
+import { MIN_ENGINE, ensureEngine, versionBelow } from '@/lib/extensions/engine-app';
 import { cleanTitle, findSongLyrics, firstArtist } from '@/lib/extensions/yt-mp3-lyrics';
 import { findOfficialRelease, findSongVideo, songOfVideo, squareFromThumbnail } from '@/lib/extensions/yt-mp3-match';
 import { memorySource, planMusicImport, releaseMemorySource, storeImportedSongs } from '@/lib/music-import';
@@ -144,8 +145,6 @@ export interface DownloadsSnapshot {
   batch: number;
   /** El último lote ya cerrado (avisado). */
   finalized: number;
-  /** Peticiones de abrir la ventana de «+ Añadir» (desde el indicador). */
-  openRequests: number;
 }
 
 const STORAGE_PREFIX = 'musicDownloads_';
@@ -153,8 +152,6 @@ const IN_FLIGHT = 4;
 const TICK_MS = 1000;
 /** Duración supuesta si no se sabe. */
 const DEFAULT_SECONDS = 210;
-/** Versión mínima del programa: desde ella entrega el archivo terminado. */
-const MIN_ENGINE = [1, 1, 0];
 /** Canciones que el programa baja a la vez. */
 const ENGINE_LANES = 2;
 /** Supuestos hasta aprender los de este equipo (segundos). */
@@ -181,7 +178,6 @@ const empty = (): DownloadsSnapshot => ({
   finishSeconds: FINISH_GUESS,
   batch: 0,
   finalized: 0,
-  openRequests: 0,
 });
 
 let state: DownloadsSnapshot = empty();
@@ -210,9 +206,6 @@ const subscribe = (listener: () => void) => {
 
 export const useDownloads = (): DownloadsSnapshot => useSyncExternalStore(subscribe, () => state, () => state);
 
-/** Solo las peticiones de abrir «+ Añadir» (sin repintar con cada avance). */
-const openRequestsOf = () => state.openRequests;
-export const useDownloadsOpenRequests = (): number => useSyncExternalStore(subscribe, openRequestsOf, openRequestsOf);
 
 // ------------------------------------------------------------
 // Guardado (por perfil)
@@ -315,7 +308,7 @@ export function attachDownloads(next: DownloadsHost): () => void {
     if (uid) save();
     uid = next.uid;
     prepared.clear();
-    state = { ...load(next.uid), openRequests: state.openRequests };
+    state = load(next.uid);
     listeners.forEach((listener) => listener());
   }
   host = next;
@@ -512,10 +505,8 @@ export function clearFinishedDownloads() {
   set({ items: state.items.filter((item) => !isFinished(item)) });
 }
 
-/** El indicador de Música pide abrir la ventana de «+ Añadir». */
-export function requestDownloadsDialog() {
-  set({ openRequests: state.openRequests + 1 }, false);
-}
+/** La página de «+ Añadir» de Música (1.9.0; antes, una ventana emergente). */
+export const MUSIC_ADD_ROUTE = '/music/anadir';
 
 // ------------------------------------------------------------
 // Pesos, avance y tiempo
@@ -703,22 +694,12 @@ let engineCheckedAt = 0;
 
 const isNetworkError = (error: unknown) => error instanceof TypeError || (error instanceof DOMException && error.name === 'AbortError');
 
-function versionBelow(version: string, minimum: number[]): boolean {
-  const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);
-  for (let i = 0; i < minimum.length; i++) {
-    if ((parts[i] ?? 0) !== minimum[i]) return (parts[i] ?? 0) < minimum[i];
-  }
-  return false;
-}
-
-/** ¿El programa es anterior a la versión que entrega las canciones a Frame? */
-export const engineOutdated = (version: string) => versionBelow(version, MIN_ENGINE);
-
 /**
  * ¿Se puede hablar con el programa de esta fuente? Bien, se vuelve a mirar
  * cada 15 s; mal (cerrado o viejo), cada 4 s, para seguir en cuanto vuelva.
+ * Mal, además, Frame lo abre, lo instala o lo pone al día solo (engine-app.ts).
  */
-async function engineReady(client: EngineClient): Promise<boolean> {
+async function engineReady(client: EngineClient, sourceId: string): Promise<boolean> {
   const now = Date.now();
   if (state.problem === null && now - engineCheckedAt < 15_000) return true;
   if (state.problem !== null && state.problem !== 'extension' && now - engineCheckedAt < 4_000) return false;
@@ -727,9 +708,11 @@ async function engineReady(client: EngineClient): Promise<boolean> {
     const status = await client.status();
     const problem: DownloadProblem = versionBelow(status.version, MIN_ENGINE) ? 'outdated' : null;
     if (state.problem !== problem) set({ problem }, false);
+    if (problem) void ensureEngine(sourceId, client);
     return problem === null;
   } catch {
     if (state.problem !== 'engine') set({ problem: 'engine' }, false);
+    void ensureEngine(sourceId, client);
     return false;
   }
 }
@@ -750,7 +733,7 @@ async function tick() {
       if (state.problem !== 'extension') set({ problem: 'extension' }, false);
       return;
     }
-    if (!(await engineReady(client))) return;
+    if (!(await engineReady(client, active[0].sourceId))) return;
 
     await syncJobs(client);
     if (!state.paused) dispatch(client);

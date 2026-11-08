@@ -309,7 +309,7 @@ fn check_only_frame_changes(current: &Value, next: &Value, exe: &str) -> Result<
 }
 
 /// ¿Frame se instaló desde la Store (MSIX)?
-fn packaged() -> bool {
+pub(crate) fn packaged() -> bool {
     std::env::current_exe().map(|p| p.to_string_lossy().to_ascii_lowercase().contains("\\windowsapps\\")).unwrap_or(false)
 }
 

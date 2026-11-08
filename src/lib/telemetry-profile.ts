@@ -175,7 +175,7 @@ export function buildUsageProfile(uid: string, sessions: StudySession[]): UsageP
     recordings: count(uid, 'recordings'),
     favorites: count(uid, 'songFavorites'),
     day_grades: count(uid, 'dailyPerformances'),
-    competencies: count(uid, 'competencyCourseIds'),
+    timetables: count(uid, 'timetables'),
     active_habits: Array.isArray(habits) ? habits.filter((habit) => !habit?.isArchived).length : 0,
     gallery_images: Array.isArray(refs) ? refs.filter((ref) => ref?.kind === 'native').length : 0,
     own_images: Array.isArray(refs) ? refs.filter((ref) => ref?.kind === 'own').length : 0,

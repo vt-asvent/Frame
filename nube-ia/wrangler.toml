@@ -1,6 +1,7 @@
 # Frame · IA en la nube: MCP remoto para claude.ai y los demás chats que
 # admiten conectores. Aquí no viven los datos de Frame: cada llamada pasa, por
-# un relé de cada cuenta (Durable Object), a una Frame abierta y vuelve.
+# un relé de cada cuenta (Durable Object), a una Frame abierta y vuelve. Y el
+# lector de horarios de Inicio.
 # Plan gratis de Cloudflare. Los secretos van con `wrangler secret put`
 # (FRAME_IA_KEY, SUPABASE_URL, SUPABASE_ANON_KEY) y nunca en este archivo.
 name = "frame-ia"
@@ -23,6 +24,11 @@ class_name = "FrameRelay"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["FrameRelay"]
+
+# Lector de horarios (src/horario.ts): Gemma 4 en Workers AI, dentro de la
+# cuota gratuita diaria; sin retención de datos.
+[ai]
+binding = "AI"
 
 # Limpieza diaria de códigos, permisos y sesiones caducados.
 [triggers]

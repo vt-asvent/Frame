@@ -1758,6 +1758,8 @@ pub fn run() {
             extensions::ext_secret_set,
             extensions::ext_secret_get,
             extensions::ext_secret_delete,
+            extensions::ext_app_launch,
+            extensions::ext_app_install,
             ia_bridge::ia_bridge_start,
             ia_bridge::ia_bridge_stop,
             ia_bridge::ia_bridge_reply,
@@ -1805,7 +1807,7 @@ pub fn run() {
                 // Tal como se cerró (1.7.3): tamaño, posición, maximizada o
                 // pantalla completa. Nace oculta y aquí se muestra ya colocada.
                 window_state::restore(&window);
-                if let Some(icon) = taskbar_icon() {
+                if let Ok(icon) = tauri::image::Image::from_bytes(include_bytes!("../icons/taskbar.png")) {
                     let _ = window.set_icon(icon);
                 }
                 if let Ok(hwnd) = window.hwnd() {
@@ -1825,16 +1827,6 @@ pub fn run() {
                 match event {
                     tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                         window_state::capture(window)
-                    }
-                    // La barra pudo cambiar de tema: se repasa al cambiar el
-                    // tema o al volver a la ventana (Windows no siempre avisa).
-                    tauri::WindowEvent::ThemeChanged(_) | tauri::WindowEvent::Focused(true) => {
-                        if let Some(icon) = taskbar_icon() {
-                            let _ = window.set_icon(icon);
-                            if let Ok(hwnd) = window.hwnd() {
-                                set_titlebar_icon(hwnd.0 as isize);
-                            }
-                        }
                     }
                     tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
                         window_state::capture(window);
@@ -1866,55 +1858,6 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Frame");
-}
-
-// ============================================================
-// Icono de la barra de tareas según su tema (1.7.3). Windows no adapta el
-// icono de una ventana: con la barra oscura va el logo claro y al revés.
-// Con el logo del 6-nov-2026 ambas variantes son el mismo símbolo (se lee
-// bien en las dos barras); el mecanismo queda por si vuelve a hacer falta.
-// Se mira el modo del sistema (la barra), no el tema de la app.
-// ============================================================
-
-#[cfg(windows)]
-fn taskbar_is_light() -> bool {
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
-    let key: Vec<u16> = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize".encode_utf16().chain([0]).collect();
-    let name: Vec<u16> = "SystemUsesLightTheme".encode_utf16().chain([0]).collect();
-    let mut value: u32 = 0;
-    let mut size: u32 = 4;
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            key.as_ptr(),
-            name.as_ptr(),
-            RRF_RT_REG_DWORD,
-            std::ptr::null_mut(),
-            &mut value as *mut u32 as *mut _,
-            &mut size,
-        )
-    };
-    status == 0 && value != 0
-}
-
-#[cfg(not(windows))]
-fn taskbar_is_light() -> bool {
-    false
-}
-
-/// El icono que toca, o `None` si la barra no cambió desde la última vez.
-fn taskbar_icon() -> Option<tauri::image::Image<'static>> {
-    static LAST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
-    let light = taskbar_is_light();
-    if LAST.swap(light as u8, Ordering::SeqCst) == light as u8 {
-        return None;
-    }
-    let bytes: &'static [u8] = if light {
-        include_bytes!("../icons/taskbar-claro.png")
-    } else {
-        include_bytes!("../icons/taskbar-oscuro.png")
-    };
-    tauri::image::Image::from_bytes(bytes).ok()
 }
 
 /// Icono pequeño de la barra de título (1.7.6): el mismo logo con margen, para

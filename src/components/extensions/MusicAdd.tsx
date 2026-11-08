@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Download, FileUp, LoaderCircle, Pause, Play, Plus, RefreshCw, RotateCcw, Weight, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Download, FileUp, LoaderCircle, Pause, Play, Plus, RefreshCw, RotateCcw, Weight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import GoogleEmbed from '@/components/integrations/GoogleEmbed';
 import { useCourse } from '@/context/CourseContext';
 import type { ExtensionManifest, MusicSourceContribution } from '@/lib/extensions/manifest';
 import { EngineClient, parseSongsCsv, songBytes, youtubeId, type CsvSong } from '@/lib/extensions/yt-mp3';
+import { engineError, ensureEngine, useEngineStep } from '@/lib/extensions/engine-app';
 import {
   addCsvDownloads,
   addVideoDownload,
   clearFinishedDownloads,
   describeDownload,
-  engineOutdated,
   findInLibrary,
   formatEta,
   isActive,
@@ -37,26 +37,28 @@ import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 // ============================================================
-// Música → «+ Añadir», con una fuente de música «yt-mp3/1» (1.8.1).
+// Música → «+ Añadir», con una fuente de música «yt-mp3/1». Desde la 1.9.0
+// es una PÁGINA de Música (/music/anadir), no una ventana emergente (Diego):
 //
-//   ┌───────────── cola ─────────────┬──────── YouTube ────────┐
-//   │ [+ Añadir]   [Iniciar descarga]│                          │
-//   │ tarjetas (portada · vídeo ·    │   YouTube de verdad,     │
-//   │ canal · peso), con su barra    │   incrustado             │
-//   │ de desplazamiento              │                          │
-//   └────────────────────────────────┴──────────────────────────┘
+//   ← Música   Añadir música
+//   ┌──────────────── YouTube (3/5) ────────────────┬──── cola (2/5) ────┐
+//   │                                                │ [+ Añadir][Iniciar]│
+//   │   YouTube de verdad, incrustado                │ tarjetas (portada ·│
+//   │                                                │ vídeo · canal ·    │
+//   │                                                │ peso), con barra   │
+//   └────────────────────────────────────────────────┴────────────────────┘
 //   [Elegir un CSV] → resumen de lo que se bajará → [Iniciar descarga]
 //
 // «Añadir» toma el vídeo abierto en YouTube. La descarga la hace el programa
 // de la fuente, en MP3 de 320 kbps con la portada y la letra oficiales, y la
-// cola (lib/extensions/yt-mp3-downloads.ts) la importa al terminar. Cerrar
-// la ventana no detiene nada: el avance se ve en Música, junto a «Aleatorio».
+// cola (lib/extensions/yt-mp3-downloads.ts) la importa al terminar. Salir de
+// la página no detiene nada: el avance se ve en Música, junto a «Aleatorio».
 // ============================================================
 
 type EngineState = 'checking' | 'up' | 'down' | 'outdated';
 
-/** Alto común de la cola y de YouTube. */
-const BOX = 'h-[clamp(260px,50vh,520px)]';
+/** Alto común de YouTube y de la cola: casi toda la ventana. */
+const BOX = 'h-[clamp(420px,calc(100vh-17rem),960px)]';
 /** Más filas que esto en un CSV no se toman. */
 const CSV_LIMIT = 1000;
 
@@ -79,22 +81,8 @@ const durationText = (seconds: number) => {
   return minutes % 60 ? tr('{h} h {m} min', { h: Math.floor(minutes / 60), m: minutes % 60 }) : tr('{h} h', { h: minutes / 60 });
 };
 
-export default function MusicAddDialog({
-  id,
-  manifest,
-  source,
-  open,
-  onOpenChange,
-  onLocal,
-}: {
-  id: string;
-  manifest: ExtensionManifest;
-  source: MusicSourceContribution;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** «Añadir archivos locales»: canciones (false) o una carpeta (true). */
-  onLocal: (folder: boolean) => void;
-}) {
+export default function MusicAdd({ id, manifest, source }: { id: string; manifest: ExtensionManifest; source: MusicSourceContribution }) {
+  const navigate = useNavigate();
   const { songs } = useCourse();
   const downloads = useDownloads();
   const summary = useMemo(() => summarizeDownloads(downloads), [downloads]);
@@ -109,25 +97,24 @@ export default function MusicAddDialog({
   const fileRef = useRef<HTMLInputElement>(null);
   const name = manifest.name;
 
-  const check = useCallback(async () => {
-    setEngine('checking');
-    try {
-      const status = await client.status();
-      setEngine(engineOutdated(status.version) ? 'outdated' : 'up');
-    } catch {
-      setEngine('down');
-    }
-  }, [client]);
+  const step = useEngineStep();
+
+  // Abierto y al día antes de nada: si está cerrado, Frame lo abre; si falta
+  // o es viejo, lo instala o lo actualiza (engine-app.ts).
+  const check = useCallback(
+    async (force = false) => {
+      setEngine('checking');
+      setEngine(await ensureEngine(id, client, force));
+    },
+    [id, client]
+  );
 
   useEffect(() => {
-    if (open) {
-      void check();
-      return;
-    }
-    setNotice(null);
-    setCsv(null);
-    setCsvError(null);
-  }, [open, check]);
+    void check();
+  }, [check]);
+
+  /** Archivos de este equipo: Música abre el explorador (su importación de siempre). */
+  const local = (folder: boolean) => navigate('/music', { state: { importLocal: folder ? 'folder' : 'files' } });
 
   // El aviso se va solo.
   useEffect(() => {
@@ -233,22 +220,30 @@ export default function MusicAddDialog({
     });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[94vh] w-[96vw] max-w-6xl flex-col gap-3 overflow-y-auto p-4 sm:p-5">
-        <DialogHeader className="flex-row items-center gap-3 space-y-0 pr-8">
-          <ExtensionIcon id={id} manifest={manifest} />
-          <div className="min-w-0 flex-1 text-left">
-            <DialogTitle className="text-lg font-bold text-primary">{tr('Añadir música')}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {tr('Abre una canción en YouTube y pulsa «Añadir». {name} la descarga en MP3 de 320 kbps con su portada y su letra oficiales.', { name })}
-            </DialogDescription>
-          </div>
-        </DialogHeader>
+    <div className="flex flex-col gap-4 p-4 md:p-6">
+      <header className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" className="shrink-0 rounded-full" onClick={() => navigate('/music')}>
+          <ArrowLeft />
+          {tr('Música')}
+        </Button>
+        <ExtensionIcon id={id} manifest={manifest} />
+        <div className="min-w-0 flex-1">
+          <h1 className="font-headline text-2xl font-bold text-primary">{tr('Añadir música')}</h1>
+          <p className="text-xs text-muted-foreground">
+            {tr('Abre una canción en YouTube y pulsa «Añadir». {name} la descarga en MP3 de 320 kbps con su portada y su letra oficiales.', { name })}
+          </p>
+        </div>
+      </header>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Cola de descargas */}
-          <section className={cn('flex min-w-0 flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-2', BOX)}>
-            <div className="grid shrink-0 grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          {/* YouTube de verdad, a la izquierda: 3/5 del ancho */}
+          <div className={cn('relative min-w-0 overflow-hidden rounded-lg border border-border/60 bg-muted/30 lg:col-span-3', BOX)}>
+            <GoogleEmbed kind="youtube" heightClass="absolute inset-0" />
+          </div>
+
+          {/* Cola de descargas: 2/5 */}
+          <section className={cn('flex min-w-0 flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-2 lg:col-span-2', BOX)}>
+            <div className="flex shrink-0 flex-wrap gap-2 [&>*]:min-w-fit [&>*]:flex-1">
               <Button onClick={() => void add()} disabled={adding} title={tr('Añadir el vídeo que tienes abierto en YouTube')}>
                 {adding ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
                 {tr('Añadir')}
@@ -274,16 +269,27 @@ export default function MusicAddDialog({
                 {shownEngine === 'checking' ? (
                   <>
                     <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-                    {tr('Buscando {name} en este equipo…', { name })}
+                    {step === 'installing'
+                      ? tr('Instalando {name} en este equipo (solo esta vez)…', { name })
+                      : step === 'updating'
+                        ? tr('Poniendo al día {name}…', { name })
+                        : step === 'starting'
+                          ? tr('Abriendo {name}…', { name })
+                          : tr('Buscando {name} en este equipo…', { name })}
                   </>
                 ) : (
                   <>
                     <span className="min-w-0 flex-1">
                       {shownEngine === 'down'
-                        ? tr('{name} no está abierto en este equipo. Ábrelo y pulsa «Reintentar»: la cola sigue donde iba.', { name })
-                        : tr('Esta versión de {name} no puede entregar las canciones a Frame. Instala su última versión y pulsa «Reintentar».', { name })}
+                        ? tr('{name} no responde en este equipo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })
+                        : tr('{name} necesita ponerse al día y aún no se pudo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })}
+                      {engineError(id) === 'store'
+                        ? ` ${tr('En la versión de la Microsoft Store, Frame no instala programas: instala {name} por tu cuenta y Frame lo abrirá y lo usará solo.', { name })}`
+                        : engineError(id)
+                          ? ` ${tr('Último intento: {error}', { error: errorText(engineError(id)!) })}`
+                          : ''}
                     </span>
-                    <Button size="sm" variant="ghost" className="h-6 shrink-0 px-2 text-[11px]" onClick={() => void check()}>
+                    <Button size="sm" variant="ghost" className="h-6 shrink-0 px-2 text-[11px]" onClick={() => void check(true)}>
                       <RefreshCw className="mr-1 h-3 w-3" />
                       {tr('Reintentar')}
                     </Button>
@@ -296,7 +302,7 @@ export default function MusicAddDialog({
               {items.length === 0 ? (
                 <li className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center text-xs text-muted-foreground">
                   <Plus className="h-5 w-5 text-primary/70" />
-                  {tr('Abre una canción en YouTube, a la derecha, y pulsa «Añadir». También puedes subir un CSV abajo.')}
+                  {tr('Abre una canción en YouTube, a la izquierda, y pulsa «Añadir». También puedes subir un CSV abajo.')}
                 </li>
               ) : (
                 items.map((item) => (
@@ -341,11 +347,6 @@ export default function MusicAddDialog({
               </div>
             )}
           </section>
-
-          {/* YouTube de verdad */}
-          <div className={cn('relative min-w-0 overflow-hidden rounded-lg border border-border/60 bg-muted/30', BOX)}>
-            <GoogleEmbed kind="youtube" heightClass="absolute inset-0" allowInModal />
-          </div>
         </div>
 
         {/* CSV */}
@@ -421,18 +422,17 @@ export default function MusicAddDialog({
         )}
 
         <p className="text-center text-[11px] text-muted-foreground">
-          {tr('Puedes cerrar esta ventana: la descarga sigue y su avance se ve en Música, junto a «Aleatorio».')}
+          {tr('Puedes salir de esta página: la descarga sigue y su avance se ve en Música, junto a «Aleatorio».')}
           {' '}
-          <button type="button" className="underline-offset-2 hover:underline" onClick={() => onLocal(false)}>
+          <button type="button" className="underline-offset-2 hover:underline" onClick={() => local(false)}>
             {tr('Añadir archivos locales')}
           </button>
           {' · '}
-          <button type="button" className="underline-offset-2 hover:underline" onClick={() => onLocal(true)}>
+          <button type="button" className="underline-offset-2 hover:underline" onClick={() => local(true)}>
             {tr('una carpeta')}
           </button>
         </p>
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
 

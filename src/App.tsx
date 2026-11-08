@@ -18,6 +18,7 @@ const pages = {
   classroom: () => import('@/app/(main)/classroom/page'),
   drive: () => import('@/app/(main)/drive/page'),
   music: () => import('@/app/(main)/music/page'),
+  musicAdd: () => import('@/app/(main)/music/anadir/page'),
   playlists: () => import('@/app/(main)/playlists/page'),
   cursos: () => import('@/app/(main)/cursos/page'),
   knowledge: () => import('@/app/(main)/knowledge/page'),
@@ -35,6 +36,7 @@ const YoutubePage = lazy(pages.youtube);
 const ClassroomPage = lazy(pages.classroom);
 const DrivePage = lazy(pages.drive);
 const MusicPage = lazy(pages.music);
+const MusicAddPage = lazy(pages.musicAdd);
 const PlaylistsPage = lazy(pages.playlists);
 const CursosPage = lazy(pages.cursos);
 const KnowledgePage = lazy(pages.knowledge);
@@ -70,6 +72,7 @@ export default function App() {
           <Route path="/classroom" element={<ClassroomPage />} />
           <Route path="/drive" element={<DrivePage />} />
           <Route path="/music" element={<MusicPage />} />
+          <Route path="/music/anadir" element={<MusicAddPage />} />
           <Route path="/playlists" element={<PlaylistsPage />} />
           <Route path="/cursos" element={<CursosPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />

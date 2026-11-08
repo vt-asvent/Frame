@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import { PERMISSIONS, type ExtensionManifest } from '@/lib/extensions/manifest';
+import { catalogApp } from '@/lib/extensions/remote-catalog';
 import { tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +28,8 @@ export default function ExtensionInstallDialog({
   onAccept: () => void;
 }) {
   const fresh = new Set(previous ? manifest?.permissions.filter((p) => !previous.permissions.includes(p)) : []);
+  // Del catálogo y con programa (1.9.0): Frame lo instala y lo mantiene al día.
+  const app = manifest ? catalogApp(manifest.id) : null;
   return (
     <Dialog open={!!manifest} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="sm:max-w-md">
@@ -54,7 +57,9 @@ export default function ExtensionInstallDialog({
             ) : (
               <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-xs text-foreground">
                 <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                {tr('No es de Asvent. Frame no ejecuta nada suyo: solo usa los datos de este archivo, con los permisos de abajo.')}
+                {app
+                  ? tr('No es de Asvent. Frame usa los datos de este archivo, con los permisos de abajo, y solo instala su programa si viene firmado por su autor.')
+                  : tr('No es de Asvent. Frame no ejecuta nada suyo: solo usa los datos de este archivo, con los permisos de abajo.')}
               </p>
             )}
 
@@ -70,6 +75,14 @@ export default function ExtensionInstallDialog({
                     <p className="text-xs text-muted-foreground">{PERMISSIONS[id].detail()}</p>
                   </li>
                 ))}
+                {app && (
+                  <li className={cn('rounded-lg border border-border/60 px-3 py-2', !previous?.contributes?.musicSource?.app && previous && 'border-primary/50 bg-primary/5')}>
+                    <p className="text-sm font-semibold text-foreground">{tr('Instalar y mantener al día su programa')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {tr('Frame descarga su programa de su página oficial, comprueba la firma de su autor y lo instala en este equipo, sin permisos de administrador. Después lo abre y lo actualiza solo.')}
+                    </p>
+                  </li>
+                )}
               </ul>
             </div>
 

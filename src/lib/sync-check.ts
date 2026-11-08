@@ -8,6 +8,7 @@ import { describeSongKey, isSongKey, libraryIds } from '@/lib/song-keys';
 import { hasAttachment } from '@/lib/file-handles';
 import { listImageKeys } from '@/lib/music-db';
 import { richNoteToLine } from '@/lib/rich-note';
+import { monthName } from '@/lib/timetable';
 import { CLOUD_APPLIED_EVENT } from '@/lib/supabase/sync';
 import { dateLocale, subscribeLang, tr } from '@/lib/i18n';
 
@@ -54,6 +55,7 @@ const WHERE: Record<string, { where: () => string; route: string; label: (row: R
   notes: { where: () => tr('Asignaturas'), route: '/knowledge', label: (row) => richNoteToLine(String(row.content ?? '')) },
   archivedNotes: { where: () => tr('Asignaturas'), route: '/knowledge', label: (row) => richNoteToLine(String(row.content ?? '')) },
   looseNotes: { where: () => tr('Inicio'), route: '/', label: (row) => richNoteToLine(String(row.content ?? row.text ?? '')) },
+  timetables: { where: () => tr('Inicio'), route: '/', label: (row) => tr('Horario de {month}', { month: monthName(String(row.month ?? ''), true) }) },
   localEvents: { where: () => tr('Calendario'), route: '/calendario', label: (row) => String(row.title ?? '') },
   dayColors: { where: () => tr('Calendario'), route: '/calendario', label: (row) => tr('Color del {day}', { day: dayLabel(String(row.id ?? '')) }) },
   habits: { where: () => tr('Hábitos'), route: '/habitos', label: (row) => String(row.name ?? '') },
@@ -80,7 +82,6 @@ const SCALARS: Record<string, { where: () => string; what: () => string; route: 
   completedTasksByCourse: { where: () => tr('Tareas'), what: () => tr('Tareas culminadas'), route: '/tareas' },
   taskSortMode: { where: () => tr('Tareas'), what: () => tr('Orden de las tareas'), route: '/tareas' },
   isPlayerVisible: { where: () => tr('Música'), what: () => tr('Reproductor'), route: '/music' },
-  competencyCourseIds: { where: () => tr('Inicio'), what: () => tr('Matriz de competencias'), route: '/' },
   playCount: { where: () => tr('Música'), what: () => tr('Reproducciones'), route: '/music' },
   appSettings: { where: () => tr('Ajustes'), what: () => tr('Idioma y preferencias'), route: '/settings' },
 };

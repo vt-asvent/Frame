@@ -7,9 +7,11 @@ import { IMAGE_UPDATED_EVENT, getImage, type ImageUpdatedDetail } from '@/lib/mu
  * Se relee sola cuando cambia: al guardarla aquí y también cuando llega de
  * otro dispositivo (image-sync.ts). Antes cada pantalla la leía una sola vez
  * al montarse y una foto de perfil nueva no aparecía hasta reiniciar.
+ * El tercer valor dice si ya se leyó: «aún no hay foto» no es «cargando».
  */
-export function useStoredImage(key: string | null | undefined): [string | null, (value: string | null) => void] {
+export function useStoredImage(key: string | null | undefined): [string | null, (value: string | null) => void, boolean] {
   const [image, setImage] = useState<string | null>(null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
     setImage(null);
@@ -20,7 +22,10 @@ export function useStoredImage(key: string | null | undefined): [string | null, 
         .then((value) => {
           if (alive) setImage(value);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          if (alive) setLoadedKey(key);
+        });
     };
     load();
     const onUpdate = (event: Event) => {
@@ -33,5 +38,5 @@ export function useStoredImage(key: string | null | undefined): [string | null, 
     };
   }, [key]);
 
-  return [image, setImage];
+  return [image, setImage, !!key && loadedKey === key];
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown, ChevronDown, ListMusic, Pause, Play, RotateCcw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useContributions } from '@/lib/extensions/store';
@@ -8,8 +9,8 @@ import {
   formatEta,
   itemProgress,
   pauseDownloads,
+  MUSIC_ADD_ROUTE,
   preciseBytes,
-  requestDownloadsDialog,
   resumeDownloads,
   retryDownloads,
   speedQuality,
@@ -44,6 +45,7 @@ const CIRCLE = 2 * Math.PI * RADIUS;
 
 export default function DownloadIndicator() {
   const downloads = useDownloads();
+  const navigate = useNavigate();
   const summary = useMemo(() => summarizeDownloads(downloads), [downloads]);
   const sources = useContributions('musicSource');
   const [errorsOpen, setErrorsOpen] = useState(false);
@@ -225,7 +227,7 @@ export default function DownloadIndicator() {
               {tr('Descartar')}
             </Button>
           )}
-          <Button size="sm" variant="outline" className="flex-1" onClick={requestDownloadsDialog}>
+          <Button size="sm" variant="outline" className="flex-1" onClick={() => navigate(MUSIC_ADD_ROUTE)}>
             <ListMusic className="mr-1.5 h-4 w-4" />
             {tr('Ver la cola')}
           </Button>

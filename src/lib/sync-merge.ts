@@ -27,6 +27,9 @@
 
 import { KNOWN_KEYS, type LocalSnapshot } from '@/lib/storage-snapshot';
 
+/** Se aplicó algo llegado de la nube (lo emite el layout; ver supabase/sync.ts). Aquí, para no cargar el cliente. */
+export const CLOUD_APPLIED_EVENT = 'frame:cloud-applied';
+
 /** Colecciones: arrays de registros identificados por `id`. Se fusionan uno a uno. */
 const COLLECTION_KEYS = [
   'courses',
@@ -57,6 +60,8 @@ const COLLECTION_KEYS = [
   // Canciones con corazón (1.6.9, id = la clave de la canción): quitar el
   // corazón deja una lápida, así que también viaja.
   'songFavorites',
+  // Horarios de Inicio (1.9.0, id propio): uno por foto subida.
+  'timetables',
 ] as const;
 
 /**
@@ -66,9 +71,10 @@ const COLLECTION_KEYS = [
  *   · classSessions y schedules: las clases y el horario, invisibles desde la 1.6.6;
  *   · playHistory: la bitácora de reproducciones, sin escribirse desde la 1.5.4;
  *   · headerQuote: la frase propia de la barra, retirada en la 1.6.2;
- *   · school: el colegio del perfil de Aether OS.
+ *   · school: el colegio del perfil de Aether OS;
+ *   · competencyCourseIds: las asignaturas de la matriz de competencias, retirada en la 1.9.0.
  */
-export const RETIRED_KEYS: ReadonlySet<string> = new Set(['classSessions', 'schedules', 'playHistory', 'headerQuote', 'school']);
+export const RETIRED_KEYS: ReadonlySet<string> = new Set(['classSessions', 'schedules', 'playHistory', 'headerQuote', 'school', 'competencyCourseIds']);
 
 /**
  * Colecciones que una versión anterior no conoce como tales (`studyVideos` e
@@ -207,6 +213,12 @@ function readJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/** ¿Este registro tiene lápida (se borró en algún dispositivo)? Para no resucitar lo que se creó con id fijo. */
+export function hasTombstone(uid: string, key: string, id: string): boolean {
+  const mark = readJson<SyncMeta>(metaKey(uid), emptyMeta()).collections?.[key]?.[id];
+  return !!mark?.d && (!mark.u || mark.d >= mark.u);
 }
 
 /**

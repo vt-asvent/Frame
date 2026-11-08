@@ -3,9 +3,9 @@ import tailwindcssAnimate from 'tailwindcss-animate';
 
 export default {
   darkMode: ['class'],
-  // Sin los textos legales ni el diccionario inglés: son prosa y Tailwind
-  // sacaba de ellos clases que nadie usa (1.7.0).
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}', '!./src/lib/legal/**', '!./src/lib/i18n-en.ts'],
+  // Sin los textos legales ni los diccionarios: son prosa y Tailwind sacaba
+  // de ellos clases que nadie usa (1.7.0; todos los idiomas desde 1.9.0).
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}', '!./src/lib/legal/**', '!./src/lib/i18n-*.ts'],
   theme: {
     extend: {
       fontFamily: {

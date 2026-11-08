@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, FileAudio, FolderOpen, FolderInput, LoaderCircle, Plus, Puzzle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -21,9 +21,8 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { EchoHeader } from '@/components/shared/EchoWord';
 import MusicSourceDialog from '@/components/extensions/MusicSourceDialog';
-import MusicAddDialog from '@/components/extensions/MusicAddDialog';
 import { useContributions } from '@/lib/extensions/store';
-import { requestDownloadsDialog, useDownloadsOpenRequests } from '@/lib/extensions/yt-mp3-downloads';
+import { MUSIC_ADD_ROUTE } from '@/lib/extensions/yt-mp3-downloads';
 import { useCourse } from '@/context/CourseContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -46,10 +45,10 @@ import { errorText, tr } from '@/lib/i18n';
 //   · «Descargar»: la página de un programa de descargas de este equipo, que
 //     aporta una extensión «fuente de música» (Ajustes → Extensiones). Lo
 //     que descarga se trae de su carpeta con esta misma importación.
-// Con una fuente «yt-mp3/1» (1.8.1) es «+ Añadir» y abre su ventana: YouTube
-// incrustado, la cola de descargas y el CSV (components/extensions/
-// MusicAddDialog.tsx). La ventana la abre siempre el botón de la cabecera
-// (el del estado vacío desaparece en cuanto entra la primera canción).
+// Con una fuente «yt-mp3/1» (1.8.1) es «+ Añadir» y lleva a su página
+// (/music/anadir, 1.9.0): YouTube incrustado, la cola de descargas y el CSV
+// (components/extensions/MusicAdd.tsx). Desde allí, «Añadir archivos locales»
+// vuelve aquí y abre el explorador (estado `importLocal` de la navegación).
 // ============================================================
 
 type Stage = 'idle' | 'reading' | 'confirm' | 'importing' | 'done';
@@ -58,22 +57,13 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
   const { songs, addSongs, mergePlaylistSongs } = useCourse();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const sources = useContributions('musicSource');
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [noSource, setNoSource] = useState(false);
   const activeSource = sources.find((s) => s.id === sourceId) ?? null;
   // Con una fuente que Frame sabe manejar (1.7.6), «Importar» abre su ventana directamente.
   const engineSource = sources.find((s) => s.value.engine) ?? null;
-  const [addOpen, setAddOpen] = useState(false);
-  // «Ver la cola» (indicador de descargas) o el botón del estado vacío piden abrirla.
-  const openRequests = useDownloadsOpenRequests();
-  const seenRequests = useRef(openRequests);
-  const engineId = engineSource?.id ?? null;
-  useEffect(() => {
-    if (variant !== 'button' || openRequests === seenRequests.current) return;
-    seenRequests.current = openRequests;
-    if (engineId) setAddOpen(true);
-  }, [openRequests, variant, engineId]);
   const [stage, setStage] = useState<Stage>('idle');
   const [plan, setPlan] = useState<MusicImportPlan | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, title: '' });
@@ -159,6 +149,15 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
     }
   };
 
+  const importLocal = (location.state as { importLocal?: string } | null)?.importLocal;
+  useEffect(() => {
+    if (variant !== 'button' || (importLocal !== 'files' && importLocal !== 'folder')) return;
+    navigate(location.pathname, { replace: true, state: null });
+    void choose(importLocal === 'folder');
+    // `choose` cambia en cada render; lo que importa es la petición.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importLocal, variant]);
+
   const formatsOf = (list: { format: string }[]) => [...new Set(list.map((file) => file.format))].join(', ');
 
   const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
@@ -167,12 +166,12 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
     <>
       {engineSource ? (
         variant === 'empty' ? (
-          <Button className="mt-2" onClick={requestDownloadsDialog}>
+          <Button className="mt-2" onClick={() => navigate(MUSIC_ADD_ROUTE)}>
             <Plus className="mr-2 h-4 w-4" />
             {tr('Añadir música')}
           </Button>
         ) : (
-          <Button onClick={() => setAddOpen(true)} title={tr('Descargar canciones de YouTube o de un CSV, o añadirlas de tu equipo')}>
+          <Button onClick={() => navigate(MUSIC_ADD_ROUTE)} title={tr('Descargar canciones de YouTube o de un CSV, o añadirlas de tu equipo')}>
             <Plus className="h-4 w-4" />
             {tr('Añadir')}
           </Button>
@@ -234,20 +233,6 @@ export default function MusicImportButton({ variant = 'button' }: { variant?: 'b
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      )}
-
-      {engineSource && variant === 'button' && (
-        <MusicAddDialog
-          id={engineSource.id}
-          manifest={engineSource.manifest}
-          source={engineSource.value}
-          open={addOpen}
-          onOpenChange={setAddOpen}
-          onLocal={(folder) => {
-            setAddOpen(false);
-            void choose(folder);
-          }}
-        />
       )}
 
       {activeSource && !activeSource.value.engine && (

@@ -59,6 +59,7 @@ function imageKeysFor(data: LocalSnapshot): string[] {
     ...ids('courses').map((id) => `courseImage_${id}`),
     ...ids('spaces').map((id) => `spaceImage_${id}`),
     ...ids('playlists').map((id) => `playlistImage_${id}`),
+    ...ids('timetables').map((id) => `timetableImage_${id}`),
     ...notes.filter((note) => note.kind === 'file').map((note) => `noteFile_${note.id}`),
     'scheduleImage',
   ];

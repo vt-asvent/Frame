@@ -305,3 +305,45 @@ describe('relé', () => {
     expect(await a.sql("SELECT * FROM sessions WHERE token='vieja'")).toEqual([]);
   });
 });
+
+describe('lector de horarios', () => {
+  const foto = (marca = '') => ({ image: `${marca}${'A'.repeat(160)}`, mime: 'image/jpeg' });
+  const hoy = () => new Date().toISOString().slice(0, 10);
+
+  it('solo con sesión de Frame y una imagen válida', async () => {
+    expect((await a.pedir('/app/horario', { json: foto() })).estado).toBe(401);
+    const yo = sesion(cuenta());
+    expect((await a.pedir('/app/horario', { token: yo, json: { image: 'corta', mime: 'image/jpeg' } })).datos).toEqual({ error: 'image' });
+    expect((await a.pedir('/app/horario', { token: yo, json: { ...foto(), mime: 'image/gif' } })).estado).toBe(400);
+    expect((await a.pedir('/app/horario', { token: yo, json: { image: `<${'A'.repeat(160)}`, mime: 'image/jpeg' } })).estado).toBe(400);
+  });
+
+  it('devuelve las clases sin los recreos y sin guardar la foto', async () => {
+    const yo = cuenta();
+    const r = await a.pedir('/app/horario', { token: sesion(yo), json: foto() });
+    expect(r.estado).toBe(200);
+    expect(r.datos.classes).toEqual([
+      { day: 1, start: '08:00', end: '09:30', subject: 'Matemática', room: 'A-1' },
+      { day: 2, start: '08:00', end: '09:30', subject: 'Historia', teacher: 'Prof. Ríos' },
+    ]);
+    expect(await a.sql('SELECT owner, day, n FROM lecturas WHERE owner=?', yo)).toEqual([{ owner: yo, day: hoy(), n: 1 }]);
+  });
+
+  it('cada cuenta tiene un cupo diario; lo que falla no lo gasta', async () => {
+    const yo = cuenta();
+    expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('bXVkbw') })).datos).toEqual({ error: 'busy' });
+    expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('Y3Vwbw') })).datos).toEqual({ error: 'daily' });
+    expect(await a.sql('SELECT n FROM lecturas WHERE owner=?', yo)).toEqual([{ n: 0 }]);
+    for (let i = 0; i < 12; i++) expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto() })).estado).toBe(200);
+    const pasado = await a.pedir('/app/horario', { token: sesion(yo), json: foto() });
+    expect(pasado.estado).toBe(429);
+    expect(pasado.datos).toEqual({ error: 'quota', limit: 12 });
+    expect((await a.pedir('/app/horario', { token: sesion(cuenta()), json: foto() })).estado).toBe(200);
+  });
+
+  it('la limpieza diaria olvida las cuentas de días pasados', async () => {
+    await a.sql("INSERT INTO lecturas(owner, day, n) VALUES('alguien', '2020-01-01', 3)");
+    await a.cron();
+    expect(await a.sql("SELECT * FROM lecturas WHERE owner='alguien'")).toEqual([]);
+  });
+});

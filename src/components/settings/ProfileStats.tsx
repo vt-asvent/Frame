@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import {
   CheckCircle2,
   Clock,
@@ -11,6 +10,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { EchoTileHeader } from '@/components/shared/EchoWord';
 import { cn } from '@/lib/utils';
+import { Donut } from '@/components/shared/Charts';
 import { useCourse } from '@/context/CourseContext';
 import { sessionSeconds, formatMinutes, formatDurationLabel } from '@/lib/duration';
 import type { TaskDifficulty } from '@/types';
@@ -305,27 +305,12 @@ export default function ProfileStats() {
             {difficultyTotal > 0 ? (
               <>
                 <div className="relative h-[130px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={difficultyData}
-                        dataKey="value"
-                        innerRadius="62%"
-                        outerRadius="92%"
-                        paddingAngle={2}
-                        stroke="none"
-                        // Sin animación de entrada A PROPÓSITO: recharts crea
-                        // los sectores DENTRO de esa animación, así que si el
-                        // navegador congela los fotogramas (ventana oculta,
-                        // equipo cargado) el rosco se queda vacío.
-                        isAnimationActive={false}
-                      >
-                        {difficultyData.map((row) => (
-                          <Cell key={row.name} fill={DIFFICULTY_HEX[row.name as TaskDifficulty]} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <Donut
+                    height={130}
+                    inner={0.62}
+                    outer={0.92}
+                    data={difficultyData.map((row) => ({ ...row, color: DIFFICULTY_HEX[row.name] }))}
+                  />
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <span className="font-headline text-2xl font-bold leading-none text-foreground tabular-nums">
                       {difficultyTotal}

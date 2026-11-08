@@ -951,5 +951,3 @@ export async function runIaTool(name: string, args: unknown, env: IaEnv): Promis
     return { ok: false, error: `Frame no pudo hacerlo: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
-
-export const IA_HANDLER_NAMES = Object.keys(HANDLERS);

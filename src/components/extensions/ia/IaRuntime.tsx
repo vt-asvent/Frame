@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useCourse } from '@/context/CourseContext';
 import { extRead, extWrite, onExtensionTeardown, useExtensionOn } from '@/lib/extensions/store';
 import { IA, IA_INSTRUCTIONS, IA_TOOLS, isReadOnly } from '@/lib/extensions/ia/tools';
-import { runIaTool, type IaEnv } from '@/lib/extensions/ia/handlers';
+import type { IaEnv } from '@/lib/extensions/ia/handlers';
 import { IA_CLOUD_CHANGED, readCloudOn, revokeCloud, startCloudLink, type CloudReply } from '@/lib/extensions/ia/cloud';
 import { tr } from '@/lib/i18n';
 
@@ -156,7 +156,10 @@ export default function IaRuntime() {
         }),
       notice: (what) => toastRef.current({ title: client, description: capitalize(what) }),
     };
-    const reply = await runIaTool(tool, args, env);
+    // Las herramientas (y los informes que generan) se cargan con la primera
+    // llamada: quien no usa la IA no las lleva en memoria (1.9.0).
+    const handlers = await import('@/lib/extensions/ia/handlers').catch(() => null);
+    const reply = handlers ? await handlers.runIaTool(tool, args, env) : { ok: false as const, error: 'Frame no pudo cargar sus herramientas.' };
     if (!isReadOnly(tool)) await settle();
     logActivity({ at: new Date().toISOString(), client, tool, ok: reply.ok, ...(via ? { via } : {}) });
     return reply;

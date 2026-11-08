@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getSupabase } from '@/lib/supabase/client';
-import { parseManifest, type ExtensionManifest } from '@/lib/extensions/manifest';
+import { parseManifest, type ExtensionApp, type ExtensionManifest } from '@/lib/extensions/manifest';
 
 // ============================================================
 // Catálogo remoto de extensiones de terceros (1.7.6, migración 0014).
@@ -79,6 +79,16 @@ export function loadCatalog(force = false): Promise<CatalogEntry[]> {
     }
   })();
   return inflight;
+}
+
+/**
+ * El programa que el CATÁLOGO declara para una extensión (1.9.0): solo las del
+ * catálogo se instalan y se ponen al día solas, y con lo que diga el catálogo
+ * hoy (no lo que traía el archivo con el que se instaló).
+ */
+export function catalogApp(id: string): ExtensionApp | null {
+  const cache = readCache();
+  return (cache && validate(cache.rows).find((entry) => entry.id === id)?.manifest.contributes?.musicSource?.app) || null;
 }
 
 /** El catálogo, cargado al montar (vacío mientras llega). */

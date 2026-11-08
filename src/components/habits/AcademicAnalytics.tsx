@@ -1,23 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  Area,
-  Bar,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Legend,
-  Line,
-  Pie,
-  PieChart,
-  PolarAngleAxis,
-  RadialBar,
-  RadialBarChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
   eachDayOfInterval,
   eachWeekOfInterval,
   endOfISOWeek,
@@ -48,6 +30,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { ComboChart, Donut, Ring } from '@/components/shared/Charts';
 import { formatMinutes } from '@/lib/duration';
 import {
   buildDayIndex,
@@ -78,12 +61,9 @@ const SECONDARY_COLUMNS: Record<number, string> = {
   6: 'md:grid-cols-3',
 };
 
-const TOOLTIP_STYLE = {
-  backgroundColor: 'hsl(var(--background))',
-  borderColor: 'hsl(var(--border))',
-  borderRadius: 'var(--radius)',
-  fontSize: 12,
-} as const;
+/** Pasos del eje de minutos: de 5 en 5 al principio y luego por horas. */
+const MINUTE_STEPS = [5, 10, 15, 30, 60, 120, 180, 240, 300, 600, 900, 1200, 1800, 3000, 6000];
+const minuteTick = (v: number) => (v < 60 ? `${v}m` : `${Math.floor(v / 60)}h${v % 60 ? String(v % 60).padStart(2, '0') : ''}`);
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const chartColor = (i: number) => `hsl(var(--chart-${(i % 5) + 1}))`;
@@ -516,63 +496,19 @@ export default function AcademicAnalytics() {
               subtitle={tr('Minutos de estudio por asignatura y tareas terminadas')}
               className="lg:col-span-2"
             >
-              <ResponsiveContainer width="100%" height={280}>
-                <ComposedChart data={activityData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                  <CartesianGrid stroke="hsl(var(--foreground))" strokeDasharray="3 3" strokeOpacity={0.2} />
-                  <XAxis
-                    dataKey="name"
-                    stroke="hsl(var(--foreground))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={{ stroke: 'hsl(var(--foreground))' }}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    stroke="hsl(var(--foreground))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => (v >= 60 ? `${Math.round(v / 60)}h` : `${Math.round(v)}m`)}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    stroke="hsl(var(--primary))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    allowDecimals={false}
-                  />
-                  <RechartsTooltip
-                    cursor={{ fill: 'hsl(var(--accent))', radius: 4 }}
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(value: number, name: string, item: { dataKey?: unknown }) =>
-                      item?.dataKey === 'Tareas' ? [value, name] : [formatMinutes(value), name]
-                    }
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {subjectKeys.map((key, i) => (
-                    <Bar
-                      key={key}
-                      yAxisId="left"
-                      dataKey={key}
-                      stackId="minutos"
-                      fill={chartColor(i)}
-                      radius={i === subjectKeys.length - 1 ? [4, 4, 0, 0] : undefined}
-                      maxBarSize={scope === 'month' ? 44 : 36}
-                    />
-                  ))}
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="Tareas"
-                    name={tr('Tareas')}
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <ComboChart
+                height={256}
+                data={activityData}
+                series={[
+                  ...subjectKeys.map((key, i) => ({ key, name: key, color: chartColor(i), type: 'bar' as const })),
+                  { key: 'Tareas', name: tr('Tareas'), color: 'hsl(var(--primary))', type: 'line', axis: 'right' },
+                ]}
+                leftTick={minuteTick}
+                leftSteps={MINUTE_STEPS}
+                rightInteger
+                maxBarSize={scope === 'month' ? 44 : 36}
+                format={(value, s) => (s.key === 'Tareas' ? String(value) : formatMinutes(value))}
+              />
               {subjectKeys.includes(unassignedSubject()) && (
                 <p className="mt-2 text-center text-[10px] text-muted-foreground/70">
                   {tr('Las sesiones sin asignatura elegida se agrupan como «{name}».', { name: unassignedSubject() })}
@@ -582,25 +518,7 @@ export default function AcademicAnalytics() {
 
             <SectionCard title={tr('Efectividad')} subtitle={tr('Meta, puntualidad y constancia combinadas')}>
               <div className="relative">
-                <ResponsiveContainer width="100%" height={190}>
-                  {/* El barrido lo escala PolarAngleAxis (dominio 0-100): el arco
-                      del gráfico debe ser SIEMPRE la circunferencia completa. */}
-                  <RadialBarChart
-                    innerRadius="74%"
-                    outerRadius="100%"
-                    startAngle={90}
-                    endAngle={-270}
-                    data={[{ name: tr('Efectividad'), value: current.effectiveness }]}
-                  >
-                    <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-                    <RadialBar
-                      dataKey="value"
-                      cornerRadius={999}
-                      fill="hsl(var(--primary))"
-                      background={{ fill: 'hsl(var(--muted))' }}
-                    />
-                  </RadialBarChart>
-                </ResponsiveContainer>
+                <Ring value={current.effectiveness} height={190} />
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                   <p className="text-4xl font-bold text-primary">{current.effectiveness}%</p>
                   <p className="text-[11px] text-muted-foreground">{tr('efectividad')}</p>
@@ -636,90 +554,30 @@ export default function AcademicAnalytics() {
               subtitle={scope === 'week' ? tr('Últimas 8 semanas') : tr('Últimos 6 meses')}
               className="lg:col-span-2"
             >
-              <ResponsiveContainer width="100%" height={250}>
-                <ComposedChart data={trendData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                  <CartesianGrid stroke="hsl(var(--foreground))" strokeDasharray="3 3" strokeOpacity={0.2} />
-                  <XAxis
-                    dataKey="name"
-                    stroke="hsl(var(--foreground))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={{ stroke: 'hsl(var(--foreground))' }}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    stroke="hsl(var(--foreground))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => `${v}h`}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    domain={[0, 100]}
-                    stroke="hsl(var(--primary))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <RechartsTooltip
-                    cursor={{ stroke: 'hsl(var(--border))' }}
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(value: number, name: string, item: { dataKey?: unknown }) =>
-                      item?.dataKey === 'Horas' ? [`${value} h`, name] : [`${value}%`, name]
-                    }
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Area
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="Horas"
-                    name={tr('Horas')}
-                    stroke="hsl(var(--chart-2))"
-                    fill="hsl(var(--chart-2))"
-                    fillOpacity={0.18}
-                    strokeWidth={2}
-                  />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="Efectividad"
-                    name={tr('Efectividad')}
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <ComboChart
+                height={226}
+                data={trendData}
+                series={[
+                  { key: 'Horas', name: tr('Horas'), color: 'hsl(var(--chart-2))', type: 'area' },
+                  { key: 'Efectividad', name: tr('Efectividad'), color: 'hsl(var(--primary))', type: 'line', axis: 'right' },
+                ]}
+                leftTick={(v) => `${v}h`}
+                rightDomain={[0, 100]}
+                format={(value, s) => (s.key === 'Horas' ? `${value} h` : `${value}%`)}
+              />
             </SectionCard>
 
             <SectionCard title={tr('Reparto por asignatura')} subtitle={tr('Minutos de estudio del periodo')}>
               {subjectSplit.length === 0 ? (
                 <EmptyBox message={tr('Sin sesiones de estudio en el periodo.')} />
               ) : (
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={subjectSplit}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius="58%"
-                      outerRadius="86%"
-                      paddingAngle={2}
-                      strokeWidth={0}
-                    >
-                      {subjectSplit.map((entry, i) => (
-                        <Cell key={entry.name} fill={chartColor(i)} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip
-                      contentStyle={TOOLTIP_STYLE}
-                      formatter={(value: number) => formatMinutes(value)}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <Donut
+                  height={226}
+                  inner={0.58}
+                  outer={0.86}
+                  data={subjectSplit.map((s, i) => ({ ...s, color: chartColor(i) }))}
+                  format={formatMinutes}
+                />
               )}
             </SectionCard>
           </div>

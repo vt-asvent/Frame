@@ -67,7 +67,7 @@ Frame distingue tres lugares de almacenamiento. Conocer la diferencia es lo que 
 
 **En tu equipo, siempre.** Todo lo que registras se escribe primero en tu disco: asignaturas, colecciones, tareas, adjuntos, sesiones de estudio, calificaciones, hábitos, eventos del calendario local, recursos, imágenes, grabaciones de voz y biblioteca de música. Las grabaciones se conservan además como archivos de audio (M4A) en \`Documentos\\Frame\\Grabaciones\`, accesibles fuera de la aplicación.
 
-**En tu cuenta, si iniciaste sesión.** Tu **estado académico** —asignaturas, tareas, sesiones, calificaciones, hábitos, eventos, playlists con su orden, vídeos de estudio y configuración— se replica en la nube y se fusiona entre equipos: cada cambio llega a tus otros dispositivos en menos de un segundo, cifrado. Esta réplica es la que te permite cambiar de máquina, o usar el celular, sin perder nada. Siguen también a tu cuenta el **idioma**, la **proporción de las imágenes** de las tarjetas y la ciudad del clima que eliges a mano; el tema es de cada dispositivo. Tu **foto de perfil** y la **imagen del horario** viajan en una carpeta privada de tu cuenta; las imágenes de la **galería de Frame** que pones a tus playlists, asignaturas y colecciones viajan como una referencia (cuál es y cómo la encuadraste) y cada dispositivo la rehace.
+**En tu cuenta, si iniciaste sesión.** Tu **estado académico** —asignaturas, tareas, sesiones, calificaciones, hábitos, eventos, horarios con sus clases, playlists con su orden, vídeos de estudio y configuración— se replica en la nube y se fusiona entre equipos: cada cambio llega a tus otros dispositivos en menos de un segundo, cifrado. Esta réplica es la que te permite cambiar de máquina, o usar el celular, sin perder nada. Siguen también a tu cuenta el **idioma**, la **proporción de las imágenes** de las tarjetas y la ciudad del clima que eliges a mano; el tema es de cada dispositivo. Tu **foto de perfil** y las **fotos de tus horarios** viajan en una carpeta privada de tu cuenta; las imágenes de la **galería de Frame** que pones a tus playlists, asignaturas y colecciones viajan como una referencia (cuál es y cómo la encuadraste) y cada dispositivo la rehace.
 
 **En ningún sitio salvo tu equipo, siempre.** La **música** (con sus portadas y letras), las **grabaciones de voz**, los **adjuntos** y las **imágenes que subes tú** a playlists, asignaturas y colecciones quedan excluidos de la nube por su tamaño. Tus **estadísticas de escucha** tampoco salen de tu equipo. Para tener tu música en otro dispositivo, copia allí tus archivos e impórtalos. La campana te dice qué no está igual en tus dispositivos, dónde y por qué (verificador de sincronización).
 
@@ -97,7 +97,7 @@ Cada sesión es una tarjeta con su asignatura, su tiempo y su rendimiento, y se 
 
 ### 4.3 Análisis e informes
 
-La barra superior muestra frases con tus datos recientes que cambian solas. Inicio resume tu día: clima, horario, un pomodoro con lo que estudiaste hoy y ayer, tu playlist más escuchada, tu racha y «Tareas pendientes» (las dos que vencen antes); en modo Avanzado, además, «Tu semana en datos» —ritmo con el promedio semanal, constancia y tareas culminadas— y la matriz de competencias (carga pendiente por asignatura, no una medida de conocimiento). Hábitos con fases del día, anillos, semana tipo y mapa de constancia. **Informes** de rendimiento y de pendientes en PDF y Word —semanales, mensuales o anuales—, en Ajustes, con un resumen y la vista previa real del documento.
+La barra superior muestra frases con tus datos recientes que cambian solas. Inicio resume tu día: tu **horario** —la línea del día con la clase de ahora siempre al medio, la semana como un calendario y la foto original, un horario por mes—, el clima, «Tareas pendientes» (las dos que vencen antes), un pomodoro con lo que estudiaste hoy y ayer, tu playlist más escuchada y tu racha; en modo Avanzado, además, «Tu semana en datos»: ritmo con el promedio semanal, constancia y tareas culminadas. Hábitos con fases del día, anillos, semana tipo y mapa de constancia. **Informes** de rendimiento y de pendientes en PDF y Word —semanales, mensuales o anuales—, en Ajustes, con un resumen y la vista previa real del documento.
 
 ### 4.4 Calendario, Google y música
 
@@ -115,13 +115,15 @@ Cerrar la ventana cierra Frame. Si hay una sesión de estudio en marcha, antes t
 
 Los adjuntos de tipo documento dejan de resolver si el archivo original se mueve, se renombra o se elimina: vuelve a adjuntarlo.
 
-El radar de competencias y las calificaciones diarias se calculan exclusivamente sobre los datos que tú registras. No provienen de ninguna institución y no tienen validez académica.
+Las calificaciones diarias se calculan exclusivamente sobre los datos que tú registras. No provienen de ninguna institución y no tienen validez académica.
 
 La música, las grabaciones, los adjuntos y las imágenes que subes tú no se respaldan en la nube: se quedan en el dispositivo donde los añadiste.
 
-Por sí mismo, Frame no busca ni descarga música, vídeos, portadas ni letras: muestra la letra y la portada que traen tus archivos o las que tú añades; lo que versiones anteriores ya guardaron en tu equipo se conserva. Si activas una extensión de descargas —un programa de terceros que instalas aparte y que funciona en tu propio equipo—, «+ Añadir» de Música le pide cada canción que añades, y es ese programa el que la descarga (en MP3 de 320 kbps) y consulta servicios públicos de letras y portadas para completarla; Frame solo importa el archivo que entrega. Los formatos que el motor de audio de Windows no reproduce (WMA, AIFF, ALAC, APE y otros) no se importan, y Frame dice cuáles quedaron fuera.
+Por sí mismo, Frame no busca ni descarga música, vídeos, portadas ni letras: muestra la letra y la portada que traen tus archivos o las que tú añades; lo que versiones anteriores ya guardaron en tu equipo se conserva. Si activas una extensión de descargas, Frame instala en tu equipo el programa de terceros que la acompaña —solo si viene firmado por su autor— y lo mantiene al día (en la versión de Microsoft Store lo instalas tú); «+ Añadir» de Música le pide cada canción que añades, y es ese programa el que la descarga (en MP3 de 320 kbps) y consulta servicios públicos de letras y portadas para completarla; Frame solo importa el archivo que entrega. Los formatos que el motor de audio de Windows no reproduce (WMA, AIFF, ALAC, APE y otros) no se importan, y Frame dice cuáles quedaron fuera.
 
 Las interfaces de Google requieren conexión y sesión iniciada en Google, y su funcionamiento depende íntegramente de Google.
+
+Leer las clases de un horario requiere conexión y una cuenta de Frame, y cada cuenta puede leer hasta 12 fotos al día. La IA puede equivocarse: revisa lo leído en «Semanal».
 
 ---
 
@@ -133,7 +135,7 @@ Los servicios de Google —Gmail, YouTube, Classroom y Drive— son operados por
 
 El pronóstico del clima procede de **Open-Meteo**.
 
-Los chats de IA en la web (claude.ai, ChatGPT y otros) llegan a Frame a través de un relé alojado en **Cloudflare**, que pasa cada llamada sin guardarla (Política de Privacidad, 3.7). Claude es una marca de Anthropic, PBC; ChatGPT, de OpenAI; y Gemini, de Google LLC. Frame no está afiliada a esas empresas ni cuenta con su respaldo.
+Los chats de IA en la web (claude.ai, ChatGPT y otros) llegan a Frame a través de un relé alojado en **Cloudflare**, que pasa cada llamada sin guardarla (Política de Privacidad, 3.7). La lectura de horarios usa el modelo abierto **Gemma 4** (licencia Apache 2.0) en **Cloudflare Workers AI**, que no guarda las fotos (Política de Privacidad, 3.8). Claude es una marca de Anthropic, PBC; ChatGPT, de OpenAI; y Gemini y Gemma, de Google LLC. Frame no está afiliada a esas empresas ni cuenta con su respaldo.
 
 Notion es una marca de Notion Labs, Inc.; la extensión solo lee los archivos que exportas tú y no se conecta a su servicio.
 
@@ -152,6 +154,8 @@ Se ofrece soporte para la versión estable vigente y para la inmediatamente ante
 ## 8 · Historial de versiones
 
 **${appVersion} — ${releaseDate}**
+
+*1.9.0:* **Horario en Inicio**: sube la foto del horario de cada mes («Noviembre», «Noviembre 2»…) y Frame lee sus clases con IA; la línea del día pone siempre al medio la clase de ahora, con las de antes y después a los lados, y avanza con el reloj · **«Semanal»**: la semana como un calendario, donde corriges o añades clases con un clic · **«Ver original»**: la foto tal cual · **Inicio reordenado**: horario, clima, «Tareas pendientes» con el pomodoro, la playlist y la racha a su derecha, y «Tu semana en datos» con el ritmo en la mitad izquierda; se retira la matriz de competencias · **Música → «+ Añadir»** es una página propia, con YouTube a la izquierda en tres quintos del ancho · las **extensiones de descargas** instalan, abren y ponen al día su programa solas, y lo reparan si falla · **más ligera**: gráficos propios en lugar de una biblioteca de casi 400 KB, imágenes de la galería un 26 % más livianas y un arranque que carga menos código, con todas sus funciones · **Términos y Política de Privacidad 5.5**: el apartado 3.8 explica la lectura de horarios y el 6.4 bis, el programa de las extensiones de descargas.
 
 *1.8.1:* **Música → «+ Añadir»** con una extensión de descargas: YouTube incrustado a la derecha y, a la izquierda, la cola de descargas con «Añadir» (el vídeo que tienes abierto) e «Iniciar descarga»; cada canción en MP3 de 320 kbps con su portada y su letra oficiales, y el peso de cada una · **CSV de canciones** (por ejemplo, una playlist de Spotify): un resumen antes de empezar y su playlist en el mismo orden · **indicador de descargas** junto a «Aleatorio»: descargadas, faltantes y con errores, la velocidad y qué tal es, el tamaño total, el tiempo que falta y una pausa · la descarga sigue al cerrar la ventana o cambiar de interfaz, y continúa al volver a abrir Frame · **Términos y Política de Privacidad 5.4**: el apartado 6.4 bis explica las extensiones de descargas.
 

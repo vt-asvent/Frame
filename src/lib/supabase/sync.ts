@@ -345,7 +345,7 @@ export async function pushToCloud(uid: string): Promise<SyncResult> {
  * copia en memoria y la volvería a escribir encima en su siguiente guardado,
  * deshaciendo lo que acaba de llegar.
  */
-export const CLOUD_APPLIED_EVENT = 'frame:cloud-applied';
+export { CLOUD_APPLIED_EVENT } from '@/lib/sync-merge';
 
 /**
  * Trae lo que haya en la nube fusionándolo con lo local. Es el MISMO ciclo:

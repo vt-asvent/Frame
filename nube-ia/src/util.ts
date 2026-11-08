@@ -9,6 +9,8 @@ export interface Env {
   /** Proyecto de Supabase de Frame: solo para saber de quién es la app que llama. */
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
+  /** Workers AI: el lector de horarios (horario.ts). */
+  AI: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
 
 const text = new TextEncoder();

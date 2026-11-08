@@ -1,7 +1,7 @@
 {
   "name": "frame",
   "productName": "Frame",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Sistema Operativo de Productividad",
   "author": "Asvent <vt.asvent@gmail.com>",
   "private": true,
@@ -48,7 +48,6 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-router-dom": "^7.1.0",
-    "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7"
   },
@@ -59,6 +58,7 @@
     "@types/react-dom": "^19.2.1",
     "@vitejs/plugin-react": "^4.3.4",
     "postcss": "^8",
+    "recharts": "^2.15.1",
     "tailwindcss": "^3.4.1",
     "typescript": "^5",
     "vite": "^6.0.0"

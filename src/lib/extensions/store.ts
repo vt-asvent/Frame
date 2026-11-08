@@ -89,8 +89,6 @@ export function useExtensionOn(id: OfficialId | string): boolean {
   return list.some((e) => e.id === id && e.enabled);
 }
 
-export const isExtensionOn = (id: string): boolean => read().some((e) => e.id === id && e.enabled);
-
 /** El manifiesto de una instalada (el oficial, o el que vino en el archivo). */
 export function manifestOf(entry: InstalledExtension): ExtensionManifest | null {
   return officialById(entry.id)?.manifest() ?? entry.manifest ?? null;

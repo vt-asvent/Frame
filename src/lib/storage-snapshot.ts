@@ -41,7 +41,6 @@ export const SCOPED_KEYS = [
   'completedTasksByCourse',
   'taskSortMode',
   'isPlayerVisible',
-  'competencyCourseIds',
   // Acumulado real de reproducciones: sin respaldo, al reinstalar se resembraba
   // con la longitud del registro rodante y la cifra del expediente bajaba.
   'playCount',
@@ -65,6 +64,8 @@ export const SCOPED_KEYS = [
   // Canciones con corazón (1.6.9, song-favorites.ts): una ficha por canción,
   // identificada por su clave (título y artista), como en las playlists.
   'songFavorites',
+  // Horarios de Inicio (1.9.0): fichas por mes; la foto viaja con image-sync.
+  'timetables',
 ] as const;
 
 /** Las claves que esta versión conoce (lo demás de la nube es de una versión más nueva). */

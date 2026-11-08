@@ -58,8 +58,9 @@ import { startUpdaterLoop, setUpdateBusyGuard } from '@/lib/updater';
 import { isRecorderBusy } from '@/lib/recordings';
 import { onStorageQuotaError } from '@/lib/safe-storage';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { getImage } from '@/lib/music-db';
-import { activeProfileId, prepareProfile, scheduleImageKey } from '@/lib/profile-scope';
+import { IMAGE_UPDATED_EVENT, getImage } from '@/lib/music-db';
+import { currentTimetableImageKey } from '@/lib/timetable';
+import { activeProfileId, prepareProfile } from '@/lib/profile-scope';
 import { useToast } from '@/hooks/use-toast';
 import type { Session } from '@supabase/supabase-js';
 
@@ -177,15 +178,17 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
         let alive = true;
         const sync = async () => {
             const uid = activeProfileId();
-            const image = uid ? await getImage(scheduleImageKey(uid)).catch(() => null) : null;
+            const image = uid ? await getImage(currentTimetableImageKey(uid)).catch(() => null) : null;
             if (!alive) return;
             void invoke('schedule_peek_enable', { enabled: Boolean(image) }).catch(() => undefined);
         };
         void sync();
-        window.addEventListener('scheduleImageUpdated', sync);
+        // Otro horario elegido o borrado, uno llegado de otro dispositivo o su foto.
+        const events = ['scheduleImageUpdated', CLOUD_APPLIED_EVENT, IMAGE_UPDATED_EVENT];
+        for (const name of events) window.addEventListener(name, sync);
         return () => {
             alive = false;
-            window.removeEventListener('scheduleImageUpdated', sync);
+            for (const name of events) window.removeEventListener(name, sync);
             void invoke('schedule_peek_enable', { enabled: false }).catch(() => undefined);
         };
         // Otro perfil, otro horario (1.6.7): se vuelve a mirar al cambiar de cuenta.

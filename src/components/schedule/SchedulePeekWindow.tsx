@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getImage } from '@/lib/music-db';
-import { activeProfileId, scheduleImageKey } from '@/lib/profile-scope';
+import { activeProfileId } from '@/lib/profile-scope';
+import { currentTimetableImageKey } from '@/lib/timetable';
 import { tr } from '@/lib/i18n';
 
 // ============================================================
@@ -49,7 +50,7 @@ export default function SchedulePeekWindow() {
       setImage(null);
       return;
     }
-    void getImage(scheduleImageKey(uid)).then((stored) => setImage(stored));
+    void getImage(currentTimetableImageKey(uid)).then((stored) => setImage(stored));
   }, []);
 
   useEffect(() => {

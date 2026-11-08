@@ -1,7 +1,3 @@
-
-
-export type TaskSortMode = 'custom' | 'proximity' | 'relevance';
-
 export interface UserProfile {
   id: string;
   username: string;

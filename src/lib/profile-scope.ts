@@ -139,6 +139,7 @@ const ENTITY_IMAGES: [prefix: string, collection: string][] = [
   ['courseImage_', 'courses'],
   ['playlistImage_', 'playlists'],
   ['spaceImage_', 'spaces'],
+  ['timetableImage_', 'timetables'],
 ];
 
 /**

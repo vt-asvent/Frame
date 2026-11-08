@@ -343,5 +343,4 @@ export const IA_INSTRUCTIONS =
   'Empieza por resumen_de_hoy para saber la fecha. Usa los id que devuelven los listados. Las herramientas que borran piden confirmación al usuario dentro de Frame; si la rechaza, no insistas. ' +
   'No cambies nada que el usuario no haya pedido.';
 
-export const isDestructive = (name: string): boolean => IA_TOOLS.some((t) => t.name === name && t.annotations.destructiveHint);
 export const isReadOnly = (name: string): boolean => IA_TOOLS.some((t) => t.name === name && t.annotations.readOnlyHint);

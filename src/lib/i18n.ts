@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { de, enUS, es, fr, it, ja, ptBR, ru, type Locale } from 'date-fns/locale';
+import type { Locale } from 'date-fns';
+import { es } from 'date-fns/locale/es';
 
 // ============================================================
 // Idioma de la interfaz (1.6.7): español o inglés; desde 1.7.3, también
@@ -73,21 +74,25 @@ const listeners = new Set<() => void>();
 
 const notify = () => listeners.forEach((listener) => listener());
 
-const LOADERS: Record<Exclude<Lang, 'es'>, () => Promise<{ default: Dictionary }>> = {
-  en: () => import('./i18n-en'),
-  de: () => import('./i18n-de'),
-  fr: () => import('./i18n-fr'),
-  it: () => import('./i18n-it'),
-  pt: () => import('./i18n-pt'),
-  ru: () => import('./i18n-ru'),
-  ja: () => import('./i18n-ja'),
+// Cada idioma trae su diccionario y el formato de fechas de date-fns: así el
+// arranque solo carga el español (1.9.0).
+const LOADERS: Record<Exclude<Lang, 'es'>, () => Promise<[{ default: Dictionary }, Locale]>> = {
+  en: () => Promise.all([import('./i18n-en'), import('date-fns/locale/en-US').then((m) => m.enUS)]),
+  de: () => Promise.all([import('./i18n-de'), import('date-fns/locale/de').then((m) => m.de)]),
+  fr: () => Promise.all([import('./i18n-fr'), import('date-fns/locale/fr').then((m) => m.fr)]),
+  it: () => Promise.all([import('./i18n-it'), import('date-fns/locale/it').then((m) => m.it)]),
+  pt: () => Promise.all([import('./i18n-pt'), import('date-fns/locale/pt-BR').then((m) => m.ptBR)]),
+  ru: () => Promise.all([import('./i18n-ru'), import('date-fns/locale/ru').then((m) => m.ru)]),
+  ja: () => Promise.all([import('./i18n-ja'), import('date-fns/locale/ja').then((m) => m.ja)]),
 };
 
 async function loadOne(lang: Lang): Promise<void> {
   if (lang === 'es' || dictionaries[lang]) return;
   // Sin prototipo: una clave que llegue de datos («constructor», «toString»)
   // no debe devolver una función de Object en vez de un texto.
-  dictionaries[lang] = Object.assign(Object.create(null) as Dictionary, (await LOADERS[lang]()).default);
+  const [dictionary, locale] = await LOADERS[lang]();
+  DATE_LOCALES[lang] = locale;
+  dictionaries[lang] = Object.assign(Object.create(null) as Dictionary, dictionary.default);
 }
 
 /** El diccionario del idioma y, en los nuevos, el inglés de respaldo. */
@@ -256,9 +261,9 @@ export function lowerFirst(text: string, noun = false): string {
 /** Locale de date-fns para el idioma actual. SOLO para dar formato a fechas:
  *  los cálculos de semanas siguen con `es` (la semana de Frame empieza en
  *  lunes; con `enUS` empezaría en domingo y moverían las métricas). */
-export const dateLocale = (): Locale => DATE_LOCALES[current];
+export const dateLocale = (): Locale => DATE_LOCALES[current] ?? es;
 
-const DATE_LOCALES: Record<Lang, Locale> = { es, en: enUS, de, fr, it, pt: ptBR, ru, ja };
+const DATE_LOCALES: Partial<Record<Lang, Locale>> = { es };
 const INTL_LOCALES: Record<Lang, string> = { es: 'es-PE', en: 'en-US', de: 'de-DE', fr: 'fr-FR', it: 'it-IT', pt: 'pt-BR', ru: 'ru-RU', ja: 'ja-JP' };
 
 /** Etiqueta BCP 47 para `toLocaleString` e `Intl`. */

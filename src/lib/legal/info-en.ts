@@ -59,7 +59,7 @@ Frame distinguishes three storage places. Knowing the difference is what prevent
 
 **On your computer, always.** Everything you record is written first to your disk: subjects, collections, tasks, attachments, study sessions, grades, habits, local calendar events, resources, images, voice recordings and your music library. Recordings are also kept as audio files (M4A) in \`Documents\\Frame\\Grabaciones\`, accessible outside the application.
 
-**In your account, if you signed in.** Your **academic state** —subjects, tasks, sessions, grades, habits, events, playlists with their order, study videos and settings— is replicated in the cloud and merged across devices: each change reaches your other devices in under a second, encrypted. This replica is what lets you switch machines, or use your phone, without losing anything. The **language**, the **image proportion** of the cards and the weather city you pick by hand also follow your account; the theme belongs to each device. Your **profile picture** and the **schedule image** travel in a private folder of your account; the images from **Frame’s gallery** that you give your playlists, subjects and collections travel as a reference (which one it is and how you cropped it) and each device recreates it.
+**In your account, if you signed in.** Your **academic state** —subjects, tasks, sessions, grades, habits, events, schedules with their classes, playlists with their order, study videos and settings— is replicated in the cloud and merged across devices: each change reaches your other devices in under a second, encrypted. This replica is what lets you switch machines, or use your phone, without losing anything. The **language**, the **image proportion** of the cards and the weather city you pick by hand also follow your account; the theme belongs to each device. Your **profile picture** and your **schedule photos** travel in a private folder of your account; the images from **Frame’s gallery** that you give your playlists, subjects and collections travel as a reference (which one it is and how you cropped it) and each device recreates it.
 
 **Nowhere but your computer, always.** **Music** (with its covers and lyrics), **voice recordings**, **attachments** and **the images you upload yourself** to playlists, subjects and collections are excluded from the cloud because of their size. Your **listening stats** don’t leave your computer either. To have your music on another device, copy your files there and import them. The bell tells you what isn’t the same on your devices, where and why (sync checker).
 
@@ -89,7 +89,7 @@ Each session is a card with its subject, its time and its performance, and it op
 
 ### 4.3 Analysis and reports
 
-The top bar shows phrases with your recent data that change on their own. Home sums up your day: weather, schedule, a Pomodoro with what you studied today and yesterday, your most-played playlist, your streak and “Pending tasks” (the two due soonest); in Advanced mode, also “Your week in data” —pace with the weekly average, consistency and completed tasks— and the competency matrix (pending workload per subject, not a measure of knowledge). Habits with times of day, rings, a typical week and a consistency map. Performance and pending-tasks **reports** in PDF and Word —weekly, monthly or yearly—, in Settings, with a summary and the real preview of the document.
+The top bar shows phrases with your recent data that change on their own. Home sums up your day: your **schedule** —the day’s line with the current class always in the middle, the week as a calendar and the original photo, one schedule per month—, the weather, “Pending tasks” (the two due soonest), a Pomodoro with what you studied today and yesterday, your most-played playlist and your streak; in Advanced mode, also “Your week in data”: pace with the weekly average, consistency and completed tasks. Habits with times of day, rings, a typical week and a consistency map. Performance and pending-tasks **reports** in PDF and Word —weekly, monthly or yearly—, in Settings, with a summary and the real preview of the document.
 
 ### 4.4 Calendar, Google and music
 
@@ -107,13 +107,15 @@ Closing the window closes Frame. If a study session is running, it first offers 
 
 Document attachments stop resolving if the original file is moved, renamed or deleted: attach it again.
 
-The competency radar and the daily grades are calculated exclusively from the data you record. They don’t come from any institution and have no academic validity.
+The daily grades are calculated exclusively from the data you record. They don’t come from any institution and have no academic validity.
 
 Music, recordings, attachments and the images you upload yourself aren’t backed up in the cloud: they stay on the device where you added them.
 
-On its own, Frame doesn’t search for or download music, videos, covers or lyrics: it shows the lyrics and cover that your files carry or the ones you add; what earlier versions already saved on your computer is kept. If you turn on a download extension —a third-party program you install separately and that runs on your own computer—, Music’s “+ Add” asks it for each song you add, and it’s that program that downloads it (as a 320 kbps MP3) and queries public lyrics and cover services to complete it; Frame only imports the file it hands over. Formats that the Windows audio engine doesn’t play (WMA, AIFF, ALAC, APE and others) aren’t imported, and Frame tells you which ones were left out.
+On its own, Frame doesn’t search for or download music, videos, covers or lyrics: it shows the lyrics and cover that your files carry or the ones you add; what earlier versions already saved on your computer is kept. If you turn on a download extension, Frame installs the third-party program that comes with it on your computer —only if it’s signed by its author— and keeps it up to date (in the Microsoft Store version you install it yourself); Music’s “+ Add” asks it for each song you add, and it’s that program that downloads it (as a 320 kbps MP3) and queries public lyrics and cover services to complete it; Frame only imports the file it hands over. Formats that the Windows audio engine doesn’t play (WMA, AIFF, ALAC, APE and others) aren’t imported, and Frame tells you which ones were left out.
 
 Google’s screens require a connection and being signed in to Google, and how they work depends entirely on Google.
+
+Reading the classes in a schedule requires a connection and a Frame account, and each account can read up to 12 photos a day. The AI can make mistakes: check what it read in “Week”.
 
 ---
 
@@ -125,7 +127,7 @@ Google’s services —Gmail, YouTube, Classroom and Drive— are operated by Go
 
 The weather forecast comes from **Open-Meteo**.
 
-Web AI chats (claude.ai, ChatGPT and others) reach Frame through a relay hosted on **Cloudflare**, which passes each call along without storing it (Privacy Policy, 3.7). Claude is a trademark of Anthropic, PBC; ChatGPT, of OpenAI; and Gemini, of Google LLC. Frame isn’t affiliated with or endorsed by those companies.
+Web AI chats (claude.ai, ChatGPT and others) reach Frame through a relay hosted on **Cloudflare**, which passes each call along without storing it (Privacy Policy, 3.7). Schedule reading uses the open model **Gemma 4** (Apache 2.0 license) on **Cloudflare Workers AI**, which doesn’t store the photos (Privacy Policy, 3.8). Claude is a trademark of Anthropic, PBC; ChatGPT, of OpenAI; and Gemini and Gemma, of Google LLC. Frame isn’t affiliated with or endorsed by those companies.
 
 Notion is a trademark of Notion Labs, Inc.; the extension only reads the files you export yourself and doesn’t connect to its service.
 
@@ -144,6 +146,8 @@ Support is offered for the current stable version and the one immediately before
 ## 8 · Version history
 
 **${appVersion} — ${releaseDate}**
+
+*1.9.0:* **Schedule on Home**: upload the photo of each month’s schedule (“November”, “November 2”…) and Frame reads its classes with AI; the day’s line always puts the current class in the middle, with the ones before and after on each side, and moves with the clock · **“Week”**: the week as a calendar, where you correct or add classes with a click · **“View original”**: the photo as it is · **Home rearranged**: schedule, weather, “Pending tasks” with the Pomodoro, the playlist and the streak to its right, and “Your week in data” with the pace on the left half; the competency matrix is retired · **Music → “+ Add”** is a page of its own, with YouTube on the left at three fifths of the width · **download extensions** install, open and update their program on their own, and repair it if it fails · **lighter**: its own charts instead of a library of almost 400 KB, gallery images 26% lighter and a start-up that loads less code, with every feature intact · **Terms and Privacy Policy 5.5**: section 3.8 explains schedule reading and 6.4 bis, the download extensions’ program.
 
 *1.8.1:* **Music → “+ Add”** with a download extension: YouTube embedded on the right and, on the left, the download queue with “Add” (the video you have open) and “Start download”; each song as a 320 kbps MP3 with its official cover and lyrics, and the size of each one · **song CSVs** (for example, a Spotify playlist): a summary before starting and its playlist in the same order · **download indicator** next to “Shuffle”: downloaded, remaining and failed songs, the speed and how good it is, the total size, the time left and a pause · the download keeps going when you close the window or switch screens, and continues when you open Frame again · **Terms and Privacy Policy 5.4**: section 6.4 bis explains download extensions.
 

@@ -1,6 +1,6 @@
 import { Bot, Library, Music, Palette, Puzzle, Sparkles } from 'lucide-react';
-import wireLogo from '@/assets/extensiones/wire.png';
-import claudeLogo from '@/assets/extensiones/claude.png';
+import wireLogo from '@/assets/extensiones/wire.webp';
+import claudeLogo from '@/assets/extensiones/claude.webp';
 import { cn } from '@/lib/utils';
 import type { ExtensionManifest } from '@/lib/extensions/manifest';
 

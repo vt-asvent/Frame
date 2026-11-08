@@ -31,7 +31,13 @@ import { tr } from '@/lib/i18n';
 //       "page": "http://127.0.0.1:47321/", // solo este equipo
 //       "label": "Busca y descarga",       // opcional
 //       "folderHint": { "base": "downloads", "path": "Mi carpeta" }, // opcional
-//       "engine": "yt-mp3/1"               // opcional: protocolo que Frame sabe hablar
+//       "engine": "yt-mp3/1",              // opcional: protocolo que Frame sabe hablar
+//       "app": {                           // opcional, solo del catálogo: el programa
+//         "updates": "https://github.com/…/latest.json",
+//         "exe": "Carpeta/programa.exe",   // dentro de %LOCALAPPDATA%
+//         "args": ["--tray"],
+//         "minVersion": "1.2.0"
+//       }
 //     },
 //     "appearance": {                       // permiso «appearance»
 //       "accent": { "name": "Menta", "light": "#2F8F6B", "dark": "#8FD3B6" },
@@ -127,6 +133,37 @@ export interface MusicSourceContribution {
    * /info, /song, GET /jobs.
    */
   engine?: MusicEngine;
+  /** El programa del que depende (1.9.0): Frame lo abre, lo instala y lo pone al día solo. */
+  app?: ExtensionApp;
+}
+
+/**
+ * El programa de una fuente de música. Frame lo abre si está cerrado y lo
+ * instala o lo actualiza si falta o es anterior a `minVersion`, siempre con
+ * un instalador firmado (ver ext_app_install en el núcleo). Solo para las
+ * extensiones del catálogo.
+ */
+export interface ExtensionApp {
+  /** Índice de versiones del actualizador de Tauri: https://github.com/…/latest.json */
+  updates: string;
+  /** Dónde queda instalado, dentro de %LOCALAPPDATA%: «Carpeta/programa.exe». */
+  exe: string;
+  /** Opciones al abrirlo en segundo plano (p. ej. «--tray»). */
+  args?: string[];
+  /** Versión mínima: si la que corre es anterior, Frame la actualiza. */
+  minVersion?: string;
+}
+
+/** El bloque «app» de una fuente, validado; null si no es válido. */
+function extensionApp(value: unknown): ExtensionApp | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const app = value as Record<string, unknown>;
+  const updates = typeof app.updates === 'string' && /^https:\/\/github\.com\/[\w.\/-]+\.json$/.test(app.updates) && !app.updates.includes('..') ? app.updates : null;
+  const exe = typeof app.exe === 'string' && /^[\w .-]+(\/[\w .-]+)*\.exe$/i.test(app.exe) && !app.exe.split('/').some((part) => part.trim() === '..' || part.trim() === '.') ? app.exe : null;
+  const args = app.args === undefined ? [] : Array.isArray(app.args) && app.args.length <= 4 && app.args.every((arg) => typeof arg === 'string' && /^--[a-z0-9-]{1,30}$/.test(arg)) ? (app.args as string[]) : null;
+  const minVersion = app.minVersion === undefined ? undefined : typeof app.minVersion === 'string' && /^\d+\.\d+\.\d+$/.test(app.minVersion) ? app.minVersion : null;
+  if (!updates || !exe || !args || minVersion === null) return null;
+  return { updates, exe, ...(args.length ? { args } : {}), ...(minVersion ? { minVersion } : {}) };
 }
 
 export const MUSIC_ENGINES = ['yt-mp3/1'] as const;
@@ -349,11 +386,14 @@ export function parseManifest(raw: string): ManifestResult {
         }
         engine = s.engine as MusicEngine;
       }
+      const app = s.app === undefined ? undefined : extensionApp(s.app);
+      if (app === null) return fail(tr('El programa de la fuente de música no es válido.'));
       contributes.musicSource = {
         page: s.page,
         ...(label ? { label } : {}),
         ...(hint ? { folderHint: hint } : {}),
         ...(engine ? { engine } : {}),
+        ...(app ? { app } : {}),
       };
     }
     if (c.appearance !== undefined) {
