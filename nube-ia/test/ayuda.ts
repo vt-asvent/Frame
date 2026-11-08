@@ -113,9 +113,10 @@ export interface Arnes {
 const pkce = (v: string) => createHash('sha256').update(v).digest('base64url');
 
 /**
- * Workers AI de mentira, por RPC como el de verdad. Responde un horario con un
- * recreo; «Y3Vwbw» en la foto simula la cuota gratuita agotada y «bXVkbw», un
- * modelo que no contesta con JSON. Un pedido mal formado falla.
+ * Workers AI de mentira, por RPC como el de verdad. Responde un horario por
+ * franjas, con una clase de dos franjas y un recreo; «Y3Vwbw» en la foto
+ * simula la cuota gratuita agotada y «bXVkbw», un modelo que no contesta con
+ * JSON. Un pedido mal formado falla.
  */
 const IA_FALSA = `
 import { WorkerEntrypoint } from 'cloudflare:workers';
@@ -125,12 +126,15 @@ export class IA extends WorkerEntrypoint {
     if (model !== '@cf/google/gemma-4-26b-a4b-it' || !/^data:image\\/(jpeg|png|webp);base64,/.test(foto) || !input.response_format) throw new Error('pedido mal formado');
     if (foto.includes('Y3Vwbw')) throw new Error('3036: Account limited: you have used up your daily free allocation of 10,000 neurons');
     if (foto.includes('bXVkbw')) return { choices: [{ message: { content: 'No puedo.' } }] };
-    const classes = [
-      { day: 1, start: '08:00', end: '09:30', subject: 'Matemática', room: 'A-1', kind: 'class' },
-      { day: 1, start: '09:30', end: '09:45', subject: 'Recreo', kind: 'break' },
-      { day: 2, start: '08:00', end: '09:30', subject: 'Historia', teacher: 'Prof. Ríos', kind: 'class' },
+    const slots = [
+      { start: '08:00', end: '08:45', kind: 'class', cells: [
+        { day: 1, subject: 'Matemática', room: 'A-1', span: 2 },
+        { day: 2, subject: 'Historia', teacher: 'Prof. Ríos', span: 2 },
+      ] },
+      { start: '08:45', end: '09:30', kind: 'class', cells: [] },
+      { start: '09:30', end: '09:45', kind: 'break', cells: [{ day: 1, subject: 'Recreo', span: 1 }] },
     ];
-    return { choices: [{ message: { content: 'Aquí está: ' + JSON.stringify({ classes }) } }] };
+    return { choices: [{ message: { content: 'Aquí está: ' + JSON.stringify({ slots }) } }] };
   }
 }
 export default { fetch: () => new Response('ia') };

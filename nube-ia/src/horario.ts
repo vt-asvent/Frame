@@ -2,9 +2,11 @@
 //
 // La app manda la foto (JPEG de 1600 px como mucho, en base64) con su sesión
 // de Frame. Aquí se le pasa a Gemma 4 en Workers AI —modelo abierto (Apache
-// 2.0), sin retención de datos y dentro de la cuota gratuita de Cloudflare— y
-// se devuelve { classes: [{ day, start, end, subject, room?, teacher? }] }, que
-// la app limpia y une por bloques antes de guardarlo.
+// 2.0), sin retención de datos y dentro de la cuota gratuita de Cloudflare—,
+// que lee la tabla franja por franja (en fotos torcidas acierta mucho más que
+// pidiéndole la lista de clases), y se devuelve
+// { classes: [{ day, start, end, subject, room?, teacher? }] }, que la app
+// limpia y une por bloques antes de guardarlo.
 //
 // La foto no se guarda en ninguna parte. De cada cuenta solo se cuenta cuántas
 // lee al día (D1, `lecturas`), para que nadie agote la cuota de los demás.
@@ -33,39 +35,49 @@ function isImage(image: string, mime: string): boolean {
   }
 }
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   properties: {
-    classes: {
+    slots: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
-          day: { type: 'integer' },
           start: { type: 'string' },
           end: { type: 'string' },
-          subject: { type: 'string' },
-          room: { type: 'string' },
-          teacher: { type: 'string' },
           kind: { type: 'string', enum: ['class', 'break'] },
+          cells: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                day: { type: 'integer' },
+                subject: { type: 'string' },
+                room: { type: 'string' },
+                teacher: { type: 'string' },
+                span: { type: 'integer' },
+              },
+              required: ['day', 'subject', 'span'],
+            },
+          },
         },
-        required: ['day', 'start', 'end', 'subject', 'kind'],
+        required: ['start', 'end', 'kind', 'cells'],
       },
     },
   },
-  required: ['classes'],
+  required: ['slots'],
 };
 
-const PROMPT = `You read school timetables. The image is a student's weekly timetable (a photo, a screenshot or a table, in any language).
-Return EVERY class of the week:
-- day: 1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday, 6 Saturday, 7 Sunday. Map the column (or row) headers to these numbers, whatever their language or abbreviation.
-- start and end: 24-hour HH:MM. Take them from the time column or row of the table (convert 1:00 pm to 13:00). If only period numbers are shown, use the times printed for those periods.
-- A cell that spans several rows or columns is ONE class covering that whole range.
-- subject: the subject name as written, in its original language, with normal capitalisation. Do not translate. Expand an abbreviation only if the image itself makes it obvious.
-- room and teacher: only if they are written for that class.
-- Breaks, recess, lunch, free periods and empty cells: kind "break". Never invent classes for empty cells.
-Be exhaustive and precise: check every day and every time slot before answering.
-Answer only with JSON: {"classes":[{"day":1,"start":"08:00","end":"09:30","subject":"…","room":"…","teacher":"…","kind":"class"}]}`;
+export const PROMPT = `You read school timetables. The image is a student's weekly timetable (a photo, a screenshot or a table, in any language).
+Read it TIME SLOT BY TIME SLOT, in order, following the time column (or the period column; if the times run across the top, each column is a slot). For every time slot:
+- start and end: 24-hour HH:MM, exactly as printed for that slot (convert 1:00 pm to 13:00). If only period numbers are shown, use the times printed for those periods. Keep break slots (recess, lunch) too, with kind "break".
+- cells: the classes that START in this slot, one per day. day: 1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday, 6 Saturday, 7 Sunday, mapped from the day headers whatever their language or abbreviation. subject: as written, in its original language, with normal capitalisation; do not translate. room and teacher: only if written in that cell. span: how many consecutive time slots the cell covers (1 if only this one; a merged cell that also covers the next two slots has span 3).
+- Leave out a day whose cell in this slot is empty, or is covered by a merged cell that started in an earlier slot.
+Be exhaustive and precise: check every slot and every day before answering.
+Answer only with JSON: {"slots":[{"start":"08:00","end":"08:45","kind":"class","cells":[{"day":1,"subject":"…","room":"…","teacher":"…","span":1}]}]}`;
+
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object';
 
 /** El texto (o el objeto) que devolvió el modelo, venga en el formato que venga. */
 function answerOf(out: unknown): unknown {
@@ -73,7 +85,8 @@ function answerOf(out: unknown): unknown {
   return o?.choices?.[0]?.message?.content ?? o?.response ?? null;
 }
 
-export function classesOf(out: unknown): Record<string, unknown>[] | null {
+/** Franjas → clases: cada celda empieza en su franja y acaba donde acaba la última que cubre. */
+export function classesOf(out: unknown): Obj[] | null {
   let value = answerOf(out);
   if (typeof value === 'string') {
     try {
@@ -82,12 +95,19 @@ export function classesOf(out: unknown): Record<string, unknown>[] | null {
       return null;
     }
   }
-  const list = (value as { classes?: unknown } | null)?.classes;
-  if (!Array.isArray(list)) return null;
-  return list
-    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && (item as { kind?: unknown }).kind !== 'break')
-    .slice(0, 200)
-    .map(({ day, start, end, subject, room, teacher }) => ({ day, start, end, subject, room, teacher }));
+  const slots = isObj(value) ? value.slots : null;
+  if (!Array.isArray(slots)) return null;
+  const classes: Obj[] = [];
+  slots.forEach((slot, i) => {
+    if (!isObj(slot) || slot.kind === 'break' || !Array.isArray(slot.cells)) return;
+    for (const cell of slot.cells) {
+      if (!isObj(cell)) continue;
+      const span = Math.min(Math.max(Math.trunc(Number(cell.span)) || 1, 1), slots.length - i);
+      const last = slots[i + span - 1];
+      classes.push({ day: cell.day, start: slot.start, end: isObj(last) ? last.end : slot.end, subject: cell.subject, room: cell.room, teacher: cell.teacher });
+    }
+  });
+  return classes.slice(0, 200);
 }
 
 export async function readTimetable(req: Request, env: Env, owner: string): Promise<Response> {
@@ -120,7 +140,7 @@ export async function readTimetable(req: Request, env: Env, owner: string): Prom
       response_format: { type: 'json_schema', json_schema: { name: 'timetable', schema: SCHEMA } },
       chat_template_kwargs: { enable_thinking: false },
       temperature: 0,
-      max_completion_tokens: 4096,
+      max_completion_tokens: 6000,
     });
   } catch (e) {
     const why = String(e).slice(0, 200);
