@@ -22,6 +22,6 @@ $changes = git -C $dst status --porcelain
 if (-not $changes) { Write-Host "==> Espejo vt-asvent/frame-app al día."; exit 0 }
 $msg = if ($args.Count -gt 0) { $args -join ' ' } else { 'Espejo de la web' }
 git -C $dst add -A
-git -C $dst commit --quiet -m "$msg`n`nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git -C $dst commit --quiet -m "$msg`n`nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git -C $dst push --quiet
 Write-Host "==> Espejo vt-asvent/frame-app actualizado: $msg"
