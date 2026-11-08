@@ -1,21 +1,30 @@
 // Inicio → Horario (Frame 1.9.0): lee las clases de la foto de un horario.
 //
 // La app manda la foto (JPEG de 1600 px como mucho, en base64) con su sesión
-// de Frame. Aquí se le pasa a Gemma 4 en Workers AI —modelo abierto (Apache
-// 2.0), sin retención de datos y dentro de la cuota gratuita de Cloudflare—,
-// que lee la tabla franja por franja (en fotos torcidas acierta mucho más que
-// pidiéndole la lista de clases), y se devuelve
+// de Frame. Aquí la lee un modelo abierto (Apache 2.0) de Workers AI, sin
+// retención de datos y dentro de la cuota gratuita de Cloudflare (10 000
+// neuronas al día): Qwen 3.8, el que mejor lee fotos (1.9.1), mientras el gasto
+// del día deja margen; si no, o si Qwen falla, Gemma 4, unas 15 veces más
+// barato. Los dos leen la tabla franja por franja (en fotos torcidas acierta
+// mucho más que pedir la lista de clases) y se devuelve
 // { classes: [{ day, start, end, subject, room?, teacher? }] }, que la app
 // limpia y une por bloques antes de guardarlo.
 //
 // La foto no se guarda en ninguna parte. De cada cuenta solo se cuenta cuántas
-// lee al día (D1, `lecturas`), para que nadie agote la cuota de los demás.
+// lee al día (D1, `lecturas`), para que nadie agote la cuota de los demás, y
+// de todo Frame, cuántas neuronas se gastan al día (`neuronas`).
 // Errores: 400 imagen no válida · 429 cupo de la cuenta (`quota`) o de todo
 // Frame (`daily`) agotado · 503 la IA no respondió (`busy`).
 import { type Env, json } from './util';
 
-export const MODEL = '@cf/google/gemma-4-26b-a4b-it';
-export const DAILY_LIMIT = 12;
+export const MODEL = '@cf/qwen/qwen3.8-27b';
+export const FALLBACK = '@cf/google/gemma-4-26b-a4b-it';
+export const DAILY_LIMIT = 6;
+/** Qwen solo mientras lo gastado hoy más una lectura grande (~1000) quepa aquí; el resto de la cuota queda para Gemma. */
+export const QWEN_UNTIL = 8_000;
+const QWEN_RESERVE = 1_000;
+/** Lo que se anota si la respuesta no dice cuántas neuronas gastó. */
+const COST: Record<string, number> = { [MODEL]: 450, [FALLBACK]: 40 };
 const MAX_IMAGE = 4_000_000;
 
 /** Los primeros bytes de la foto dicen si de verdad es del tipo que declara. */
@@ -125,36 +134,45 @@ export async function readTimetable(req: Request, env: Env, owner: string): Prom
     .first<number>('n');
   if ((used ?? 0) > DAILY_LIMIT) return json({ error: 'quota', limit: DAILY_LIMIT }, 429);
 
-  let out: unknown;
-  try {
-    out = await env.AI.run(MODEL, {
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: `data:${mime};base64,${image}` } },
-            { type: 'text', text: PROMPT },
-          ],
-        },
-      ],
-      response_format: { type: 'json_schema', json_schema: { name: 'timetable', schema: SCHEMA } },
-      chat_template_kwargs: { enable_thinking: false },
-      temperature: 0,
-      max_completion_tokens: 6000,
-    });
-  } catch (e) {
-    const why = String(e).slice(0, 200);
-    console.error('horario', why);
-    // La cuota gratuita de Cloudflare es de todo Frame y vuelve cada día. Si se
-    // agotó, el modelo no llegó a trabajar: esa lectura no se le cuenta a nadie.
-    if (/neuron|allocation|3036|4006/i.test(why)) {
-      await env.DB.prepare('UPDATE lecturas SET n = n - 1 WHERE owner = ? AND day = ?').bind(owner, day).run();
-      return json({ error: 'daily' }, 429);
+  const spent = (await env.DB.prepare('SELECT n FROM neuronas WHERE day = ?').bind(day).first<number>('n')) ?? 0;
+  const models = spent + QWEN_RESERVE <= QWEN_UNTIL ? [MODEL, FALLBACK] : [FALLBACK];
+  for (const model of models) {
+    let out: unknown;
+    try {
+      out = await env.AI.run(model, {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${mime};base64,${image}` } },
+              { type: 'text', text: PROMPT },
+            ],
+          },
+        ],
+        response_format: { type: 'json_schema', json_schema: { name: 'timetable', schema: SCHEMA } },
+        chat_template_kwargs: { enable_thinking: false },
+        temperature: 0,
+        max_completion_tokens: 6000,
+      });
+    } catch (e) {
+      const why = String(e).slice(0, 200);
+      console.error('horario', model, why);
+      // La cuota gratuita de Cloudflare es de todo Frame y vuelve cada día. Si se
+      // agotó, ningún modelo llega a trabajar: esa lectura no se le cuenta a nadie.
+      if (/neuron|allocation|3036|4006/i.test(why)) {
+        await env.DB.prepare('UPDATE lecturas SET n = n - 1 WHERE owner = ? AND day = ?').bind(owner, day).run();
+        return json({ error: 'daily' }, 429);
+      }
+      continue;
     }
-    return json({ error: 'busy' }, 503);
+    const neurons = Number((out as { usage?: { neurons?: unknown } } | null)?.usage?.neurons);
+    await env.DB.prepare('INSERT INTO neuronas (day, n) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET n = n + excluded.n')
+      .bind(day, Number.isFinite(neurons) && neurons > 0 ? neurons : COST[model])
+      .run();
+    // Lo demás cuenta aunque no salga nada legible: si no, cualquiera usaría el
+    // modelo sin límite enviando fotos que no son horarios.
+    const classes = classesOf(out);
+    if (classes) return json({ classes });
   }
-  // Lo demás cuenta aunque no salga nada legible: si no, cualquiera usaría el
-  // modelo sin límite enviando fotos que no son horarios.
-  const classes = classesOf(out);
-  return classes ? json({ classes }) : json({ error: 'busy' }, 503);
+  return json({ error: 'busy' }, 503);
 }

@@ -2620,8 +2620,8 @@ const EN: Record<string, string> = {
   "El instalador no terminó a tiempo.": "The installer didn’t finish in time.",
   "El programa se instaló en otra carpeta.": "The program was installed in another folder.",
   "El lector de horarios ya no tiene lecturas libres hoy. Inténtalo mañana.": "The schedule reader has no free readings left today. Try again tomorrow.",
-  "Frame puede leer las clases de esta foto con IA (Gemma, en Cloudflare), que no la guarda.": "Frame can read the classes in this photo with AI (Gemma, on Cloudflare), which doesn’t keep it.",
-  "Frame leerá las clases con IA (Gemma, en Cloudflare), que no guarda la foto. Puedes corregir lo leído en «Semanal».": "Frame will read the classes with AI (Gemma, on Cloudflare), which doesn’t keep the photo. You can correct what it reads in “Week”.",
+  "Frame puede leer las clases de esta foto con IA abierta en Cloudflare, que no la guarda.": "Frame can read the classes in this photo with an open AI model on Cloudflare, which doesn’t keep it.",
+  "Frame leerá las clases con IA abierta en Cloudflare, que no guarda la foto. Puedes corregir lo leído en «Semanal».": "Frame will read the classes with an open AI model on Cloudflare, which doesn’t keep the photo. You can correct what it reads in “Week”.",
 };
 
 export default EN;

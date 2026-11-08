@@ -2618,8 +2618,8 @@ const DICT: Record<string, string> = {
   "El instalador no terminó a tiempo.": "インストーラーが時間内に終了しませんでした。",
   "El programa se instaló en otra carpeta.": "プログラムは別のフォルダーにインストールされました。",
   "El lector de horarios ya no tiene lecturas libres hoy. Inténtalo mañana.": "時間割の読み取りは今日の無料枠を使い切りました。明日もう一度お試しください。",
-  "Frame puede leer las clases de esta foto con IA (Gemma, en Cloudflare), que no la guarda.": "Frame は AI（Cloudflare 上の Gemma）でこの写真の授業を読み取れます。写真は保存されません。",
-  "Frame leerá las clases con IA (Gemma, en Cloudflare), que no guarda la foto. Puedes corregir lo leído en «Semanal».": "Frame は AI（Cloudflare 上の Gemma）で授業を読み取ります。写真は保存されません。読み取った内容は「週表示」で修正できます。",
+  "Frame puede leer las clases de esta foto con IA abierta en Cloudflare, que no la guarda.": "Frame は Cloudflare 上のオープンな AIでこの写真の授業を読み取れます。写真は保存されません。",
+  "Frame leerá las clases con IA abierta en Cloudflare, que no guarda la foto. Puedes corregir lo leído en «Semanal».": "Frame は Cloudflare 上のオープンな AIで授業を読み取ります。写真は保存されません。読み取った内容は「週表示」で修正できます。",
 };
 
 export default DICT;

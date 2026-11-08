@@ -341,16 +341,33 @@ describe('lector de horarios', () => {
     // El modelo trabajó aunque no saliera nada legible: cuenta (si no, sería gratis abusar).
     expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('bXVkbw') })).datos).toEqual({ error: 'busy' });
     expect(await a.sql('SELECT n FROM lecturas WHERE owner=?', yo)).toEqual([{ n: 1 }]);
-    for (let i = 0; i < 11; i++) expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto() })).estado).toBe(200);
+    for (let i = 0; i < 5; i++) expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto() })).estado).toBe(200);
     const pasado = await a.pedir('/app/horario', { token: sesion(yo), json: foto() });
     expect(pasado.estado).toBe(429);
-    expect(pasado.datos).toEqual({ error: 'quota', limit: 12 });
+    expect(pasado.datos).toEqual({ error: 'quota', limit: 6 });
     expect((await a.pedir('/app/horario', { token: sesion(cuenta()), json: foto() })).estado).toBe(200);
+  });
+
+  it('lee con Qwen; si Qwen falla o el gasto del día se acerca al tope, con Gemma', async () => {
+    const gastado = async () => ((await a.sql('SELECT n FROM neuronas WHERE day=?', hoy())) as { n: number }[])[0]?.n ?? 0;
+    await a.sql('INSERT OR REPLACE INTO neuronas(day, n) VALUES(?, 0)', hoy());
+    expect((await a.pedir('/app/horario', { token: sesion(cuenta()), json: foto() })).estado).toBe(200);
+    expect(await gastado()).toBe(400);
+    // Qwen caído: responde Gemma con las mismas clases.
+    const r = await a.pedir('/app/horario', { token: sesion(cuenta()), json: foto('cXdlbg') });
+    expect(r.datos.classes).toHaveLength(2);
+    expect(await gastado()).toBe(425);
+    // Cerca del tope de Qwen (8000 menos una lectura grande), solo Gemma.
+    await a.sql('UPDATE neuronas SET n=7100 WHERE day=?', hoy());
+    expect((await a.pedir('/app/horario', { token: sesion(cuenta()), json: foto() })).estado).toBe(200);
+    expect(await gastado()).toBe(7125);
   });
 
   it('la limpieza diaria olvida las cuentas de días pasados', async () => {
     await a.sql("INSERT INTO lecturas(owner, day, n) VALUES('alguien', '2020-01-01', 3)");
+    await a.sql("INSERT INTO neuronas(day, n) VALUES('2020-01-01', 50)");
     await a.cron();
     expect(await a.sql("SELECT * FROM lecturas WHERE owner='alguien'")).toEqual([]);
+    expect(await a.sql("SELECT * FROM neuronas WHERE day='2020-01-01'")).toEqual([]);
   });
 });

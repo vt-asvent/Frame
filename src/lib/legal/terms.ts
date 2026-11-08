@@ -375,7 +375,7 @@ Solo si conectas un chat de la web —por ejemplo, claude.ai o ChatGPT— desde 
 
 Solo cuando pides a Frame que lea las clases de la foto de un horario —al añadirlo, con «Leer las clases» o con «Volver a leer la foto»—:
 
-**Lo que pasa sin guardarse.** La foto, reducida, viaja cifrada con tu sesión de Cuenta a un servicio del Proveedor alojado en Cloudflare, que se la entrega al modelo abierto **Gemma 4** en **Cloudflare Workers AI** para extraer las clases —día, hora, asignatura y, si figuran, aula y docente— y te las devuelve. **Ni ese servicio ni Cloudflare guardan la foto ni lo leído**, ni lo usan para entrenar modelos: Cloudflare lo procesa sin retención de datos.
+**Lo que pasa sin guardarse.** La foto, reducida, viaja cifrada con tu sesión de Cuenta a un servicio del Proveedor alojado en Cloudflare, que se la entrega a un modelo abierto de **Cloudflare Workers AI** —**Qwen 3.8** o, si ese no responde o se acerca el límite diario gratuito, **Gemma 4**— para extraer las clases —día, hora, asignatura y, si figuran, aula y docente— y te las devuelve. **Ni ese servicio ni Cloudflare guardan la foto ni lo leído**, ni lo usan para entrenar modelos: Cloudflare lo procesa sin retención de datos.
 
 **Lo que se guarda.** Para que nadie agote las lecturas de los demás, el servicio anota cuántas fotos lee tu Cuenta cada día, junto con su identificador; esa anotación se borra al día siguiente. Las clases leídas se guardan en tu Frame como parte de tu Estado Académico (apartado 3.2), donde puedes corregirlas o borrarlas.
 

@@ -2618,8 +2618,8 @@ const DICT: Record<string, string> = {
   "El instalador no terminó a tiempo.": "Il programma di installazione non è terminato in tempo.",
   "El programa se instaló en otra carpeta.": "Il programma è stato installato in un’altra cartella.",
   "El lector de horarios ya no tiene lecturas libres hoy. Inténtalo mañana.": "Il lettore di orari non ha più letture gratuite oggi. Riprova domani.",
-  "Frame puede leer las clases de esta foto con IA (Gemma, en Cloudflare), que no la guarda.": "Frame può leggere le lezioni di questa foto con l’IA (Gemma, su Cloudflare), che non la conserva.",
-  "Frame leerá las clases con IA (Gemma, en Cloudflare), que no guarda la foto. Puedes corregir lo leído en «Semanal».": "Frame leggerà le lezioni con l’IA (Gemma, su Cloudflare), che non conserva la foto. Puoi correggere quanto letto in «Settimana».",
+  "Frame puede leer las clases de esta foto con IA abierta en Cloudflare, que no la guarda.": "Frame può leggere le lezioni di questa foto con un’IA aperta su Cloudflare, che non la conserva.",
+  "Frame leerá las clases con IA abierta en Cloudflare, que no guarda la foto. Puedes corregir lo leído en «Semanal».": "Frame leggerà le lezioni con un’IA aperta su Cloudflare, che non conserva la foto. Puoi correggere quanto letto in «Settimana».",
 };
 
 export default DICT;

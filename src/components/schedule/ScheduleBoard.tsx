@@ -248,7 +248,7 @@ function Line({ uid, timetable, reading, onManual }: { uid: string; timetable: T
     <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
       {failed ? <p className="max-w-lg text-sm text-muted-foreground">{timetable.error}</p> : <Sparkles className="h-7 w-7 text-primary" />}
       {!failed && (
-        <p className="max-w-lg text-sm text-muted-foreground">{tr('Frame puede leer las clases de esta foto con IA (Gemma, en Cloudflare), que no la guarda.')}</p>
+        <p className="max-w-lg text-sm text-muted-foreground">{tr('Frame puede leer las clases de esta foto con IA abierta en Cloudflare, que no la guarda.')}</p>
       )}
       <div className="flex flex-wrap justify-center gap-2">
         <Button size="sm" className="rounded-full" onClick={() => void readTimetable(uid, timetable.id)}>
@@ -325,7 +325,7 @@ function AddDialog({ image, existing, onCancel, onSave }: { image: string; exist
             <p className="text-xs text-muted-foreground">{tr('Se llamará «{name}».', { name })}</p>
           </div>
         </div>
-        <p className="text-[11px] leading-snug text-muted-foreground">{tr('Frame leerá las clases con IA (Gemma, en Cloudflare), que no guarda la foto. Puedes corregir lo leído en «Semanal».')}</p>
+        <p className="text-[11px] leading-snug text-muted-foreground">{tr('Frame leerá las clases con IA abierta en Cloudflare, que no guarda la foto. Puedes corregir lo leído en «Semanal».')}</p>
         <DialogFooter className="gap-2">
           <Button variant="gris" onClick={onCancel} disabled={saving}>
             {tr('Cancelar')}

@@ -114,18 +114,22 @@ const pkce = (v: string) => createHash('sha256').update(v).digest('base64url');
 
 /**
  * Workers AI de mentira, por RPC como el de verdad. Responde un horario por
- * franjas, con una clase de dos franjas y un recreo; «Y3Vwbw» en la foto
- * simula la cuota gratuita agotada y «bXVkbw», un modelo que no contesta con
- * JSON. Un pedido mal formado falla.
+ * franjas, con una clase de dos franjas y un recreo, y cuántas neuronas gastó
+ * (Qwen 400, Gemma 25). En la foto, «Y3Vwbw» simula la cuota gratuita agotada,
+ * «bXVkbw» un modelo que no contesta con JSON y «cXdlbg» un Qwen caído. Un
+ * pedido mal formado falla.
  */
 const IA_FALSA = `
 import { WorkerEntrypoint } from 'cloudflare:workers';
 export class IA extends WorkerEntrypoint {
   async run(model, input) {
     const foto = input.messages[0].content.find((p) => p.type === 'image_url').image_url.url;
-    if (model !== '@cf/google/gemma-4-26b-a4b-it' || !/^data:image\\/(jpeg|png|webp);base64,/.test(foto) || !input.response_format) throw new Error('pedido mal formado');
+    const qwen = model === '@cf/qwen/qwen3.8-27b';
+    if ((!qwen && model !== '@cf/google/gemma-4-26b-a4b-it') || !/^data:image\\/(jpeg|png|webp);base64,/.test(foto) || !input.response_format) throw new Error('pedido mal formado');
     if (foto.includes('Y3Vwbw')) throw new Error('3036: Account limited: you have used up your daily free allocation of 10,000 neurons');
-    if (foto.includes('bXVkbw')) return { choices: [{ message: { content: 'No puedo.' } }] };
+    if (foto.includes('cXdlbg') && qwen) throw new Error('5000: model unavailable');
+    const usage = { neurons: qwen ? 400 : 25 };
+    if (foto.includes('bXVkbw')) return { choices: [{ message: { content: 'No puedo.' } }], usage };
     const slots = [
       { start: '08:00', end: '08:45', kind: 'class', cells: [
         { day: 1, subject: 'Matemática', room: 'A-1', span: 2 },
@@ -134,7 +138,7 @@ export class IA extends WorkerEntrypoint {
       { start: '08:45', end: '09:30', kind: 'class', cells: [] },
       { start: '09:30', end: '09:45', kind: 'break', cells: [{ day: 1, subject: 'Recreo', span: 1 }] },
     ];
-    return { choices: [{ message: { content: 'Aquí está: ' + JSON.stringify({ slots }) } }] };
+    return { choices: [{ message: { content: 'Aquí está: ' + JSON.stringify({ slots }) } }], usage };
   }
 }
 export default { fetch: () => new Response('ia') };

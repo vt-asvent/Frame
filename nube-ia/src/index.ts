@@ -104,7 +104,7 @@ export default {
     }
   },
 
-  /** Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas de días pasados. */
+  /** Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas y de neuronas de días pasados. */
   async scheduled(_event: ScheduledController, env: Env, wait: ExecutionContext): Promise<void> {
     const now = Date.now();
     wait.waitUntil(
@@ -114,6 +114,7 @@ export default {
         env.DB.prepare('DELETE FROM sessions WHERE expires<?').bind(now),
         env.DB.prepare('DELETE FROM clients WHERE used=0 AND created<?').bind(now - 86_400_000),
         env.DB.prepare('DELETE FROM lecturas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
+        env.DB.prepare('DELETE FROM neuronas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
       ]).then(() => undefined),
     );
   },

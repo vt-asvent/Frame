@@ -10,7 +10,7 @@ import { tr } from '@/lib/i18n';
 //
 // La foto se reduce aquí (1600 px, JPEG) y va, con la sesión de la cuenta, al
 // Worker de Frame en Cloudflare (nube-ia/src/horario.ts), que la lee con
-// Gemma 4 en Workers AI —sin guardarla— y con un cupo diario por cuenta. Lo que
+// Qwen 3.8 o Gemma 4 en Workers AI —sin guardarla— y con un cupo diario por cuenta. Lo que
 // vuelve se limpia y se une por bloques (timetable.ts) antes de guardarse.
 //
 // «Leyendo» no se guarda: es de este equipo y de este momento. Si Frame se

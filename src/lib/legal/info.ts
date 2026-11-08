@@ -135,7 +135,7 @@ Los servicios de Google —Gmail, YouTube, Classroom y Drive— son operados por
 
 El pronóstico del clima procede de **Open-Meteo**.
 
-Los chats de IA en la web (claude.ai, ChatGPT y otros) llegan a Frame a través de un relé alojado en **Cloudflare**, que pasa cada llamada sin guardarla (Política de Privacidad, 3.7). La lectura de horarios usa el modelo abierto **Gemma 4** (licencia Apache 2.0) en **Cloudflare Workers AI**, que no guarda las fotos (Política de Privacidad, 3.8). Claude es una marca de Anthropic, PBC; ChatGPT, de OpenAI; y Gemini y Gemma, de Google LLC. Frame no está afiliada a esas empresas ni cuenta con su respaldo.
+Los chats de IA en la web (claude.ai, ChatGPT y otros) llegan a Frame a través de un relé alojado en **Cloudflare**, que pasa cada llamada sin guardarla (Política de Privacidad, 3.7). La lectura de horarios usa los modelos abiertos **Qwen 3.8** y **Gemma 4** (licencia Apache 2.0) en **Cloudflare Workers AI**, que no guarda las fotos (Política de Privacidad, 3.8). Claude es una marca de Anthropic, PBC; ChatGPT, de OpenAI; Gemini y Gemma, de Google LLC; y Qwen, de Alibaba Group. Frame no está afiliada a esas empresas ni cuenta con su respaldo.
 
 Notion es una marca de Notion Labs, Inc.; la extensión solo lee los archivos que exportas tú y no se conecta a su servicio.
 
@@ -154,6 +154,8 @@ Se ofrece soporte para la versión estable vigente y para la inmediatamente ante
 ## 8 · Historial de versiones
 
 **${appVersion} — ${releaseDate}**
+
+*1.9.1:* el **horario se lee mejor**: Frame usa Qwen 3.8, que acierta casi todas las clases también en fotos torcidas o borrosas, y Gemma 4 cuando Qwen no responde o se acerca el límite diario gratuito · Términos y Política de Privacidad 5.6: el apartado 3.8 nombra los dos modelos.
 
 *1.9.0:* **Horario en Inicio**: sube la foto del horario de cada mes («Noviembre», «Noviembre 2»…) y Frame lee sus clases con IA; la línea del día pone siempre al medio la clase de ahora, con las de antes y después a los lados, y avanza con el reloj · **«Semanal»**: la semana como un calendario, donde corriges o añades clases con un clic · **«Ver original»**: la foto tal cual · **Inicio reordenado**: horario, clima, «Tareas pendientes» con el pomodoro, la playlist y la racha a su derecha, y «Tu semana en datos» con el ritmo en la mitad izquierda; se retira la matriz de competencias · **Música → «+ Añadir»** es una página propia, con YouTube a la izquierda en tres quintos del ancho · las **extensiones de descargas** instalan, abren y ponen al día su programa solas, y lo reparan si falla · **más ligera**: gráficos propios en lugar de una biblioteca de casi 400 KB, imágenes de la galería un 26 % más livianas y un arranque que carga menos código, con todas sus funciones · **Términos y Política de Privacidad 5.5**: el apartado 3.8 explica la lectura de horarios y el 6.4 bis, el programa de las extensiones de descargas.
 

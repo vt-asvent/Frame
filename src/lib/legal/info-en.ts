@@ -127,7 +127,7 @@ Google’s services —Gmail, YouTube, Classroom and Drive— are operated by Go
 
 The weather forecast comes from **Open-Meteo**.
 
-Web AI chats (claude.ai, ChatGPT and others) reach Frame through a relay hosted on **Cloudflare**, which passes each call along without storing it (Privacy Policy, 3.7). Schedule reading uses the open model **Gemma 4** (Apache 2.0 license) on **Cloudflare Workers AI**, which doesn’t store the photos (Privacy Policy, 3.8). Claude is a trademark of Anthropic, PBC; ChatGPT, of OpenAI; and Gemini and Gemma, of Google LLC. Frame isn’t affiliated with or endorsed by those companies.
+Web AI chats (claude.ai, ChatGPT and others) reach Frame through a relay hosted on **Cloudflare**, which passes each call along without storing it (Privacy Policy, 3.7). Schedule reading uses the open models **Qwen 3.8** and **Gemma 4** (Apache 2.0 license) on **Cloudflare Workers AI**, which doesn’t store the photos (Privacy Policy, 3.8). Claude is a trademark of Anthropic, PBC; ChatGPT, of OpenAI; Gemini and Gemma, of Google LLC; and Qwen, of Alibaba Group. Frame isn’t affiliated with or endorsed by those companies.
 
 Notion is a trademark of Notion Labs, Inc.; the extension only reads the files you export yourself and doesn’t connect to its service.
 
@@ -146,6 +146,8 @@ Support is offered for the current stable version and the one immediately before
 ## 8 · Version history
 
 **${appVersion} — ${releaseDate}**
+
+*1.9.1:* **schedules are read better**: Frame uses Qwen 3.8, which gets almost every class right even in skewed or blurry photos, and Gemma 4 when Qwen doesn’t respond or the daily free limit is near · Terms and Privacy Policy 5.6: section 3.8 names both models.
 
 *1.9.0:* **Schedule on Home**: upload the photo of each month’s schedule (“November”, “November 2”…) and Frame reads its classes with AI; the day’s line always puts the current class in the middle, with the ones before and after on each side, and moves with the clock · **“Week”**: the week as a calendar, where you correct or add classes with a click · **“View original”**: the photo as it is · **Home rearranged**: schedule, weather, “Pending tasks” with the Pomodoro, the playlist and the streak to its right, and “Your week in data” with the pace on the left half; the competency matrix is retired · **Music → “+ Add”** is a page of its own, with YouTube on the left at three fifths of the width · **download extensions** install, open and update their program on their own, and repair it if it fails · **lighter**: its own charts instead of a library of almost 400 KB, gallery images 26% lighter and a start-up that loads less code, with every feature intact · **Terms and Privacy Policy 5.5**: section 3.8 explains schedule reading and 6.4 bis, the download extensions’ program.
 

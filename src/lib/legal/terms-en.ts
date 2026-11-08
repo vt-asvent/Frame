@@ -361,7 +361,7 @@ Only if you connect a web chat —for example, claude.ai or ChatGPT— from the 
 
 Only when you ask Frame to read the classes in a schedule photo —when adding it, with “Read the classes” or with “Read the photo again”—:
 
-**What passes through without being stored.** The photo, reduced, travels encrypted with your Account session to a Provider service hosted on Cloudflare, which hands it to the open model **Gemma 4** on **Cloudflare Workers AI** to extract the classes —day, time, subject and, if written, room and teacher— and returns them to you. **Neither that service nor Cloudflare stores the photo or what was read**, or uses it to train models: Cloudflare processes it with zero data retention.
+**What passes through without being stored.** The photo, reduced, travels encrypted with your Account session to a Provider service hosted on Cloudflare, which hands it to an open model on **Cloudflare Workers AI** —**Qwen 3.8** or, if it doesn’t respond or the daily free limit is near, **Gemma 4**— to extract the classes —day, time, subject and, if written, room and teacher— and returns them to you. **Neither that service nor Cloudflare stores the photo or what was read**, or uses it to train models: Cloudflare processes it with zero data retention.
 
 **What is stored.** So that no one uses up everyone else’s readings, the service notes how many photos your Account reads each day, along with its identifier; that note is deleted the next day. The classes read are saved in your Frame as part of your Academic State (section 3.2), where you can correct or delete them.
 
