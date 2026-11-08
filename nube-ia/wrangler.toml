@@ -12,7 +12,7 @@ workers_dev = true
 [[d1_databases]]
 binding = "DB"
 database_name = "frame-ia"
-database_id = "PENDIENTE"
+database_id = "5f58cc18-26ac-4af1-94ac-28effe793628"
 migrations_dir = "migraciones"
 
 # Un relé por cuenta: guarda la lista de herramientas que publicó Frame y
