@@ -11,6 +11,11 @@ import { cn } from '@/lib/utils';
 // «Instalar» una extensión: quién la hace, qué aporta y QUÉ PERMISOS pide.
 // Se instala solo si el usuario los acepta aquí. Al actualizar una de
 // terceros, los permisos nuevos se marcan.
+//
+// Los botones van en una franja fija al pie (1.9.3): lo de arriba se desplaza
+// si no cabe. Antes, en una pantalla baja, la ventana de una extensión con
+// programa (SongVerse) medía más que la pantalla y «Aceptar e instalar»
+// quedaba fuera, sin forma de llegar a él.
 // ============================================================
 
 export default function ExtensionInstallDialog({
@@ -32,9 +37,10 @@ export default function ExtensionInstallDialog({
   const app = manifest ? catalogApp(manifest.id) : null;
   return (
     <Dialog open={!!manifest} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
         {manifest && (
           <>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6 pb-4">
             <DialogHeader className="items-center text-center">
               <ExtensionIcon id={manifest.id} manifest={manifest} className="h-12 w-12 [&>svg]:h-7 [&>svg]:w-7" />
               <DialogTitle className="pt-2 text-xl font-bold text-primary">
@@ -89,8 +95,9 @@ export default function ExtensionInstallDialog({
             <p className="text-[11px] text-muted-foreground">
               {tr('Puedes desactivarla o desinstalarla cuando quieras. Al desinstalarla se borra todo lo que guardó en este equipo; lo que trajo a Frame se queda.')}
             </p>
+            </div>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 bg-background px-6 py-3">
               <Button variant="ghost" onClick={onCancel}>
                 {tr('Cancelar')}
               </Button>
