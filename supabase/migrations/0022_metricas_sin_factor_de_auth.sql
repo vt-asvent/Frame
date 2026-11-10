@@ -205,7 +205,9 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'session');
   end if;
 
-  select * into totp from private.metrics_totp t where t.user_id = me;
+  -- Con la fila bloqueada: un `metrics_totp_begin` a la vez espera a que esto termine
+  -- (y al revés), así que la clave que se comprueba es la que se confirma.
+  select * into totp from private.metrics_totp t where t.user_id = me for update;
   -- Una clave sin confirmar solo la confirma la sesión que la creó, y a tiempo.
   if not found
      or (not totp.confirmed and (totp.session_id is distinct from sid or totp.created_at < now() - interval '15 minutes')) then
@@ -257,7 +259,12 @@ begin
    where s.user_id = me;
   -- El primer código bueno de una clave recién creada la da por buena.
   if not totp.confirmed then
-    update private.metrics_totp t set confirmed = true, session_id = null where t.user_id = me;
+    update private.metrics_totp t
+       set confirmed = true, session_id = null
+     where t.user_id = me and not t.confirmed and t.secret = totp.secret and t.session_id = sid;
+    if not found then
+      return jsonb_build_object('ok', false, 'reason', 'no-factor');
+    end if;
   end if;
 
   -- Las sesiones anteriores del propio panel se cierran (las de sus pestañas ya
