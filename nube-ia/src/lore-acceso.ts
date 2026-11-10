@@ -89,9 +89,10 @@ function sixDigits(): string {
 const takenBy = (env: Env, mark: string, owner: string) =>
   env.DB.prepare('SELECT COUNT(*) AS n FROM lore_accesos WHERE correo = ? AND owner <> ? AND expires > ?').bind(mark, owner, Date.now()).first<number>('n');
 
-const sentIn = (env: Env, key: string, span: string) => env.DB.prepare('SELECT n FROM lore_envios WHERE clave = ? AND tramo = ?').bind(key, span).first<number>('n');
-const countSend = (env: Env, key: string, span: string) =>
-  env.DB.prepare('INSERT INTO lore_envios (clave, tramo, n) VALUES (?, ?, 1) ON CONFLICT (clave, tramo) DO UPDATE SET n = n + 1').bind(key, span);
+/** Aparta un envío y dice cuántos van con él: una sola orden, así dos pedidos a la vez no se cuelan los dos. */
+const reserveSend = (env: Env, key: string, span: string) =>
+  env.DB.prepare('INSERT INTO lore_envios (clave, tramo, n) VALUES (?, ?, 1) ON CONFLICT (clave, tramo) DO UPDATE SET n = n + 1 RETURNING n').bind(key, span).first<number>('n');
+const releaseSend = (env: Env, key: string, span: string) => env.DB.prepare('UPDATE lore_envios SET n = n - 1 WHERE clave = ? AND tramo = ? AND n > 0').bind(key, span);
 
 /** Pide al remitente que envíe el código. True si salió. */
 async function sendCode(env: Env, to: string, code: string): Promise<boolean> {
@@ -110,7 +111,8 @@ export async function loreSendCode(req: Request, env: Env, user: AppUser): Promi
   if (!user.email || !user.confirmed) return json({ error: 'account' }, 403);
   const body = (await req.json().catch(() => null)) as { email?: unknown } | null;
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (email.length > 120 || !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email) || !(await isSchoolEmail(env, email))) return json({ error: 'email' }, 400);
+  // Sin «+»: «alumno+1@…» y «alumno+2@…» son el mismo buzón, pero tendrían huellas distintas y saltarían los topes.
+  if (email.length > 120 || !/^[a-z0-9._%-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email) || !(await isSchoolEmail(env, email))) return json({ error: 'email' }, 400);
   if (!env.LORE_MAIL_URL || !env.LORE_MAIL_KEY) return json({ error: 'mail-off' }, 503);
 
   const mark = await emailMark(env, email);
@@ -119,9 +121,22 @@ export async function loreSendCode(req: Request, env: Env, user: AppUser): Promi
   const now = Date.now();
   const hour = new Date(now).toISOString().slice(0, 13);
   const day = hour.slice(0, 10);
-  const [mine, theirs, all] = await Promise.all([sentIn(env, `o:${user.owner}`, hour), sentIn(env, `c:${mark}`, hour), sentIn(env, 'todos', day)]);
-  if ((mine ?? 0) >= SENDS_PER_HOUR || (theirs ?? 0) >= SENDS_PER_HOUR) return json({ error: 'wait' }, 429);
-  if ((all ?? 0) >= SENDS_PER_DAY) return json({ error: 'daily' }, 429);
+  // El envío se aparta antes de enviar (y se devuelve si al final no sale o no cabe).
+  const slots: [key: string, span: string, limit: number][] = [
+    [`o:${user.owner}`, hour, SENDS_PER_HOUR],
+    [`c:${mark}`, hour, SENDS_PER_HOUR],
+    ['todos', day, SENDS_PER_DAY],
+  ];
+  const held: [string, string][] = [];
+  const release = () => env.DB.batch(held.map(([key, span]) => releaseSend(env, key, span)));
+  for (const [key, span, limit] of slots) {
+    const n = await reserveSend(env, key, span);
+    held.push([key, span]);
+    if ((n ?? 1) > limit) {
+      await release();
+      return json({ error: key === 'todos' ? 'daily' : 'wait' }, 429);
+    }
+  }
 
   const code = sixDigits();
   await env.DB.prepare(
@@ -130,10 +145,9 @@ export async function loreSendCode(req: Request, env: Env, user: AppUser): Promi
     .bind(user.owner, mark, await codeMark(env, user.owner, code), now + CODE_MINUTES * 60_000)
     .run();
   if (!(await sendCode(env, email, code))) {
-    await env.DB.prepare('DELETE FROM lore_codigos WHERE owner = ?').bind(user.owner).run();
+    await env.DB.batch([env.DB.prepare('DELETE FROM lore_codigos WHERE owner = ?').bind(user.owner), ...held.map(([key, span]) => releaseSend(env, key, span))]);
     return json({ error: 'mail' }, 503);
   }
-  await env.DB.batch([countSend(env, `o:${user.owner}`, hour), countSend(env, `c:${mark}`, hour), countSend(env, 'todos', day)]);
   return json({ ok: true, minutes: CODE_MINUTES });
 }
 
@@ -141,32 +155,32 @@ export async function loreActivate(req: Request, env: Env, user: AppUser): Promi
   if (!user.email || !user.confirmed) return json({ error: 'account' }, 403);
   const body = (await req.json().catch(() => null)) as { code?: unknown } | null;
   const given = (typeof body?.code === 'string' || typeof body?.code === 'number' ? String(body.code) : '').replace(/\D/g, '').slice(0, 12);
-  const row = await env.DB.prepare('SELECT correo, codigo, expires, intentos FROM lore_codigos WHERE owner = ?')
-    .bind(user.owner)
-    .first<{ correo: string; codigo: string; expires: number; intentos: number }>();
   const now = Date.now();
-  if (!row || row.expires <= now) {
-    if (row) await env.DB.prepare('DELETE FROM lore_codigos WHERE owner = ?').bind(user.owner).run();
+  // El intento se gasta ANTES de comparar, en una sola orden: muchos pedidos a
+  // la vez no prueban más códigos que los permitidos.
+  const row = await env.DB.prepare('UPDATE lore_codigos SET intentos = intentos + 1 WHERE owner = ? AND expires > ? AND intentos < ? RETURNING correo, codigo, intentos')
+    .bind(user.owner, now, CODE_ATTEMPTS)
+    .first<{ correo: string; codigo: string; intentos: number }>();
+  if (!row) {
+    // Sin código vivo, o ya sin intentos: se dice cuál de las dos.
+    const left = await env.DB.prepare('SELECT expires FROM lore_codigos WHERE owner = ?').bind(user.owner).first<number>('expires');
+    if (left && left > now) return json({ error: 'attempts' }, 429);
+    if (left) await env.DB.prepare('DELETE FROM lore_codigos WHERE owner = ? AND expires <= ?').bind(user.owner, now).run();
     return json({ error: 'expired' }, 410);
   }
-  if (row.intentos >= CODE_ATTEMPTS) return json({ error: 'attempts' }, 429);
   if (given.length !== 6 || (await codeMark(env, user.owner, given)) !== row.codigo) {
-    await env.DB.prepare('UPDATE lore_codigos SET intentos = intentos + 1 WHERE owner = ?').bind(user.owner).run();
-    const left = CODE_ATTEMPTS - row.intentos - 1;
+    const left = CODE_ATTEMPTS - row.intentos;
     return left > 0 ? json({ error: 'code', left }, 400) : json({ error: 'attempts' }, 429);
   }
   // Otra cuenta pudo activarse con este mismo correo mientras llegaba el código.
   if (((await takenBy(env, row.correo, user.owner)) ?? 0) >= ACCOUNTS_PER_EMAIL) return json({ error: 'taken' }, 409);
+  // El código vale una vez: quien lo borra es quien activa.
+  const used = await env.DB.prepare('DELETE FROM lore_codigos WHERE owner = ? AND codigo = ? RETURNING owner').bind(user.owner, row.codigo).first<string>('owner');
+  if (!used) return json({ error: 'expired' }, 410);
   const until = now + ACCESS_DAYS * 86_400_000;
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO lore_accesos (owner, correo, since, expires) VALUES (?, ?, ?, ?) ON CONFLICT (owner) DO UPDATE SET correo = excluded.correo, since = excluded.since, expires = excluded.expires').bind(
-      user.owner,
-      row.correo,
-      now,
-      until,
-    ),
-    env.DB.prepare('DELETE FROM lore_codigos WHERE owner = ?').bind(user.owner),
-  ]);
+  await env.DB.prepare('INSERT INTO lore_accesos (owner, correo, since, expires) VALUES (?, ?, ?, ?) ON CONFLICT (owner) DO UPDATE SET correo = excluded.correo, since = excluded.since, expires = excluded.expires')
+    .bind(user.owner, row.correo, now, until)
+    .run();
   return json({ active: true, until });
 }
 

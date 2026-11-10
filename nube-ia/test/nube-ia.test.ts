@@ -573,7 +573,8 @@ describe('AK Lore: la Biblioteca', () => {
       expect((await a.pedir('/app/lore/acceso', { token: sesion(yo) })).datos).toEqual({ active: false });
       expect((await a.pedir('/app/lore', { token: sesion(yo) })).estado).toBe(403);
       // Solo correos del colegio (cuenta el dominio tras la última arroba).
-      for (const malo of ['alguien@gmail.prueba', `x@${COLEGIO}@otro.prueba`, `sin-arroba.${COLEGIO}`, '', 7]) {
+      // (Con «+» sería el mismo buzón con otra huella: tampoco.)
+      for (const malo of ['alguien@gmail.prueba', `x@${COLEGIO}@otro.prueba`, `sin-arroba.${COLEGIO}`, `alumno-uno+2@${COLEGIO}`, '', 7]) {
         expect((await a.pedir('/app/lore/codigo', { token: sesion(yo), json: { email: malo } })).datos).toEqual({ error: 'email' });
       }
       const pedido = await pedirCodigo(yo, `  Alumno-Uno@${COLEGIO.toUpperCase()} `);
@@ -637,11 +638,23 @@ describe('AK Lore: la Biblioteca', () => {
       const tercera = otra();
       expect((await pedirCodigo(tercera, `rebota@${COLEGIO}`)).datos).toEqual({ error: 'mail' });
       expect(await a.sql('SELECT * FROM lore_codigos WHERE owner=?', tercera)).toEqual([]);
-      expect(await a.sql("SELECT * FROM lore_envios WHERE clave=?", `o:${tercera}`)).toEqual([]);
+      expect(await a.sql('SELECT n FROM lore_envios WHERE clave=?', `o:${tercera}`)).toEqual([{ n: 0 }]);
+      expect(await a.sql('SELECT n FROM lore_envios WHERE clave=?', `o:${yo}`)).toEqual([{ n: 3 }]);
       // Tope de todo Frame en el día.
       await a.sql("INSERT OR REPLACE INTO lore_envios(clave, tramo, n) VALUES('todos', ?, 90)", hoy());
       expect((await pedirCodigo(tercera, `alumno-cuatro@${COLEGIO}`)).datos).toEqual({ error: 'daily' });
       await a.sql("DELETE FROM lore_envios WHERE clave='todos'");
+      // Diez pedidos a la vez con códigos errados gastan cinco intentos, no más; y el bueno ya no entra.
+      const prisa = otra();
+      const apurado = `alumno-seis@${COLEGIO}`;
+      await pedirCodigo(prisa, apurado);
+      const bueno = ultimo(apurado).code;
+      const otros = Array.from({ length: 10 }, (_, i) => String((Number(bueno) + i + 1) % 1_000_000).padStart(6, '0'));
+      const respuestas = await Promise.all(otros.map((codigo) => activar(prisa, codigo)));
+      expect(respuestas.filter((r) => r.datos.error === 'code')).toHaveLength(4);
+      expect(respuestas.filter((r) => r.datos.error === 'attempts')).toHaveLength(6);
+      expect(await a.sql('SELECT intentos FROM lore_codigos WHERE owner=?', prisa)).toEqual([{ intentos: 5 }]);
+      expect((await activar(prisa, bueno)).datos).toEqual({ error: 'attempts' });
       // Dos cuentas activadas con un correo: la tercera ya no puede.
       const compartido = `alumno-cinco@${COLEGIO}`;
       for (const quien of [otra(), otra()]) {
