@@ -20,12 +20,21 @@ const Panel = lazy(() => import('@m/Panel'));
 //
 //   1. Google: la cuenta del responsable. Con ella solo se ven las tarjetas.
 //   2. Al abrir una app, el código de 6 dígitos (TOTP); la primera vez, el QR.
-//      La sesión pasa a `aal2` y ya no se pide más en esta pestaña.
-//   3. El servidor no responde sin los dos pasos (`is_frame_owner()` exige
-//      `aal2`, migración 0013) ni a ninguna otra cuenta.
+//      Ya no se pide más en esta pestaña.
+//   3. El servidor no responde sin los dos pasos (`is_frame_owner()`) ni a
+//      ninguna otra cuenta.
+//
+// El código lo comprueba la BASE (`metrics_unlock`, migración 0021), no el
+// segundo factor de Supabase Auth. Hasta el 10-nov-2026 se verificaba con
+// `mfa.challengeAndVerify`: al hacerlo, Auth sube la sesión a `aal2` y borra
+// todas las demás de la cuenta que no lo son, es decir, la de Frame en la
+// laptop, el celular y la tablet del responsable. Cada visita a este panel le
+// cerraba Frame en todos sus equipos. Auth solo interviene ya en el ALTA del
+// autenticador (una vez en la vida), que no tiene otra vía.
 //
 // La sesión vive solo en esta pestaña y se cierra sola tras 30 minutos sin
-// actividad. Cerrar sesión aquí no toca las sesiones de Frame en sus equipos.
+// actividad. Ni entrar, ni el código, ni cerrar sesión aquí tocan las sesiones
+// de Frame en sus equipos.
 // ============================================================
 
 type Phase = { kind: 'loading' } | { kind: 'signed-out'; notice?: string } | { kind: 'in'; verified: boolean };
@@ -37,18 +46,22 @@ const FACTOR_NAME = 'Métricas de Frame';
 
 const message = (error: unknown) => String((error as { message?: unknown } | null)?.message ?? error ?? '');
 
-/** ¿Hay sesión de Google y ya pasó el segundo paso? */
+/** ¿Hay sesión de Google y ya pasó el segundo paso? Lo segundo lo dice la base. */
 async function decide(): Promise<Phase> {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
   if (!sessionData.session) return { kind: 'signed-out' };
-  const { data: level, error: levelError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (levelError) throw levelError;
-  return { kind: 'in', verified: level.currentLevel === 'aal2' };
+  // Si la base no contesta ahora, se entra sin verificar: al abrir una app se vuelve a preguntar.
+  const { data: verified, error: ownerError } = await supabase.rpc('is_frame_owner');
+  return { kind: 'in', verified: !ownerError && verified === true };
 }
 
 /** El segundo paso: pedir el código o, la primera vez, darlo de alta. */
 async function secondFactor(): Promise<Step> {
+  // Solo la cuenta del responsable llega al código (las demás, ni al alta del autenticador).
+  const { data: owner, error: ownerError } = await supabase.rpc('metrics_owner_account');
+  if (ownerError) throw ownerError;
+  if (owner !== true) throw new Error('Esta cuenta no es la del responsable. Cierra sesión y entra con la suya.');
   const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
   if (listError) throw listError;
   const verified = factors.totp[0];
@@ -240,7 +253,7 @@ export default function App() {
               )}
               {gate.step.kind === 'enroll' && <Enroll step={gate.step} onDone={verified} onCancel={() => setGate(null)} />}
               {gate.step.kind === 'verify' && (
-                <CodeForm factorId={gate.step.factorId} onDone={verified} onCancel={() => setGate(null)} label="Código de 6 dígitos de tu app de autenticación" />
+                <CodeForm mode="unlock" factorId={gate.step.factorId} onDone={verified} onCancel={() => setGate(null)} label="Código de 6 dígitos de tu app de autenticación" />
               )}
             </div>
           </div>
@@ -350,7 +363,49 @@ function Home({ verified, onOpen, error }: { verified: boolean; onOpen: (app: Me
   );
 }
 
-function CodeForm({ factorId, onDone, onCancel, label }: { factorId: string; onDone: () => Promise<void>; onCancel: () => void; label: string }) {
+interface UnlockReply {
+  ok?: boolean;
+  reason?: string;
+  left?: number;
+  retry_in?: number;
+}
+
+/** Lo que dijo la base al no abrir (ver `metrics_unlock`, migración 0021). */
+function unlockProblem(reply: UnlockReply): string {
+  switch (reply.reason) {
+    case 'code':
+      return `Código incorrecto o ya usado. Escribe el que se ve ahora.${typeof reply.left === 'number' && reply.left <= 2 ? ` Te ${reply.left === 1 ? 'queda 1 intento' : `quedan ${reply.left} intentos`}.` : ''}`;
+    case 'locked':
+      return `Demasiados intentos. Espera ${Math.max(1, Math.ceil((reply.retry_in ?? 900) / 60))} min y vuelve a probar.`;
+    case 'not-owner':
+      return 'Esta cuenta no es la del responsable. Cierra sesión y entra con la suya.';
+    case 'session':
+      return 'La sesión de este panel venció. Cierra sesión y vuelve a entrar.';
+    case 'no-factor':
+      return 'Esta cuenta aún no tiene su app de autenticación dada de alta. Cierra este recuadro y vuelve a abrir la app.';
+    default:
+      return 'No se pudo comprobar el código. Inténtalo de nuevo.';
+  }
+}
+
+/**
+ * `unlock`: el código de cada visita, que comprueba la base sin tocar las
+ * sesiones de Frame. `enroll`: el primer código tras escanear el QR, que tiene
+ * que pasar por Supabase Auth para dar el autenticador por bueno.
+ */
+function CodeForm({
+  mode,
+  factorId,
+  onDone,
+  onCancel,
+  label,
+}: {
+  mode: 'unlock' | 'enroll';
+  factorId: string;
+  onDone: () => Promise<void>;
+  onCancel: () => void;
+  label: string;
+}) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -371,11 +426,26 @@ function CodeForm({ factorId, onDone, onCancel, label }: { factorId: string; onD
     }
     setBusy(true);
     setError(null);
-    const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+    /** La vía de Supabase Auth: el alta, o si la base no puede comprobarlo (clave ilegible, base sin la 0021). */
+    const withAuth = async (): Promise<string | null> => {
+      const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+      if (!verifyError) return null;
+      return /invalid|expired/i.test(verifyError.message) ? 'Código incorrecto o vencido. Escribe el que se ve ahora.' : verifyError.message;
+    };
+    let problem: string | null;
+    if (mode === 'enroll') {
+      problem = await withAuth();
+    } else {
+      const { data, error: rpcError } = await supabase.rpc('metrics_unlock', { p_code: code });
+      const reply = (data ?? null) as UnlockReply | null;
+      if (rpcError?.code === 'PGRST202' || reply?.reason === 'unavailable') problem = await withAuth();
+      else if (rpcError || !reply) problem = rpcError?.message || 'El servidor no respondió. Inténtalo de nuevo.';
+      else problem = reply.ok === true ? null : unlockProblem(reply);
+    }
     setBusy(false);
-    if (verifyError) {
+    if (problem) {
       setCode('');
-      setError(/invalid|expired/i.test(verifyError.message) ? 'Código incorrecto o vencido. Escribe el que se ve ahora.' : verifyError.message);
+      setError(problem);
       return;
     }
     await onDone();
@@ -423,7 +493,10 @@ function Enroll({ step, onDone, onCancel }: { step: Extract<Step, { kind: 'enrol
         <summary className="cursor-pointer">¿No puedes escanearlo? Escribe esta clave</summary>
         <code className="mt-2 block select-all break-all rounded-md bg-secondary/50 p-2 font-mono text-[11px] text-foreground">{step.secret}</code>
       </details>
-      <CodeForm factorId={step.factorId} onDone={onDone} onCancel={onCancel} label="Código de 6 dígitos que muestra la app" />
+      <p className="rounded-md border border-border/60 bg-secondary/40 p-2.5 text-xs text-muted-foreground">
+        Solo esta vez: al dar de alta el autenticador, la sesión de Frame en tus equipos se cierra y hay que volver a entrar. Después, abrir este panel ya no la toca.
+      </p>
+      <CodeForm mode="enroll" factorId={step.factorId} onDone={onDone} onCancel={onCancel} label="Código de 6 dígitos que muestra la app" />
     </div>
   );
 }
