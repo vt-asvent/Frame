@@ -110,7 +110,7 @@ function useHoldToReorder(ids: string[], commit: (ids: string[]) => void) {
   return { order, dragId, bind };
 }
 
-export function PlaylistList({ collapsed = false }: { collapsed?: boolean }) {
+export function PlaylistList({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const { playlists, reorderPlaylists } = useCourse();
   const [isPlaylistsOpen, setPlaylistsOpen] = useState(true);
   const [isClient, setIsClient] = useState(false);
@@ -146,7 +146,7 @@ export function PlaylistList({ collapsed = false }: { collapsed?: boolean }) {
         dragId !== null && dragId !== playlist.id && 'opacity-80'
       )}
     >
-      <PlaylistItem playlist={playlist} collapsed={collapsed} />
+      <PlaylistItem playlist={playlist} collapsed={collapsed} onNavigate={onNavigate} />
     </div>
   ));
 

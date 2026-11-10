@@ -288,11 +288,16 @@ export function TopPlaylistCard({ className }: { className?: string }) {
     >
       {/* La imagen, a lo alto, se funde hacia la izquierda con el color de la tarjeta. */}
       <div className="absolute inset-y-0 right-0 w-[72%]" style={{ WebkitMaskImage: PLAYLIST_IMAGE_MASK, maskImage: PLAYLIST_IMAGE_MASK }} aria-hidden>
-        {image ? (
-          <img src={image} alt="" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
-        ) : (
-          <WaveBackdrop />
-        )}
+        {/* Empieza 2 px después del borde transparente de la máscara: en Android,
+            con el borde a mitad de un píxel, esa primera columna se dibujaba
+            opaca (una línea de 1 px a lo alto de la tarjeta; 1.3.2). */}
+        <div className="absolute inset-y-0 left-0.5 right-0 overflow-hidden">
+          {image ? (
+            <img src={image} alt="" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+          ) : (
+            <WaveBackdrop />
+          )}
+        </div>
       </div>
 
       <div className="relative z-[1] flex min-w-0 flex-1 flex-col gap-1 p-4 pr-2">

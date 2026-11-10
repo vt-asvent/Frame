@@ -392,11 +392,14 @@ function ExtensionPage({ row, onBack, onToggle, onRemove }: { row: Row; onBack: 
             cruzaban con la descripción. */}
         {src && (
           <div className="absolute inset-y-0 right-0 hidden w-[42%] xl:block" style={{ WebkitMaskImage: HERO_MASK, maskImage: HERO_MASK }} aria-hidden>
-            {isVideo ? (
-              <video src={src} autoPlay muted loop playsInline className="h-full w-full object-cover" />
-            ) : (
-              <img src={src} alt="" draggable={false} className="h-full w-full object-cover" />
-            )}
+            {/* 2 px después del borde transparente de la máscara (ver HomeCards). */}
+            <div className="absolute inset-y-0 left-0.5 right-0 overflow-hidden">
+              {isVideo ? (
+                <video src={src} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+              ) : (
+                <img src={src} alt="" draggable={false} className="h-full w-full object-cover" />
+              )}
+            </div>
           </div>
         )}
 

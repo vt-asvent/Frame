@@ -310,7 +310,7 @@ export function SidebarContent({
             <PlusCircle className="h-4 w-4 text-primary" />
             {!collapsed && <span>{tr('Añadir playlist')}</span>}
           </Button>
-          <PlaylistList collapsed={collapsed} />
+          <PlaylistList collapsed={collapsed} onNavigate={onLinkClick} />
         </div>
 
         {/* Pie: 4 + 8 px de aire sobre la línea (antes 16 + 8). */}

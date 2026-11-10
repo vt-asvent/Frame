@@ -389,11 +389,14 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
           style={{ WebkitMaskImage: HEADER_IMAGE_MASK, maskImage: HEADER_IMAGE_MASK }}
           aria-hidden
         >
-          {headerImage ? (
-            <img src={headerImage} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <WaveBackdrop />
-          )}
+          {/* 2 px después del borde transparente de la máscara (ver HomeCards). */}
+          <div className="absolute inset-y-0 left-0.5 right-0 overflow-hidden">
+            {headerImage ? (
+              <img src={headerImage} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <WaveBackdrop />
+            )}
+          </div>
         </div>
         <div
           className="pointer-events-none absolute inset-y-0 left-0 w-3/4"
