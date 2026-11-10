@@ -30,6 +30,14 @@ export const conCorreo = (cuenta: string, email: string) => {
   CORREOS[cuenta] = { email, email_confirmed_at: '2026-01-01T00:00:00Z' };
   return cuenta;
 };
+/**
+ * Sesiones que el Supabase de mentira no resuelve como siempre (el final es la cuenta):
+ * «supabase-caido-» contesta 503, «supabase-limite-» 429, «supabase-pasarela-» el 401 de la
+ * pasarela (no de Auth), «supabase-sin-red-» ni contesta, «supabase-parpadea-» falla la
+ * primera vez y luego responde, y «sesion-cerrada-» es el «no» de Auth a una sesión que ya
+ * no existe. PREGUNTAS cuenta cuántas veces se preguntó por cada una.
+ */
+export const PREGUNTAS: Record<string, number> = {};
 /** El remitente de mentira (el Apps Script de Asvent): lo que le pidieron enviar. «rebota@…» simula que no sale. */
 export const ENVIADOS: { to: string; code: string; minutes: number }[] = [];
 /** El Drive de Asvent de mentira: cada archivo es un PDF corto con su id dentro. */
@@ -227,8 +235,24 @@ export async function crearArnes(): Promise<Arnes> {
             ENVIADOS.push({ to: carta.to, code: carta.code!, minutes: carta.minutes ?? 0 });
             return new Response(JSON.stringify({ ok: true })) as never;
           }
-          if (url.hostname !== 'supabase.prueba' || url.pathname !== '/auth/v1/user' || pedido.headers.get('apikey') !== 'anon-de-pruebas' || !auth.startsWith('Bearer sb-')) {
-            return new Response(JSON.stringify({ msg: 'invalid' }), { status: 401 }) as never;
+          if (url.hostname !== 'supabase.prueba' || url.pathname !== '/auth/v1/user' || pedido.headers.get('apikey') !== 'anon-de-pruebas') {
+            return new Response(JSON.stringify({ message: 'Invalid API key' }), { status: 401 }) as never;
+          }
+          const ficha = auth.slice(7);
+          PREGUNTAS[ficha] = (PREGUNTAS[ficha] ?? 0) + 1;
+          if (ficha.startsWith('supabase-caido-')) return new Response('upstream connect error', { status: 503 }) as never;
+          if (ficha.startsWith('supabase-limite-')) return new Response(JSON.stringify({ code: 429, error_code: 'over_request_rate_limit', msg: 'Request rate limit reached' }), { status: 429 }) as never;
+          if (ficha.startsWith('supabase-pasarela-')) return new Response(JSON.stringify({ message: 'Invalid API key' }), { status: 401 }) as never;
+          if (ficha.startsWith('supabase-sin-red-')) throw new Error('connect failed');
+          if (ficha.startsWith('sesion-cerrada-')) {
+            return new Response(JSON.stringify({ code: 403, error_code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' }), { status: 403 }) as never;
+          }
+          if (ficha.startsWith('supabase-parpadea-')) {
+            if (PREGUNTAS[ficha] === 1) return new Response('bad gateway', { status: 502 }) as never;
+            return new Response(JSON.stringify({ id: ficha.slice(-36), aud: 'authenticated' }), { headers: { 'content-type': 'application/json' } }) as never;
+          }
+          if (!auth.startsWith('Bearer sb-')) {
+            return new Response(JSON.stringify({ code: 403, error_code: 'bad_jwt', msg: 'invalid JWT: unable to parse or verify signature' }), { status: 403 }) as never;
           }
           const id = auth.slice(10);
           return new Response(JSON.stringify({ id, aud: 'authenticated', ...(CORREOS[id] ?? {}) }), { headers: { 'content-type': 'application/json' } }) as never;

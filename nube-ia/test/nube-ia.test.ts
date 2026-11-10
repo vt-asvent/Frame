@@ -2,7 +2,7 @@
 // Frame abiertas (respaldo entre equipos, cortes, permisos retirados, frenos).
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
+import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, PREGUNTAS, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
 
 let a: Arnes;
 beforeAll(async () => {
@@ -61,6 +61,27 @@ describe('descubrimiento y OAuth', () => {
     expect(r.estado).toBe(200);
     expect(r.datos.code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
     expect(r.datos.expires).toBeGreaterThan(Date.now() + 9 * 60_000);
+  });
+
+  it('«no vale» solo si Supabase lo dice; si no se le pudo preguntar, 503 y sin tocar la sesión', async () => {
+    const id = cuenta();
+    // Auth dice que esa sesión ya no existe: 401, y no se insiste.
+    const cerrada = await a.pedir('/app/status', { token: `sesion-cerrada-${id}` });
+    expect([cerrada.estado, cerrada.datos.error]).toEqual([401, 'unauthorized']);
+    expect(PREGUNTAS[`sesion-cerrada-${id}`]).toBe(1);
+    // Supabase caído, con el tope de peticiones lleno, sin red o con la pasarela fallando: no es un «no».
+    for (const caso of ['supabase-caido-', 'supabase-limite-', 'supabase-sin-red-', 'supabase-pasarela-']) {
+      const r = await a.pedir('/app/status', { token: `${caso}${id}` });
+      expect([caso, r.estado, r.datos.error]).toEqual([caso, 503, 'auth-unavailable']);
+      // Se preguntó dos veces antes de rendirse.
+      expect([caso, PREGUNTAS[`${caso}${id}`]]).toEqual([caso, 2]);
+    }
+    // Un tropiezo suelto ni se nota: la segunda pregunta llega.
+    const parpadeo = await a.pedir('/app/status', { token: `supabase-parpadea-${id}` });
+    expect(parpadeo.estado).toBe(200);
+    expect(PREGUNTAS[`supabase-parpadea-${id}`]).toBe(2);
+    // Y lo que no se pudo comprobar no se recuerda: en cuanto Supabase vuelve, entra.
+    expect((await a.pedir('/app/status', { token: sesion(id) })).estado).toBe(200);
   });
 
   it('la página de autorización dice quién pide y adónde se vuelve', async () => {

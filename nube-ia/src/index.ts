@@ -8,7 +8,7 @@ import { accessFrom, authorize, metadata, newPairing, ownerStatus, register, rev
 import { translateLyrics } from './letras';
 import { loreFile, loreIndex, loreView } from './lore';
 import { loreAccess, loreAccessCleanup, loreActivate, loreSendCode } from './lore-acceso';
-import { userFromApp } from './supabase';
+import { callerFromApp } from './supabase';
 import { type Env, json, random, relayOf, signToken, verifyToken } from './util';
 
 export { FrameRelay } from './relay';
@@ -47,8 +47,11 @@ async function mcp(req: Request, env: Env, origin: string): Promise<Response> {
 
 /** Lo que pide la app, con su sesión de Frame. */
 async function app(req: Request, env: Env, path: string): Promise<Response> {
-  const user = await userFromApp(env, req.headers.get('authorization'));
-  if (!user) return json({ error: 'unauthorized' }, 401);
+  const caller = await callerFromApp(env, req.headers.get('authorization'));
+  // 401 solo si Supabase dijo que esa sesión no vale. Si no se le pudo preguntar, la sesión
+  // puede estar intacta: 503, y la app reintenta en vez de mandar al usuario a entrar de nuevo.
+  if (!caller.user) return caller.why === 'unavailable' ? json({ error: 'auth-unavailable' }, 503, { 'retry-after': '5' }) : json({ error: 'unauthorized' }, 401);
+  const user = caller.user;
   const owner = user.owner;
   if (req.method === 'GET' && path.startsWith('/app/lore/archivo/')) return loreFile(env, user, path.slice('/app/lore/archivo/'.length));
   if (req.method === 'GET' && path.startsWith('/app/lore/vista/')) return loreView(env, user, path.slice('/app/lore/vista/'.length));
