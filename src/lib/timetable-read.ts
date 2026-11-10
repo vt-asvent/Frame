@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getImage } from '@/lib/music-db';
-import { NUBE, nubeFetch } from '@/lib/nube';
+import { NubeAuthError, nubeCall, sessionProblemText } from '@/lib/nube';
 import { getSupabase } from '@/lib/supabase/client';
 import { localImageKey, readTimetables, tidyClasses, updateTimetable } from '@/lib/timetable';
 import { linkAfterReading } from '@/lib/timetable-links';
@@ -76,21 +76,20 @@ export async function readTimetable(uid: string, id: string, courses: readonly {
   reading.add(id);
   window.dispatchEvent(new Event(READING_CHANGED));
   try {
-    const supabase = getSupabase();
-    if (!supabase || !navigator.onLine) throw new Error(tr('Sin conexión: vuelve a intentarlo cuando tengas internet.'));
-    const { data: session } = await supabase.auth.getSession();
-    if (!session.session) throw new Error(ERRORS.account());
+    if (!getSupabase() || !navigator.onLine) throw new Error(tr('Sin conexión: vuelve a intentarlo cuando tengas internet.'));
     const photo = await getImage(localImageKey(uid, timetable));
     if (!photo) throw new Error(tr('La foto de este horario aún no llega a este dispositivo.'));
-    const response = await nubeFetch(`${NUBE}/app/horario`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${session.session.access_token}`, 'content-type': 'application/json' },
+    // La sesión la resuelve nube.ts: sin cuenta aquí, cerrada en la nube, o sin poder comprobarla ahora.
+    const response = await nubeCall('/app/horario', {
       body: JSON.stringify({ ...(await shrink(photo)), subjects: courses.map((course) => course.name.trim().slice(0, 80)).filter(Boolean).slice(0, 60) }),
-    }).catch(() => null);
+    }).catch((error: unknown) => {
+      if (error instanceof NubeAuthError) throw new Error(error.problem === 'signed-out' ? ERRORS.account() : sessionProblemText(error.problem));
+      return null;
+    });
     const data = response ? await response.json().catch(() => null) : null;
     if (!response?.ok) {
-      // 401: sesión vencida · 404: el lector aún no está publicado.
-      const code = response?.status === 401 ? 'account' : response?.status === 404 ? 'not_configured' : typeof data?.error === 'string' ? data.error : '';
+      // 404: el lector aún no está publicado.
+      const code = response?.status === 404 ? 'not_configured' : typeof data?.error === 'string' ? data.error : '';
       throw new Error((ERRORS[code] ?? ERRORS.busy)());
     }
     const classes = tidyClasses(Array.isArray(data?.classes) ? data.classes : []);

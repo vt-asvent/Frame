@@ -8,5 +8,5 @@
 // ============================================================
 
 export const TERMS_VERSION = '5.8';
-export const INFO_VERSION = '5.11';
+export const INFO_VERSION = '5.12';
 export const SUPPORT_VERSION = '3.4';

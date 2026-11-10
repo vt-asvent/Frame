@@ -286,8 +286,9 @@ export async function revokeGoogleToken(token: string): Promise<void> {
   }).catch(() => undefined);
 }
 
-export async function googleSignIn(): Promise<GoogleIdentity & { idToken?: string }> {
-  const tokens = await authorize({ scopes: IDENTITY_SCOPES, prompt: 'select_account' });
+export async function googleSignIn(options: { loginHint?: string } = {}): Promise<GoogleIdentity & { idToken?: string }> {
+  // `loginHint`: al volver a conectar una cuenta (ReconnectDialog), Google la trae ya escrita.
+  const tokens = await authorize({ scopes: IDENTITY_SCOPES, prompt: 'select_account', loginHint: options.loginHint });
   const identity = await fetchIdentity(tokens.accessToken);
   return { ...identity, idToken: tokens.idToken };
 }

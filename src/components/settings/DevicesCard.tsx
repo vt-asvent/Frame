@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { askToReconnect, useConnectionState } from '@/lib/connection-status';
 import { agoMs, forgetDevice, repairAllDevices, setDevicesOpen, stateOf, useDevices, type DeviceRow, type DeviceState, type IssueKind } from '@/lib/devices';
 import { useExtensionOn } from '@/lib/extensions/store';
 import { WIRE } from '@/lib/extensions/wire/relay';
@@ -64,7 +65,10 @@ export function DevicesCard({ userProfile }: { userProfile: UserProfile | null }
   const [repairing, setRepairing] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
   const [settling, setSettling] = useState(true);
+  const connection = useConnectionState();
   const signedIn = !!userProfile && !userProfile.isGuest;
+  /** La nube cerró la sesión de este equipo: se ofrece reconectarla aquí mismo. */
+  const sessionLost = !!userProfile && connection.sessionLostFor === userProfile.id;
 
   // Con la tarjeta a la vista, lib/devices.ts mira cada 30 s y pide a los demás equipos que contesten.
   useEffect(() => {
@@ -150,7 +154,16 @@ export function DevicesCard({ userProfile }: { userProfile: UserProfile | null }
             {tr('No se pudo contactar con el servidor. Revisa tu conexión a internet e inténtalo de nuevo.')}
           </p>
         )}
-        {failed && !unreachable && <p className="text-xs text-muted-foreground">{tr('No se pudo leer la lista de dispositivos. Se reintenta sola.')}</p>}
+        {sessionLost && (
+          <p role="alert" className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-500/10 p-3 text-xs text-foreground/90">
+            <CircleAlert className="h-4 w-4 shrink-0 text-amber-500" />
+            <span className="min-w-0 flex-1">{tr('La sesión de este equipo se cerró. Tus datos siguen aquí.')}</span>
+            <Button size="sm" onClick={askToReconnect}>
+              {tr('Volver a conectar')}
+            </Button>
+          </p>
+        )}
+        {failed && !unreachable && !sessionLost && <p className="text-xs text-muted-foreground">{tr('No se pudo leer la lista de dispositivos. Se reintenta sola.')}</p>}
         {!rows ? (
           !failed && <LoaderCircle className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : (
@@ -168,7 +181,7 @@ export function DevicesCard({ userProfile }: { userProfile: UserProfile | null }
                 state === 'unlinked'
                   ? self
                     ? // Este equipo sigue abierto, pero su sesión ya no existe en la nube (se cerró desde fuera).
-                      tr('La sesión caducó: vuelve a iniciar sesión')
+                      tr('La sesión se cerró: vuelve a conectar tu cuenta')
                     : closedAt
                       ? tr('Se cerró la sesión {when}', { when: closedAt })
                       : seen

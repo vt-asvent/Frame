@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { extRead, extWrite, useExtensionOn } from '@/lib/extensions/store';
 import { AKLORE, demoOn, fetchLoreAccess, LORE_LOCKED_EVENT, type LoreAccess } from '@/lib/extensions/aklore/source';
 import { activeProfileId } from '@/lib/profile-scope';
+import { SESSION_RESTORED_EVENT } from '@/lib/connection-status';
 
 // ============================================================
 // ¿Puede esta cuenta usar la Biblioteca ahora? (1.9.4)
@@ -87,8 +88,17 @@ export function useAkLoreAccess(uid: string | null | undefined): LoreAccessState
     if (!on || !uid || demoOn()) return;
     void ask(uid);
     const again = () => void ask(uid);
+    // La cuenta se reconectó sin salir: se pregunta ya, sin esperar al siguiente reintento.
+    const restored = () => {
+      if (answered.get(uid)?.state !== 'allowed') answered.delete(uid);
+      void ask(uid);
+    };
     window.addEventListener('online', again);
-    return () => window.removeEventListener('online', again);
+    window.addEventListener(SESSION_RESTORED_EVENT, restored);
+    return () => {
+      window.removeEventListener('online', again);
+      window.removeEventListener(SESSION_RESTORED_EVENT, restored);
+    };
   }, [on, uid]);
 
   if (!on) return 'off';

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getSupabase } from '@/lib/supabase/client';
-import { NUBE, nubeFetch } from '@/lib/nube';
+import { NubeAuthError, nubeCall, sessionProblemText } from '@/lib/nube';
 import { deleteImage, getImage, saveImage } from '@/lib/music-db';
 import { tr, useLang } from '@/lib/i18n';
 import type { SongLyrics } from '@/lib/lyrics';
@@ -246,15 +246,13 @@ function noteFailure(key: string, error: unknown): string {
 
 async function request(lines: string[], to: string): Promise<{ from: string; lines: string[] }> {
   const offline = () => new TranslateError('offline', tr('Sin conexión: la traducción necesita internet.'));
-  const supabase = getSupabase();
-  if (!supabase || !navigator.onLine) throw offline();
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) throw new TranslateError('session', tr('Entra con tu cuenta para traducir letras.'));
-  const resp = await nubeFetch(`${NUBE}/app/traducir`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${data.session.access_token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ lines, to }),
-  }).catch(() => null);
+  if (!getSupabase() || !navigator.onLine) throw offline();
+  const resp = await nubeCall('/app/traducir', { body: JSON.stringify({ lines, to }) }).catch((error: unknown) => {
+    if (!(error instanceof NubeAuthError)) return null;
+    // Sin poder comprobar la sesión ahora: se reintenta en un par de minutos, como cualquier tropiezo.
+    if (error.problem === 'unverified') throw new TranslateError('busy', sessionProblemText('unverified'));
+    throw new TranslateError('session', error.problem === 'ended' ? sessionProblemText('ended') : tr('Entra con tu cuenta para traducir letras.'));
+  });
   // La red se cortó (o no contestó en su plazo): se dice así, no con el error del navegador.
   if (!resp) throw offline();
   const body = (await resp.json().catch(() => null)) as { lines?: unknown; from?: unknown; error?: string; limit?: number } | null;
@@ -265,7 +263,6 @@ async function request(lines: string[], to: string): Promise<{ from: string; lin
     throw new TranslateError('quota', tr('Ya tradujiste {count} letras hoy. Mañana puedes seguir.', { count: body.limit ?? 30 }));
   }
   if (resp.status === 429) throw new TranslateError('daily', tr('La traducción descansa por hoy. Vuelve a intentarlo mañana.'));
-  if (resp.status === 401) throw new TranslateError('session', tr('Tu sesión venció: vuelve a entrar para traducir letras.'));
   if (body?.error === 'unusable') throw new TranslateError('unusable', tr('No se pudo traducir esta letra.'));
   throw new TranslateError('busy', tr('No se pudo traducir la letra ahora. Inténtalo de nuevo.'));
 }

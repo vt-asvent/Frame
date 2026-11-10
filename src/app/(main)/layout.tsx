@@ -64,6 +64,8 @@ import SyncIssuesDialog from '@/components/sync/SyncIssuesDialog';
 import { startImageSync } from '@/lib/image-sync';
 import { clearSessionLost, markSessionLost } from '@/lib/connection-status';
 import ConnectionNotice from '@/components/layout/ConnectionNotice';
+import ReconnectDialog from '@/components/auth/ReconnectDialog';
+import { startSessionGuard } from '@/lib/supabase/session-guard';
 import { consumeIntentionalSignOut } from '@/lib/supabase/auth';
 import { startUpdaterLoop, setUpdateBusyGuard } from '@/lib/updater';
 import { isRecorderBusy } from '@/lib/recordings';
@@ -434,6 +436,8 @@ function MainApp({ children, userProfile }: { children: ReactNode; userProfile: 
       <OverdueTasksAlert />
       {/* Recuadro de actualización: lo abren el testigo junto al perfil y la campana. */}
       <UpdateDialog />
+      {/* La nube cerró la sesión de este equipo: se reconecta sin salir (la campana, Dispositivos). */}
+      {userProfile && !userProfile.isGuest && <ReconnectDialog userProfile={userProfile} />}
       {interruptedSession && (
         <InterruptedSessionManager
           session={interruptedSession}
@@ -451,6 +455,8 @@ function AppController({ children }: { children: React.ReactNode }) {
   // Actualizaciones: solo se MIRA si hay versión nueva (testigo del sidebar y
   // campana). Instalar lo decide el usuario en el recuadro de actualización.
   useEffect(() => startUpdaterLoop(), []);
+  // El vigía de la sesión (1.9.5): la renueva en cuanto algo la pone en duda (session-guard.ts).
+  useEffect(() => startSessionGuard(), []);
 
   // Gmail, YouTube y Classroom: las páginas son de cada perfil (1.6.7). Al
   // cambiar de cuenta se cierran las del anterior, y la sesión de Google que

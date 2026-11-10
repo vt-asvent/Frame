@@ -17,9 +17,15 @@
 // cuando la red se traga los paquetes, y que nada que quedó esperando por
 // detrás toque después la sesión de quien entra.
 //
+// Desde la 1.9.5 también lo que blinda la sesión: qué respuestas de Auth la
+// cierran y cuáles no (session-fetch.ts), el reloj del equipo corrido, el
+// almacenamiento lleno (session-store.ts), el vigía (session-guard.ts) y lo que
+// pide a la nube de Frame (nube.ts).
+//
 // Los plazos son los de verdad (5 s, 15 s, el medio minuto que supabase-js
-// insiste en renovar): los grupos corren a la vez y el conjunto tarda lo que
-// el más largo, unos 50 s. No usa la red ni la nube real.
+// insiste en renovar, el minuto que descansa tras un fallo): los grupos corren
+// a la vez y el conjunto tarda lo que el más largo, unos 100 s. No usa la red
+// ni la nube real.
 // ============================================================
 
 import vm from 'node:vm';
@@ -77,13 +83,17 @@ function makeServer() {
     logoutStatus: 204,
     /** Lo que dura la llave de acceso, en segundos. */
     expiresIn: 3600,
+    /** Reloj del servidor menos el de este equipo, en segundos (un equipo con la hora mal). */
+    clockAhead: 0,
+    /** Lo que contesta la nube de Frame a cada petición (por defecto, que sí). */
+    nube: () => json({ ok: true }),
     tokens: 0,
     sessions: 0,
   };
 }
 
 function sessionBody(server, sessionId) {
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000) + (server.clockAhead ?? 0);
   server.tokens += 1;
   const payload = { sub: USER, exp: now + server.expiresIn, session_id: sessionId, n: server.tokens };
   return {
@@ -98,7 +108,7 @@ function sessionBody(server, sessionId) {
       role: 'authenticated',
       email: 'diego@prueba.test',
       app_metadata: { provider: 'email' },
-      user_metadata: { username: 'diego' },
+      user_metadata: { username: 'diego', ...(server.padding ? { pad: server.padding } : {}) },
       identities: [{ id: '1', provider: 'email' }],
       created_at: '2026-10-01T00:00:00.000Z',
     },
@@ -108,13 +118,36 @@ function sessionBody(server, sessionId) {
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 function routeOf(url) {
+  if (url.hostname === 'frame-ia.vtasvent.workers.dev') return 'nube';
   if (url.pathname === '/auth/v1/token') return { password: 'password', id_token: 'id_token', refresh_token: 'refresh' }[url.searchParams.get('grant_type')] ?? 'token';
   if (url.pathname === '/auth/v1/logout') return 'logout';
   if (url.pathname === '/auth/v1/user') return 'user';
   return 'other';
 }
 
+/** Los «no» de Supabase Auth y lo que se le parece sin serlo. */
+const AUTH = {
+  notFound: { status: 400, body: { code: 400, error_code: 'refresh_token_not_found', msg: 'Invalid Refresh Token: Refresh Token Not Found' } },
+  alreadyUsed: { status: 400, body: { code: 400, error_code: 'refresh_token_already_used', msg: 'Invalid Refresh Token: Already Used' } },
+  legacy: { status: 400, body: { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found' } },
+  rateLimit: { status: 429, body: { code: 429, error_code: 'over_request_rate_limit', msg: 'Request rate limit reached' } },
+  conflict: { status: 409, body: { code: 409, error_code: 'conflict', msg: 'Too many concurrent token refresh requests on the same session or refresh token' } },
+  portal: { status: 200, raw: '<html><body>Inicie sesión en la red del colegio</body></html>', type: 'text/html' },
+  portal511: { status: 511, raw: 'Network Authentication Required', type: 'text/plain' },
+  emptyOk: { status: 200, body: {} },
+  gateway: { status: 401, body: { message: 'Invalid API key' } },
+  proxy403: { status: 403, raw: '<html>Forbidden</html>', type: 'text/html' },
+  badRequest: { status: 400, body: { code: 400, error_code: 'validation_failed', msg: 'Refresh token is not valid' } },
+};
+
 function answer(server, route, init, entry) {
+  const mode = server.modes[route];
+  // Una respuesta a medida: { status, body } (JSON) o { status, raw, type }.
+  if (mode && typeof mode === 'object') {
+    entry.status = mode.status;
+    return mode.raw !== undefined ? new Response(mode.raw, { status: mode.status, headers: { 'content-type': mode.type ?? 'text/plain' } }) : json(mode.body, mode.status);
+  }
+  if (route === 'nube') return server.nube(entry.bearer, entry);
   if (route === 'password' || route === 'id_token') {
     server.sessions += 1;
     return json(sessionBody(server, `sesion-${server.sessions}`));
@@ -147,7 +180,7 @@ const fetchFor = (server) => (input, init = {}) =>
       reject(cancelled());
       return;
     }
-    const mode = server.modes[route] ?? 'ok';
+    const mode = typeof server.modes[route] === 'object' ? 'ok' : (server.modes[route] ?? 'ok');
     if (mode === 'offline') {
       entry.outcome = 'offline';
       reject(new TypeError('Failed to fetch'));
@@ -189,6 +222,14 @@ const fetchFor = (server) => (input, init = {}) =>
 // ------------------------------------------------------------
 class MemoryStorage {
   #map = new Map();
+  /** Tope de caracteres (claves + valores), como el de localStorage; `vetoed`: no deja escribir nada. */
+  quota = Infinity;
+  vetoed = false;
+  get used() {
+    let total = 0;
+    for (const [key, value] of this.#map) total += key.length + value.length;
+    return total;
+  }
   get length() {
     return this.#map.size;
   }
@@ -199,7 +240,10 @@ class MemoryStorage {
     return this.#map.has(key) ? this.#map.get(key) : null;
   }
   setItem(key, value) {
-    this.#map.set(key, String(value));
+    const text = String(value);
+    const before = this.#map.has(key) ? key.length + this.#map.get(key).length : 0;
+    if (this.vetoed || this.used - before + key.length + text.length > this.quota) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    this.#map.set(key, text);
   }
   removeItem(key) {
     this.#map.delete(key);
@@ -211,11 +255,12 @@ class MemoryStorage {
 
 const silent = Object.fromEntries(['log', 'info', 'warn', 'error', 'debug', 'trace'].map((name) => [name, () => undefined]));
 
-/** `seed`: lo que había guardado en el equipo antes de abrir Frame. */
-function device({ seed = {} } = {}) {
+/** `seed`: lo que había guardado en el equipo antes de abrir Frame. `quota`: lo que cabe en su almacenamiento. */
+function device({ seed = {}, quota = Infinity } = {}) {
   const server = makeServer();
   const storage = new MemoryStorage();
   for (const [key, value] of Object.entries(seed)) storage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  storage.quota = quota;
   const events = new EventTarget();
   const probe = { unlinks: 0, unlinkDelay: 0 };
   const sandbox = {
@@ -528,11 +573,282 @@ async function caps() {
   return lines;
 }
 
+// ============================================================
+// 1.9.5 · Lo que blinda la sesión
+// ============================================================
+
+const SOFT = {
+  rateLimit: 'un 429 (demasiadas peticiones)',
+  conflict: 'un 409 (dos renovaciones a la vez)',
+  portal: 'la página del portal del wifi (200, HTML)',
+  portal511: 'un 511 del portal',
+  emptyOk: 'un 200 que no trae sesión',
+  gateway: 'un 401 de la pasarela, no de Auth',
+  proxy403: 'un 403 de un proxy',
+  badRequest: 'un 400 de validación',
+};
+const HARD = {
+  notFound: 'la llave de renovación ya no existe',
+  alreadyUsed: 'la llave ya se usó (familia revocada)',
+  legacy: 'el «invalid_grant» de versiones viejas de Auth',
+};
+
+async function answers() {
+  const { lines, say, check } = report();
+  say('\n▶ Renovar la llave: qué respuesta cierra la sesión y cuál no (session-fetch.ts)');
+  const seedServer = makeServer();
+  const expired = () => ({ ...sessionBody(seedServer, 'sesion-vieja'), expires_at: Math.floor(Date.now() / 1000) - 3600 });
+
+  say('  Con la llave de acceso ya vencida, lo que NO es un «no» de Supabase Auth:');
+  const kept = await Promise.all(
+    Object.keys(SOFT).map(async (name) => {
+      const dev = device({ seed: { 'aether-auth': expired() } });
+      dev.server.modes.refresh = AUTH[name];
+      dev.listen();
+      const read = await timed(() => dev.frame.getActiveSession(), 70_000);
+      await sleep(200);
+      return { name, dev, read };
+    })
+  );
+  for (const { name, dev, read } of kept) {
+    const out = dev.authEvents.some((e) => e.event === 'SIGNED_OUT');
+    check(
+      !read.hung && !read.value?.thrown && dev.frame.hasStoredSession() && !out,
+      `${SOFT[name]}: la sesión sigue guardada, sin aviso de cierre (${read.ms} ms, ${dev.calls('refresh').length} intentos)`
+    );
+  }
+  const limited = kept.find((entry) => entry.name === 'rateLimit').dev;
+  const before = limited.storedToken();
+  limited.server.modes.refresh = 'ok';
+  // supabase-js descansa un minuto tras un fallo antes de volver a pedirla.
+  await sleep(62_000);
+  const back = await timed(() => limited.frame.getActiveSession(), 40_000);
+  check(!!back.value?.access_token && back.value.access_token !== before && limited.storedToken() === back.value.access_token, 'y cuando el servidor vuelve a contestar bien, la misma sesión se renueva sola');
+  check(limited.authEvents.every((e) => e.event !== 'SIGNED_OUT'), 'sin haber pasado por «sesión cerrada»');
+
+  say('  Y lo que SÍ lo es:');
+  for (const name of Object.keys(HARD)) {
+    const dev = device({ seed: { 'aether-auth': expired() } });
+    dev.server.modes.refresh = AUTH[name];
+    dev.listen();
+    const read = await timed(() => dev.frame.getActiveSession(), 20_000);
+    await sleep(200);
+    const outs = dev.authEvents.filter((e) => e.event === 'SIGNED_OUT').length;
+    check(read.ms < 4_000 && read.value === null && !dev.frame.hasStoredSession() && outs === 1, `${HARD[name]}: la sesión se cierra aquí, con un aviso (${read.ms} ms)`);
+    check(dev.calls('refresh').length === 1, 'sin insistir');
+  }
+
+  const { refreshEnded } = device().frame;
+  const table = [
+    [400, { error_code: 'session_expired', msg: 'Invalid Refresh Token: Session Expired (Inactivity)' }, true],
+    [400, { error_code: 'session_not_found', msg: 'Invalid Refresh Token: No Valid Session Found' }, true],
+    [400, { error_code: 'user_banned', msg: 'Invalid Refresh Token: User Banned' }, true],
+    [400, { error_code: 'codigo_nuevo', msg: 'Invalid Refresh Token: Session Expired (Revoked by Newer Login)' }, true],
+    [429, { error_code: 'over_request_rate_limit', msg: 'Invalid Refresh Token: no debería contar' }, false],
+    [500, { error_code: 'unexpected_failure', msg: 'Invalid Refresh Token' }, false],
+    [400, { error_code: 'validation_failed', msg: 'Refresh token is not valid' }, false],
+    [400, null, false],
+    [403, 'Forbidden', false],
+  ];
+  check(table.every(([status, body, expected]) => refreshEnded(status, body) === expected), 'la tabla de respuestas de Auth (códigos y textos) se clasifica como se espera');
+  return lines;
+}
+
+async function guard() {
+  const { lines, say, check } = report();
+  say('\n▶ El vigía de la sesión (session-guard.ts)');
+  const signIn = async (dev) => {
+    dev.listen();
+    dev.frame.startSessionGuard();
+    await dev.frame.signInWithEmail('diego@prueba.test', 'clave');
+    return dev.storedToken();
+  };
+  const lost = (dev) => dev.frame.getConnectionState().sessionLostFor;
+
+  say('  La sesión vive');
+  const dev = device();
+  const token = await signIn(dev);
+  const alive = await timed(() => dev.frame.checkSession());
+  const rotated = dev.storedToken();
+  check(alive.value === 'alive' && rotated !== token && dev.calls('refresh').length === 1, `se lo pregunta a Supabase renovándola (${alive.ms} ms)`);
+  check((await dev.frame.checkSession()) === 'alive' && dev.calls('refresh').length === 1, 'y no vuelve a preguntar enseguida por la misma llave');
+  check((await dev.frame.checkSession(token)) === 'alive' && dev.calls('refresh').length === 1, 'una llave rechazada que ya no es la de la sesión no gasta otra pregunta');
+  const methods = dev.frame.signInMethodsOf(USER);
+  check(methods?.password === true && methods?.google === false, 'queda anotado cómo entra esta cuenta (para ofrecer solo eso al reconectar)');
+
+  say('  La nube cerró la sesión y la llave de acceso aún no vence');
+  const zombie = device();
+  const held = await signIn(zombie);
+  zombie.server.modes.refresh = AUTH.notFound;
+  const ended = await timed(() => zombie.frame.checkSession());
+  check(ended.value === 'ended' && ended.ms < 3_000, `lo sabe en el acto (${ended.ms} ms; antes, hasta una hora después)`);
+  check(lost(zombie) === USER, 'y queda dicho: «Sin conexión con tu cuenta»');
+  check(zombie.storedToken() === held && zombie.authEvents.every((e) => e.event !== 'SIGNED_OUT'), 'la llave que aún sirve para los datos no se tira');
+  zombie.server.modes.refresh = 'ok';
+  const again = await zombie.frame.signInWithEmail('diego@prueba.test', 'clave');
+  zombie.frame.sessionRestored();
+  check(!again.error && zombie.storedToken() !== held && lost(zombie) === null, 'volver a conectar la misma cuenta quita el aviso, sin salir de la app');
+  check((await zombie.frame.checkSession()) === 'alive', 'y la sesión nueva responde');
+
+  say('  La API de datos rechaza la llave (el reloj del equipo cambió)');
+  const skew = device();
+  const stale = await signIn(skew);
+  skew.server.modes.other = { status: 401, body: { code: 'PGRST303', details: null, hint: null, message: 'JWT expired' } };
+  await skew.frame.getSupabase().from('backups').select('updated_at').limit(1);
+  const renewed = await until(() => skew.calls('refresh').length === 1 && skew.storedToken() !== stale, 5_000);
+  check(renewed && lost(skew) === null, 'la llave se renueva sola al primer rechazo (antes: «JWT expired» hasta que venciera aquí)');
+
+  say('  Sin respuesta de la red');
+  const dark = device();
+  const kept = await signIn(dark);
+  dark.server.modes.refresh = 'offline';
+  const unknown = await timed(() => dark.frame.checkSession(), 60_000);
+  check(unknown.value === 'unknown' && dark.storedToken() === kept && lost(dark) === null, `no se sabe: no se toca nada ni se avisa de nada (${unknown.ms} ms)`);
+  return lines;
+}
+
+async function clock() {
+  const { lines, say, check } = report();
+  say('\n▶ El reloj del equipo va mal (session-fetch.ts)');
+  const local = () => Math.floor(Date.now() / 1000);
+  const storedExpiry = (dev) => JSON.parse(dev.storage.getItem('aether-auth') ?? '{}').expires_at;
+
+  const ahead = device();
+  ahead.server.clockAhead = -7200; // el equipo va dos horas ADELANTADO
+  ahead.listen();
+  await ahead.frame.signInWithEmail('diego@prueba.test', 'clave');
+  check(Math.abs(storedExpiry(ahead) - (local() + 3600)) <= 3, 'adelantado 2 h: la caducidad se guarda con el reloj de aquí (ahora + 1 h)');
+  for (let i = 0; i < 6; i++) await ahead.frame.getActiveSession();
+  check(ahead.calls('refresh').length === 0, 'leer la sesión ya no la renueva en cada lectura (antes: una renovación por lectura, hasta chocar con el tope)');
+
+  const behind = device();
+  behind.server.clockAhead = 7200; // el equipo va dos horas ATRASADO
+  behind.listen();
+  await behind.frame.signInWithEmail('diego@prueba.test', 'clave');
+  check(Math.abs(storedExpiry(behind) - (local() + 3600)) <= 3, 'atrasado 2 h: lo mismo (antes creía la llave buena dos horas de más)');
+  await behind.frame.checkSession();
+  check(behind.calls('refresh').length === 1 && Math.abs(storedExpiry(behind) - (local() + 3600)) <= 3, 'y al renovarla, también');
+  return lines;
+}
+
+async function storageFull() {
+  const { lines, say, check } = report();
+  say('\n▶ El equipo se queda sin sitio para guardar (session-store.ts)');
+  const dev = device({ quota: 200_000 });
+  dev.listen();
+  await dev.frame.signInWithEmail('diego@prueba.test', 'clave');
+  const first = dev.storedToken();
+  check(!!first && (dev.storage.getItem('aether-auth-reserva')?.length ?? 0) > 8_000, 'junto a la sesión queda una reserva');
+  dev.storage.setItem('relleno', 'x'.repeat(dev.storage.quota - dev.storage.used - 'relleno'.length - 5));
+  let full = false;
+  try {
+    dev.storage.setItem('otra', 'y'.repeat(100));
+  } catch {
+    full = true;
+  }
+  check(full, 'el almacenamiento se llena hasta el borde');
+  dev.server.padding = 'p'.repeat(600); // la sesión renovada ocupa más que la anterior
+  const state = await dev.frame.checkSession();
+  check(state === 'alive' && dev.storedToken() !== first && !dev.frame.sessionOnlyInMemory(), 'la llave nueva se guarda igual (antes: error en cada lectura y sesión perdida al reabrir)');
+  check(dev.storage.getItem('aether-auth-reserva') === null, 'gastando la reserva, que para eso está');
+
+  const locked = device();
+  locked.listen();
+  await locked.frame.signInWithEmail('diego@prueba.test', 'clave');
+  const onDisk = locked.storedToken();
+  locked.storage.vetoed = true;
+  const still = await locked.frame.checkSession();
+  const session = await locked.frame.getActiveSession();
+  check(still === 'alive' && locked.frame.sessionOnlyInMemory(), 'si el equipo no deja escribir nada, la sesión sigue en memoria');
+  check(!!session?.access_token && session.access_token !== onDisk && session.access_token === locked.frame.storedAccessToken(), 'y Frame usa la nueva, no la que quedó en el disco');
+  return lines;
+}
+
+async function cloud() {
+  const { lines, say, check } = report();
+  say('\n▶ Lo que se pide a la nube de Frame con la sesión (nube.ts)');
+  const problem = (run) => run.value?.thrown?.problem ?? null;
+  const lost = (dev) => dev.frame.getConnectionState().sessionLostFor;
+  const start = async (dev) => {
+    dev.listen();
+    dev.frame.startSessionGuard();
+    await dev.frame.signInWithEmail('diego@prueba.test', 'clave');
+    return dev.storedToken();
+  };
+
+  const dev = device();
+  dev.listen();
+  dev.frame.startSessionGuard();
+  const none = await timed(() => dev.frame.nubeCall('/app/status'));
+  check(none.value?.thrown instanceof dev.frame.NubeAuthError && problem(none) === 'signed-out' && dev.calls('nube').length === 0, 'sin sesión en el equipo: lo dice sin llamar');
+  await dev.frame.signInWithEmail('diego@prueba.test', 'clave');
+  const t1 = dev.storedToken();
+  const ok = await dev.frame.nubeCall('/app/status');
+  check(ok.status === 200 && dev.calls('nube')[0]?.bearer === t1, 'con sesión: va con su llave');
+
+  say('  La nube rechaza la llave, pero la sesión vive');
+  dev.server.nube = (bearer) => (bearer === t1 ? json({ error: 'unauthorized' }, 401) : json({ ok: true }));
+  const healed = await timed(() => dev.frame.nubeCall('/app/lore/codigo', { body: JSON.stringify({ email: 'a@b.c' }) }));
+  const t2 = dev.storedToken();
+  const lastTwo = dev.calls('nube').slice(-2);
+  check(healed.value?.status === 200 && t2 !== t1 && dev.calls('refresh').length === 1, `se renueva y se repite sola: quien llamó ni se entera (${healed.ms} ms; antes: «Tu sesión venció»)`);
+  check(lastTwo[0]?.bearer === t1 && lastTwo[1]?.bearer === t2 && lastTwo[1]?.method === 'POST' && lost(dev) === null, 'la repetición va con la llave nueva y sin avisos');
+
+  say('  La nube rechaza la llave y Supabase confirma que la sesión terminó');
+  const gone = device();
+  await start(gone);
+  gone.server.nube = () => json({ error: 'unauthorized' }, 401);
+  gone.server.modes.refresh = AUTH.notFound;
+  const ended = await timed(() => gone.frame.nubeCall('/app/lore'));
+  check(problem(ended) === 'ended' && lost(gone) === USER && gone.calls('nube').length === 1, 'dice «tu sesión se cerró» y deja el aviso para reconectar');
+  await gone.frame.signOut();
+  const after = await timed(() => gone.frame.nubeCall('/app/lore'));
+  check(problem(after) === 'ended' && gone.calls('nube').length === 1, 'y con la sesión ya fuera sigue diciendo lo mismo (no «entra con tu cuenta»)');
+
+  say('  La nube no pudo comprobar la llave (503)');
+  const busy = device();
+  await start(busy);
+  let n = 0;
+  busy.server.nube = () => (++n === 1 ? json({ error: 'auth-unavailable' }, 503) : json({ ok: true }));
+  const once = await timed(() => busy.frame.nubeCall('/app/status'));
+  check(once.value?.status === 200 && n === 2 && between(once.ms, 1_400, 3_000), `un tropiezo suelto se repite solo (${once.ms} ms)`);
+  busy.server.nube = () => json({ error: 'auth-unavailable' }, 503);
+  const twice = await timed(() => busy.frame.nubeCall('/app/status'));
+  check(problem(twice) === 'unverified' && busy.frame.hasStoredSession() && lost(busy) === null && busy.calls('refresh').length === 0, 'si sigue igual: «inténtalo en un momento», sin tocar la sesión');
+  busy.server.nube = () => json({ error: 'server' }, 500);
+  check((await busy.frame.nubeCall('/app/status')).status === 500, 'otro error del servidor llega tal cual a quien llamó');
+  busy.server.modes.nube = 'offline';
+  const cut = await timed(() => busy.frame.nubeCall('/app/status'));
+  check(!!cut.value?.thrown && !(cut.value.thrown instanceof busy.frame.NubeAuthError), 'y un corte de red sale como corte de red');
+
+  say('  La nube rechaza la llave y Supabase no contesta');
+  const dark = device();
+  const kept = await start(dark);
+  dark.server.nube = () => json({ error: 'unauthorized' }, 401);
+  dark.server.modes.refresh = 'offline';
+  const unsure = await timed(() => dark.frame.nubeCall('/app/lore'), 60_000);
+  check(problem(unsure) === 'unverified' && dark.storedToken() === kept && lost(dark) === null, `no se sabe: «inténtalo en un momento», la sesión intacta (${unsure.ms} ms)`);
+  return lines;
+}
+
 // ------------------------------------------------------------
 const started = Date.now();
-// --solo=normal|colgada|sinred|entrar|arranque|renovacion|plazos corre solo ese grupo.
+// --solo=normal|colgada|sinred|entrar|arranque|renovacion|plazos|respuestas|vigia|reloj|almacen|nube corre solo ese grupo.
 const only = process.argv.find((arg) => arg.startsWith('--solo='))?.slice('--solo='.length);
-const groups = { normal, colgada: hungLogout, sinred: offline, entrar: hungLogin, arranque: startup, renovacion: midSession, plazos: caps };
+const groups = {
+  normal,
+  colgada: hungLogout,
+  sinred: offline,
+  entrar: hungLogin,
+  arranque: startup,
+  renovacion: midSession,
+  plazos: caps,
+  respuestas: answers,
+  vigia: guard,
+  reloj: clock,
+  almacen: storageFull,
+  nube: cloud,
+};
 const selected = Object.entries(groups).filter(([name]) => !only || only === name);
 const outputs = await Promise.all(
   selected.map(([name, run]) =>

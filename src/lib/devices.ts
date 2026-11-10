@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { getSupabase } from '@/lib/supabase/client';
+import { checkSession } from '@/lib/supabase/session-guard';
+import { SESSION_RESTORED_EVENT } from '@/lib/connection-status';
 import { readCursor, sameInstant } from '@/lib/supabase/sync';
 import { currentSyncIssues, subscribeSyncIssues, type SyncIssue } from '@/lib/sync-check';
 import { SYNC_NOW_EVENT, getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
@@ -295,6 +297,8 @@ export function startDevices(uid: string): () => void {
   let eagerUntil = Date.now() + EAGER_MS;
   /** Latidos seguidos que no llegaron. */
   let failures = 0;
+  /** Ya se repitió el latido tras comprobar que la sesión vive (una vez por episodio). */
+  let relinkTried = false;
   /** Resumen del último latido que llegó, el anunciado a quien mira y el que enseña la tarjeta. */
   let sent: string | null = null;
   let told: string | null = null;
@@ -424,7 +428,18 @@ export function startDevices(uid: string): () => void {
         // lo vuelve a vincular cuando pase su margen: se late justo entonces, no en diez minutos.
         const left = GOODBYE_MS - agoMs(own.unlinked_at, reply.skew);
         if (left > 0) schedule(left + 3000);
+      } else if (own && !own.linked) {
+        // Sin despedida: la nube ya no encuentra la sesión de este equipo (se cerró desde fuera).
+        // Se le pregunta a Supabase ahora, sin esperar a que la llave venza: si terminó, el usuario
+        // lo sabe en el acto y la reconecta sin salir (session-guard.ts); si sigue viva, se late otra vez.
+        void checkSession().then((state) => {
+          // Viva: un latido más para que la nube lo vea, y solo uno (si siguiera diciendo lo mismo, no se insiste).
+          if (state !== 'alive' || relinkTried || stopped) return;
+          relinkTried = true;
+          schedule(1500);
+        });
       }
+      if (own?.linked) relinkTried = false;
       if (shown !== json) schedule(1500);
       else catchUp();
       // A quien mira la tarjeta en otro equipo. Recién abierto o recién vuelto no se sabe si
@@ -487,6 +502,12 @@ export function startDevices(uid: string): () => void {
     eagerUntil = Date.now() + EAGER_MS;
     schedule(1500);
   };
+  /** La cuenta se reconectó sin salir de Frame: este equipo vuelve a contar ya. */
+  const onRestored = () => {
+    failures = 0;
+    eagerUntil = Date.now() + EAGER_MS;
+    schedule(300, true);
+  };
 
   const stopStatus = subscribeSyncStatus(onLocal);
   const stopIssues = subscribeSyncIssues(onLocal);
@@ -508,6 +529,7 @@ export function startDevices(uid: string): () => void {
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('pagehide', onHide);
   window.addEventListener('online', onOnline);
+  window.addEventListener(SESSION_RESTORED_EVENT, onRestored);
   const tick = window.setInterval(() => {
     if (cardOpen && document.visibilityState === 'visible') refresh();
     else if (Date.now() - lastStartAt >= BEAT_MS) schedule(0);
@@ -530,6 +552,7 @@ export function startDevices(uid: string): () => void {
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('pagehide', onHide);
     window.removeEventListener('online', onOnline);
+    window.removeEventListener(SESSION_RESTORED_EVENT, onRestored);
     publish(EMPTY);
   };
 }

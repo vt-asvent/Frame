@@ -92,6 +92,8 @@ async function compile(entry, extra = {}) {
         '@/lib/supabase/client': fake,
         './client': fake,
         '@/lib/error-report': path.join(dir, 'registro-falso.ts'),
+        // El vigía de la sesión (1.9.5) trae consigo auth.ts; aquí no hay sesiones: lo prueba probar-sesion.mjs.
+        '@/lib/supabase/session-guard': path.join(dir, 'vigia-falso.ts'),
         ...extra,
       }),
     ],

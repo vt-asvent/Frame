@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cappedFetch } from '@/lib/capped-fetch';
+import { sessionFetch } from './session-fetch';
+import { SESSION_KEY, sessionStore } from './session-store';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -19,11 +21,14 @@ export function getSupabase(): SupabaseClient | null {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-      storageKey: 'aether-auth',
+      storageKey: SESSION_KEY,
+      // La sesión no se pierde porque el equipo se quede sin sitio (session-store.ts).
+      storage: sessionStore,
     },
     // Cada petición (sesión, datos, imágenes) con su plazo: una colgada dejaba
-    // la sincronización parada hasta reiniciar Frame. Ver lib/capped-fetch.ts.
-    global: { fetch: cappedFetch },
+    // la sincronización parada hasta reiniciar Frame (lib/capped-fetch.ts). Y
+    // sobre eso, lo que cuida la sesión: session-fetch.ts.
+    global: { fetch: sessionFetch },
     // Si el canal en vivo no puede conectar (servicio caído, o el tope de
     // conexiones simultáneas del plan lleno), cada equipo reintenta cada vez más
     // espaciado y al azar: 1 s, 2 s, 4 s… hasta 5 min. Por defecto insistía cada

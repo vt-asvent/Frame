@@ -10,8 +10,7 @@
 // sesión de Supabase.
 // ============================================================
 
-import { NUBE as IA_CLOUD, nubeFetch } from '@/lib/nube';
-import { getActiveSession } from '@/lib/supabase/auth';
+import { NUBE as IA_CLOUD, NubeAuthError, nubeCall } from '@/lib/nube';
 import { extRead, extWrite } from '@/lib/extensions/store';
 import { deviceId } from '@/lib/sync-delta';
 import { APP_VERSION } from '@/lib/version';
@@ -47,16 +46,15 @@ export class CloudError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const session = await getActiveSession();
-  if (!session) throw new CloudError('session');
+async function request<T>(path: string, init: { method?: string } = {}): Promise<T> {
   let response: Response;
   try {
-    response = await nubeFetch(`${IA_CLOUD}${path}`, { ...init, headers: { authorization: `Bearer ${session.access_token}` } });
-  } catch {
-    throw new CloudError('network');
+    // La sesión la resuelve nube.ts: una llave recién caducada se renueva y se repite sola.
+    response = await nubeCall(path, init);
+  } catch (error) {
+    // Sin poder comprobarla ahora es cosa de la red; sin sesión (o cerrada en la nube), de la cuenta.
+    throw new CloudError(error instanceof NubeAuthError && error.problem !== 'unverified' ? 'session' : 'network');
   }
-  if (response.status === 401) throw new CloudError('session');
   if (!response.ok) throw new CloudError('server', `HTTP ${response.status}`);
   return (await response.json()) as T;
 }

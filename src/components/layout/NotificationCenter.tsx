@@ -45,7 +45,7 @@ import { getUpdateState, openUpdateDialog, subscribeUpdate } from '@/lib/updater
 import { useCourse } from '@/context/CourseContext';
 import { useRouter } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
-import { signInAgain, useConnectionState } from '@/lib/connection-status';
+import { askToReconnect, useConnectionState } from '@/lib/connection-status';
 import { BELL_PING_EVENT } from '@/components/layout/ConnectionNotice';
 import { dateLocale, inBothLangs, pickLang, tr, useLang } from '@/lib/i18n';
 import { openSyncIssues, useSyncIssues } from '@/lib/sync-check';
@@ -136,7 +136,7 @@ export default function NotificationCenter() {
             id: 'sesion-perdida',
             kind: 'conexion',
             title: tr('Sin conexión con tu cuenta'),
-            detail: tr('Pulsa para volver a entrar; tus datos siguen aquí'),
+            detail: tr('Pulsa para volver a conectarla; tus datos siguen aquí'),
           });
         } else if (connection.offlineSince !== null) {
           items.push({
@@ -233,7 +233,7 @@ export default function NotificationCenter() {
       markRead(entry.id);
       setOpen(false);
       if (entry.kind === 'conexion') {
-        if (entry.id === 'sesion-perdida') void signInAgain();
+        if (entry.id === 'sesion-perdida') askToReconnect();
         return;
       }
       if (entry.kind === 'actualizacion') {

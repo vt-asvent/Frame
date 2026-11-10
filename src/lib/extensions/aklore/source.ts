@@ -1,9 +1,10 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { extRead, extWrite, onExtensionTeardown } from '@/lib/extensions/store';
-import { NUBE, nubeFetch } from '@/lib/nube';
+import { NubeAuthError, nubeCall, sessionProblemText } from '@/lib/nube';
 import { activeProfileId } from '@/lib/profile-scope';
 import { getSupabase } from '@/lib/supabase/client';
 import { CLOUD_APPLIED_EVENT } from '@/lib/sync-merge';
+import { SESSION_RESTORED_EVENT } from '@/lib/connection-status';
 import { tr } from '@/lib/i18n';
 
 // ============================================================
@@ -118,18 +119,18 @@ export function fileNameOf(guide: LoreGuide): string {
 const fail = (message: string, stop = true) => Object.assign(new Error(message), { stop });
 const offline = () => fail(tr('Sin conexión: vuelve a intentarlo cuando tengas internet.'));
 
+/** La cuenta no pudo atenderse (nube.ts): sin sesión aquí, sesión cerrada en la nube, o no se pudo comprobar ahora. */
+const accountProblem = (error: NubeAuthError, signedOut: string) => fail(error.problem === 'signed-out' ? signedOut : sessionProblemText(error.problem));
+
 async function fromCloud(path: string, signal?: AbortSignal): Promise<Response> {
-  const supabase = getSupabase();
-  if (!supabase || !navigator.onLine) throw offline();
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) throw fail(tr('Entra a Frame con tu cuenta para usar la Biblioteca.'));
-  // Con plazo (nube.ts). Un corte de red se dice así, no con el error del navegador.
-  const resp = await nubeFetch(`${NUBE}${path}`, { headers: { authorization: `Bearer ${data.session.access_token}` }, signal }).catch((error: unknown) => {
+  if (!getSupabase() || !navigator.onLine) throw offline();
+  // Con plazo y con la sesión resuelta (nube.ts). Un corte de red se dice así, no con el error del navegador.
+  const resp = await nubeCall(path, { signal }).catch((error: unknown) => {
+    if (error instanceof NubeAuthError) throw accountProblem(error, tr('Entra a Frame con tu cuenta para usar la Biblioteca.'));
     throw signal?.aborted ? error : offline();
   });
   if (resp.ok) return resp;
   const body = (await resp.json().catch(() => null)) as { error?: string } | null;
-  if (resp.status === 401) throw fail(tr('Tu sesión venció: vuelve a entrar a Frame.'));
   if (resp.status === 403) {
     // La nube dice que esta cuenta ya no la tiene activada (venció o es otra cuenta): access.ts lo anota.
     window.dispatchEvent(new Event(LORE_LOCKED_EVENT));
@@ -168,20 +169,13 @@ const ACCESS_ERRORS: Record<string, (left?: number) => string> = {
 };
 
 async function accessCall(path: string, body?: unknown): Promise<Record<string, unknown>> {
-  const supabase = getSupabase();
-  if (!supabase || !navigator.onLine) throw offline();
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) throw fail(ACCESS_ERRORS.account());
-  const resp = await nubeFetch(`${NUBE}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { authorization: `Bearer ${data.session.access_token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }).catch(() => {
+  if (!getSupabase() || !navigator.onLine) throw offline();
+  const resp = await nubeCall(path, body === undefined ? {} : { body: JSON.stringify(body) }).catch((error: unknown) => {
+    if (error instanceof NubeAuthError) throw accountProblem(error, ACCESS_ERRORS.account());
     throw offline();
   });
   const out = ((await resp.json().catch(() => null)) ?? {}) as Record<string, unknown>;
   if (resp.ok) return out;
-  if (resp.status === 401) throw fail(tr('Tu sesión venció: vuelve a entrar a Frame.'));
   const known = typeof out.error === 'string' ? ACCESS_ERRORS[out.error] : undefined;
   throw fail(known ? known(typeof out.left === 'number' ? out.left : undefined) : tr('La Biblioteca no respondió ({status}). Inténtalo de nuevo.', { status: resp.status }));
 }
@@ -387,6 +381,13 @@ export function useLoreIndex(source: LoreSource | null): LoreIndexState {
       });
     return () => controller.abort();
   }, [source, tick]);
+
+  // La cuenta se reconectó sin salir de Frame (ReconnectDialog): el índice se vuelve a pedir solo.
+  useEffect(() => {
+    const again = () => setTick((t) => t + 1);
+    window.addEventListener(SESSION_RESTORED_EVENT, again);
+    return () => window.removeEventListener(SESSION_RESTORED_EVENT, again);
+  }, []);
 
   // Con una fuente que aún no empezó a cargar (el efecto corre tras pintar), ya es «cargando».
   const waiting = !!source && state.of !== source.id;

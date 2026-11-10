@@ -10,6 +10,7 @@ import { listImageKeys } from '@/lib/music-db';
 import { richNoteToLine } from '@/lib/rich-note';
 import { monthName } from '@/lib/timetable';
 import { CLOUD_APPLIED_EVENT } from '@/lib/supabase/sync';
+import { getConnectionState } from '@/lib/connection-status';
 import { dateLocale, subscribeLang, tr } from '@/lib/i18n';
 
 // ============================================================
@@ -100,8 +101,10 @@ const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd
 
 /** El motivo de un fallo en palabras del usuario: los de la red llegan en inglés y en jerga. */
 function humanError(message: string): string {
+  // La nube cerró la sesión de este equipo: lo mismo que dice la campana, que es desde donde se arregla.
+  if (getConnectionState().sessionLostFor) return tr('La sesión se cerró: vuelve a conectar tu cuenta');
   if (/fetch|network|timed? ?out|abort|ECONN|ENOTFOUND|load failed/i.test(message)) return tr('No se pudo conectar con la nube');
-  if (/JWT|token|refresh/i.test(message)) return tr('La sesión caducó: vuelve a iniciar sesión');
+  if (/JWT|token|refresh/i.test(message)) return tr('La sesión se cerró: vuelve a conectar tu cuenta');
   return message.replace(/\.$/, '');
 }
 

@@ -1,5 +1,6 @@
 import type { Session, SupabaseClient, User, AuthChangeEvent } from '@supabase/supabase-js';
 import { getRecoveryClient, getSupabase } from './client';
+import { SESSION_KEY, readStoredSession, sessionStore } from './session-store';
 import { removeCloudImages } from '@/lib/image-sync';
 import { markDeviceUnlinked } from '@/lib/devices';
 import { getLang, tr } from '@/lib/i18n';
@@ -217,36 +218,58 @@ export function within<T>(task: Promise<T>, ms: number): Promise<T | undefined> 
   return Promise.race([task, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))]);
 }
 
-const AUTH_STORAGE_KEY = 'aether-auth';
+const AUTH_STORAGE_KEY = SESSION_KEY;
 
 /** ¿Hay una sesión guardada en este equipo? (Lo que manda: supabase-js siempre lee de ahí.) */
 export function hasStoredSession(): boolean {
-  try {
-    return localStorage.getItem(AUTH_STORAGE_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
-function storedSession(): { access_token?: unknown; user?: { id?: unknown } } | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as { access_token?: unknown; user?: { id?: unknown } } | null) : null;
-  } catch {
-    return null;
-  }
+  return sessionStore.getItem(AUTH_STORAGE_KEY) !== null;
 }
 
 /** La llave de acceso guardada: con ella se le pide a la nube que cierre ESA sesión. */
-function storedAccessToken(): string | null {
-  const token = storedSession()?.access_token;
+export function storedAccessToken(): string | null {
+  const token = readStoredSession()?.access_token;
   return typeof token === 'string' && token ? token : null;
 }
 
 /** La cuenta de la sesión guardada en este equipo, o null si no hay ninguna. */
 export function storedSessionUserId(): string | null {
-  const id = storedSession()?.user?.id;
+  const id = (readStoredSession()?.user as { id?: unknown } | null | undefined)?.id;
   return typeof id === 'string' && id ? id : null;
+}
+
+// Cómo entra cada cuenta (Google, contraseña): se anota mientras la sesión
+// vive, para que «Volver a conectar» ofrezca solo eso si un día se cierra
+// (ReconnectDialog). Sin nada anotado se ofrecen las dos.
+const METHODS_KEY = 'frameSignInMethods_';
+
+export interface SignInMethods {
+  google: boolean;
+  password: boolean;
+}
+
+export function rememberSignInMethods(user: User | null | undefined): void {
+  if (!user?.id) return;
+  const meta = user.app_metadata as { provider?: unknown; providers?: unknown } | undefined;
+  const list = Array.isArray(meta?.providers) ? meta.providers : typeof meta?.provider === 'string' ? [meta.provider] : [];
+  const names = list.filter((name): name is string => typeof name === 'string');
+  if (names.length === 0) return;
+  try {
+    localStorage.setItem(METHODS_KEY + user.id, names.join(','));
+  } catch {
+    /* es solo una comodidad */
+  }
+}
+
+export function signInMethodsOf(uid: string): SignInMethods | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(METHODS_KEY + uid);
+  } catch {
+    raw = null;
+  }
+  if (!raw) return null;
+  const names = raw.split(',');
+  return { google: names.includes('google'), password: names.includes('email') };
 }
 
 /**
@@ -316,7 +339,7 @@ export async function signOut(options: { everywhere?: boolean } = {}): Promise<{
   }
   if (hasStoredSession()) {
     try {
-      for (const suffix of ['', '-code-verifier', '-user']) localStorage.removeItem(AUTH_STORAGE_KEY + suffix);
+      for (const suffix of ['', '-code-verifier', '-user']) sessionStore.removeItem(AUTH_STORAGE_KEY + suffix);
       // Sin aviso SIGNED_OUT nadie consumió la marca: fuera, para que un
       // cierre posterior de la nube no se tome por pedido del usuario.
       localStorage.removeItem(INTENTIONAL_SIGN_OUT_KEY);
