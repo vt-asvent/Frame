@@ -144,7 +144,7 @@ For the purposes of these Terms, the following terms have the meaning assigned t
 
 **9.3. Scope of the Cloud Backup.** With an active Account and an available connection, the Application replicates the **Academic State**, comprising subjects, collections, tasks and their progress, study sessions with their notes, grades, habits, local calendar events and reminders with the colors of their cells, notes saved without a subject, goals and settings.
 
-**9.4. Express exclusions from the Cloud Backup.** **The following are not replicated, under any circumstances and because of their size: music files with their covers and lyrics, voice recordings and attachments.** Nor are the images that the User uploads on their own to playlists, subjects and collections, which remain on the device where they were added. To keep them, the User must save a copy of those files by their own means. The profile picture and the schedule photos are saved in a private folder of the Account so that they appear on the User’s other devices; of the images the User picks from Frame’s gallery, only a reference (which one it is and its crop) is replicated. The images of playlists, subjects and collections that earlier versions of the Application already saved in that folder are kept there solely to restore them on the User’s devices and are deleted when the Account is deleted, in accordance with the Privacy Policy.
+**9.4. Express exclusions from the Cloud Backup.** **The following are not replicated, under any circumstances and because of their size: music files with their covers and lyrics, voice recordings and attachments.** Nor are the images that the User uploads on their own to playlists, subjects and collections, which remain on the device where they were added. To keep them, the User must save a copy of those files by their own means. With the Wire extension on, music with its covers and lyrics, attachments, resource files and those images pass to the User’s other devices through the User’s own Google Drive account, which serves only as a relay: they are deleted from it as soon as every device has them, so **Wire is not a backup**. The profile picture and the schedule photos are saved in a private folder of the Account so that they appear on the User’s other devices; of the images the User picks from Frame’s gallery, only a reference (which one it is and its crop) is replicated. The images of playlists, subjects and collections that earlier versions of the Application already saved in that folder are kept there solely to restore them on the User’s devices and are deleted when the Account is deleted, in accordance with the Privacy Policy.
 
 **9.5. Frequency.** Under normal operating conditions, the replication runs periodically —approximately every minute—, when the Application is closed and when a change of device is detected. The Application also keeps a local copy of the last complete version of the data as a contingency against a corrupt write.
 
@@ -154,7 +154,7 @@ For the purposes of these Terms, the following terms have the meaning assigned t
 
 ### Clause 10. Third-Party Services
 
-**10.1.** The Application integrates Third-Party Services, in particular the services of Google LLC —Gmail, YouTube, Classroom and Drive—, the infrastructure of **Supabase** and, if you connect web AI chats or ask Frame to read a schedule photo, that of **Cloudflare**.
+**10.1.** The Application integrates Third-Party Services, in particular the services of Google LLC —Gmail, YouTube, Classroom and Drive—, the infrastructure of **Supabase** and, if you connect web AI chats, ask Frame to read a schedule photo or to translate lyrics, or use the Library, that of **Cloudflare**. If you ask it to read a list of songs by its link, the Application also queries that list’s public page on the service that hosts it (Spotify, Deezer, YouTube or Apple Music).
 
 **10.2.** The use of those services is governed by the terms and policies of their respective owners, which the User accepts directly with them. The Provider is not a party to that relationship.
 
@@ -323,13 +323,13 @@ Frame is designed so that **most of your information never leaves your computer*
 
 ### 3.1 Data that stays exclusively on your device
 
-Subjects, collections, teachers, tasks and their content, resource notes, attachments, study sessions, focus ratings, grades, habits, local calendar events, schedules, goals, voice recordings, images and the music library, with the covers and lyrics that your songs carry or that you add to them, and what you listen to in it (plays and time per song, playlist and artist, day by day).
+Subjects, collections, teachers, tasks and their content, resource notes, attachments, study sessions, focus ratings, grades, habits, local calendar events, schedules, goals, voice recordings, images and the music library, with the covers and lyrics that your songs carry or that you add to them, and what you listen to in it (plays and time per song, playlist and artist, day by day). Also the lyrics translations you ask for (section 3.10) and the record of the songs you downloaded with a download extension, which is there so they aren’t downloaded twice.
 
 **We don’t carry out any processing of this data**: it isn’t transmitted to the Provider or to third parties, except for the subset described in 3.2 when you sign in.
 
 ### 3.2 Data replicated in your account
 
-If you sign in, your **Academic State** is replicated: subjects, tasks and their progress, sessions and their notes, grades, habits, calendar events and reminders with the colors of their cells, notes without a subject, playlists and their order, the songs you mark with the heart (by their title and artist, never the file), study videos, schedules with their classes, goals and settings (including the language, the image proportion and the weather city you pick by hand). Changes also travel through a live channel of your Account, encrypted with a key that only your devices know, to reach your other devices in under a second. Your **profile picture and your schedule photos** are also saved in a private folder of your Account, so that they appear on your other devices; of the images from Frame’s gallery that you give your playlists, subjects and collections, only a reference (which one it is and its crop) travels. **Music, voice recordings, attachments and the images you upload yourself to playlists, subjects and collections are never replicated.**
+If you sign in, your **Academic State** is replicated: subjects, tasks and their progress, sessions and their notes, grades, habits, calendar events and reminders with the colors of their cells, notes without a subject, playlists and their order, the songs you mark with the heart (by their title and artist, never the file), study videos, schedules with their classes, your Library favorites (which ones they are, not the files), goals and settings (including the language, the image proportion and the weather city you pick by hand). Changes also travel through a live channel of your Account, encrypted with a key that only your devices know, to reach your other devices in under a second. Your **profile picture and your schedule photos** are also saved in a private folder of your Account, so that they appear on your other devices; of the images from Frame’s gallery that you give your playlists, subjects and collections, only a reference (which one it is and its crop) travels. **Music, voice recordings, attachments and the images you upload yourself to playlists, subjects and collections are never replicated.** With the Wire extension, those files —except recordings— travel through your own Google Drive, not through your Account (section 6.3 bis). Each signed-in device also leaves its record in your Account (section 3.9).
 
 ### 3.3 Account data
 
@@ -337,7 +337,7 @@ Email, first and last names, username, profile picture if you upload one, and au
 
 ### 3.4 Diagnostic data
 
-Pseudonymous installation identifier, Application version, platform, approximate country (that of the location you set for the weather), timestamp, technical error logs (name and message of the failure, the screen where it happened and its position within the Application’s code) and **aggregated usage indicators**: that the Application was opened that day, which screens were opened, how many study sessions and minutes were recorded, how many tasks were completed, how many reports were generated and the accumulated totals of subjects, habits, playlists and songs. Also the **daily and weekly series** of those same counts —study minutes and sessions, the average focus you marked, how many tasks you completed, how many were high priority and how many on time, and your habit consistency as a percentage—, and the shape of each task created or completed (type, priority, whether it had a date). Also a **usage profile**: your approximate place —the city, region and country of the weather location on Home, never its coordinates or your neighborhood—, your time zone, the Application’s language and your system’s, the type of device (computer, tablet or phone), on which weekdays and at what hours you study (minutes per time slot, over the last 140 days), how long your sessions last and the focus you report (in ranges), your current and best streak, and **how many** items you have in each feature (for example, how many notes or events, never which ones). These indicators are also sent in guest mode. **They don’t include the content of your tasks, notes, recordings or documents, or the names of your subjects.**
+Pseudonymous installation identifier, Application version, platform, approximate country (that of the location you set for the weather), timestamp, technical error logs (name and message of the failure, the screen where it happened and its position within the Application’s code) and **aggregated usage indicators**: that the Application was opened that day, which screens were opened, how many study sessions and minutes were recorded, how many tasks were completed, how many reports were generated, how many songs you downloaded with a download extension and how many Library files (how many, never which ones), and the accumulated totals of subjects, habits, playlists and songs. Also the **daily and weekly series** of those same counts —study minutes and sessions, the average focus you marked, how many tasks you completed, how many were high priority and how many on time, and your habit consistency as a percentage—, and the shape of each task created or completed (type, priority, whether it had a date). Also a **usage profile**: your approximate place —the city, region and country of the weather location on Home, never its coordinates or your neighborhood—, your time zone, the Application’s language and your system’s, the type of device (computer, tablet or phone), on which weekdays and at what hours you study (minutes per time slot, over the last 140 days), how long your sessions last and the focus you report (in ranges), your current and best streak, and **how many** items you have in each feature (for example, how many notes or events, never which ones). For Accounts, the records in section 3.9 are also used to count on how many devices the session is open and what type they are. These indicators are also sent in guest mode. **They don’t include the content of your tasks, notes, recordings or documents, or the names of your subjects.**
 
 ### 3.5 Data we process when you write to us
 
@@ -367,6 +367,34 @@ Only when you ask Frame to read the classes in a schedule photo —when adding i
 
 **It’s optional.** You can add the classes by hand, without sending the photo anywhere.
 
+### 3.9 Your Account’s devices
+
+If you sign in, each device where you open Frame leaves a record in your Account, so that Settings → “Devices” can show you where your session is open and whether they all have the same data:
+
+**What each record holds.** A random identifier of that installation, the type of device (laptop, phone or tablet), its system (Windows or Android), the Frame version, whether the session is still open or was closed, the first and last time it connected, and a summary of what it still has to sync (how many things of each type, never which ones). **It doesn’t hold the device’s name, its network or its location.**
+
+**Who sees it.** Only you, from your devices. The person responsible for Frame sees only counts: on how many devices each Account is open and what type they are (section 3.4).
+
+**How long it lasts.** You can remove a device you no longer use from the list; at most twenty records are kept per Account, and all of them are deleted when the Account is deleted.
+
+### 3.10 Lyrics translation
+
+Only if you turn on “Translation” on a song’s lyrics, and only when those lyrics aren’t already in your Frame’s language —the Application checks that on your computer, without sending them—:
+
+**What passes through without being stored.** The lines of the lyrics travel encrypted with your Account session to a service of the Provider hosted on Cloudflare, which hands them to **Gemma 4**, an open model on **Cloudflare Workers AI**, and returns their translation to you. The title, the artist and the song file don’t travel. **Neither that service nor Cloudflare stores the lyrics or their translation**, or uses them to train models: Cloudflare processes them with no data retention.
+
+**What is stored.** The service notes how many lyrics your Account translates each day (up to 30), along with its identifier; that note is deleted the next day. The translation is saved on your computer, so it isn’t requested again.
+
+**It’s optional.** With “Translation” off, nothing is sent.
+
+### 3.11 Library (AK Lore extension)
+
+Only if you turn on the AK Lore extension, which is for school accounts:
+
+**What happens.** The Application requests the index of the material, and each file you open or download, from a service of the Provider hosted on Cloudflare, with your Account session. The service checks that your email belongs to the school and is verified —it compares a digest (SHA-256) of its domain, without storing it— and hands you the file, which it fetches from the Provider’s storage on Google Drive. **You never get access to that Drive, and the service doesn’t see your Google Drive or anything on your computer.**
+
+**What is stored.** How many files and how many bytes your Account downloads each day, along with its identifier, to apply a daily cap; that note is deleted the next day. Which files you open or download isn’t stored. The ones you mark as favorites are part of your Academic State (section 3.2).
+
 ## 4. Purposes and legal bases
 
 **Providing the service.** Account data and the replicated Academic State are processed to authenticate you, keep the backup and synchronize your information between devices. **Legal basis:** performance of the contractual relationship established in the Terms and Conditions. Without this data the Account Services can’t be provided.
@@ -378,6 +406,12 @@ Only when you ask Frame to read the classes in a schedule photo —when adding i
 **Web AI chats.** The data in section 3.7 is processed to connect the chat you chose with your Frame and keep that connection. **Legal basis:** your consent, which you give when connecting the chat and withdraw with “Disconnect the chats”.
 
 **Schedule reading.** The data in section 3.8 is processed to read the classes in the photo you choose and to limit each Account’s daily readings. **Legal basis:** your consent, which you give when asking for each reading.
+
+**Your Account’s devices.** The records in section 3.9 are processed to show you where your session is open, check that your devices have the same data and fix it if they don’t. **Legal basis:** performance of the contractual relationship, as part of syncing across devices.
+
+**Lyrics translation.** The data in section 3.10 is processed to translate the lyrics you choose and limit each Account’s daily translations. **Legal basis:** your consent, which you give by turning on “Translation” and withdraw by turning it off.
+
+**Library.** The data in section 3.11 is processed to check that the Account belongs to the school, hand you the material and limit daily downloads. **Legal basis:** your consent, which you give by turning on the extension and withdraw by turning it off.
 
 **Handling questions and reports.** **Legal basis:** your consent when you write to us and the legitimate interest in assisting you.
 
@@ -401,17 +435,19 @@ If we become aware that data from a minor under fourteen has been collected with
 
 **6.3.** When you use the Gmail, YouTube, Classroom or Drive interfaces, **you interact directly with Google LLC** under its own privacy policy. In that relationship Google is the data controller and the Provider doesn’t take part.
 
+**6.3 bis. Wire.** If you turn on the Wire extension and connect it to a Google account, your songs (with their cover and lyrics), your task attachments, your resource files and the images you upload to subjects, collections and playlists pass from one device to another through **your own Google Drive**. The Application leaves them in a folder it creates itself —with a permission that only gives it access to the files it created, not to the rest of your Drive— and deletes them for good as soon as all your devices have them; a device that hasn’t connected for a week is no longer waited for. **Those files don’t pass through the Provider**: in that relationship Google is the data controller, under its privacy policy. Wire is for carrying your files from one device to another, not for keeping them.
+
 **6.4. Limited use commitment.** The Application’s use of information received from Google APIs complies with the *Google API Services User Data Policy*, including its limited use requirements. In particular, that data **is used only to provide or improve user-facing features, isn’t transferred to third parties except to provide those features or when required by law, isn’t used for advertising and isn’t read by humans** except with express consent, a legal requirement or for security reasons.
 
-**6.4 bis. Music, covers and lyrics.** On its own, the Application doesn’t download songs, covers or lyrics, or query any service to search for them: it plays the files you import and shows the cover and lyrics those files carry, the ones you add from your device and the ones earlier versions already saved on it, which are kept. If you install and turn on a **download extension**, the Application installs the third-party program that comes with it on your computer —only if it’s signed by its author and downloaded from its official page, without administrator rights—, opens it when needed and keeps it up to date; the Microsoft Store version doesn’t install programs. At your request, the Application sends it the link and details of each song you add (title, artist, album and duration), and it’s **that program** that downloads it and queries public lyrics and cover services to complete it; the Application only imports the file it hands over. That program and those services are governed by their own terms, and it’s up to you to use them respecting intellectual property rights and each platform’s terms. Without that extension, none of it leaves your computer.
+**6.4 bis. Music, covers and lyrics.** On its own, the Application doesn’t download songs, covers or lyrics, or query any service to search for them: it plays the files you import and shows the cover and lyrics those files carry, the ones you add from your device and the ones earlier versions already saved on it, which are kept. If you install and turn on a **download extension**, the Application installs the third-party program that comes with it on your computer —only if it’s signed by its author and downloaded from its official page, without administrator rights—, opens it when needed and keeps it up to date; the Microsoft Store version doesn’t install programs. At your request, the Application sends it the link and details of each song you add (title, artist, album and duration), and it’s **that program** that downloads it and queries public lyrics and cover services to complete it; the Application only imports the file it hands over. That program and those services are governed by their own terms, and it’s up to you to use them respecting intellectual property rights and each platform’s terms. Without that extension, none of it leaves your computer. If you paste a **list’s link** (from Spotify, Deezer, YouTube or Apple Music) into “Add music”, the Application reads that list’s public page from your computer —the same thing anyone would see, without your account on that service or any key— to find out which songs it has; that service receives the request like any visitor’s, and the Provider neither takes part nor receives the list.
 
-**6.4 ter. Web AI chats and schedule reading.** The relay in section 3.7 and the reader in section 3.8 run on **Cloudflare, Inc.**, which acts as a **data processor**: it processes the calls and the photos in the data centers of its worldwide network and keeps the service’s database in North America. This involves another **cross-border flow of personal data**, of which you are informed when connecting the chat or asking for the reading. The chat you connect processes what it receives as the controller of that processing, under its own policy.
+**6.4 ter. Web AI chats, schedule reading, lyrics translation and Library.** The relay in section 3.7, the reader in section 3.8, the translator in section 3.10 and the Library service in section 3.11 run on **Cloudflare, Inc.**, which acts as a **data processor**: it processes the calls, the photos and the lyrics in the data centers of its worldwide network and keeps the service’s database in North America. This involves another **cross-border flow of personal data**, of which you are informed when connecting the chat, asking for the reading or the translation, or turning on the extension. The Library’s material is stored in a Google Drive account of the Provider, which only that service accesses. The chat you connect processes what it receives as the controller of that processing, under its own policy.
 
 **6.5.** We don’t transfer personal data to third parties other than those indicated, except at the request of a competent authority in the exercise of its functions.
 
 ## 7. Retention periods
 
-Account data and replicated Academic State: while the Account remains active. Inactive accounts: up to twenty-four (24) months, with the notice provided for in the Terms. Diagnostic data: a maximum of twelve (12) months from its receipt. Support communications: up to twenty-four (24) months from the closing of the case. Records of acceptance of the Terms: for the duration of the relationship and four (4) years afterwards, as proof of the contract. Security logs: six (6) months. Web AI chats: connection codes, ten (10) minutes; authorizations, five (5) minutes; sessions, up to one hundred eighty (180) days from their last use or until you disconnect the chats; calls and their answers aren’t kept.
+Account data and replicated Academic State: while the Account remains active. Inactive accounts: up to twenty-four (24) months, with the notice provided for in the Terms. Diagnostic data: a maximum of twelve (12) months from its receipt. Support communications: up to twenty-four (24) months from the closing of the case. Records of acceptance of the Terms: for the duration of the relationship and four (4) years afterwards, as proof of the contract. Security logs: six (6) months. Web AI chats: connection codes, ten (10) minutes; authorizations, five (5) minutes; sessions, up to one hundred eighty (180) days from their last use or until you disconnect the chats; calls and their answers aren’t kept. Device records: while the Account remains active or until you remove the device from the list; at most twenty per Account. Schedule readings, lyrics translations and Library downloads: each Account’s daily count is deleted the next day; the photos, the lyrics and the files aren’t kept.
 
 Once the period expires, the data is deleted or irreversibly anonymized.
 
@@ -472,7 +508,7 @@ This annex details, category by category, what is processed and what for. It ful
 | Username and profile picture | Personalizing the interface | Replicated with the Account |
 | Credentials | Authentication | Encrypted; never readable by the Provider |
 | Academic State | Backup and synchronization | Replicated only with an active Account |
-| Music, recordings, attachments and images you upload to playlists, subjects and collections | Playback, recording and reference | **Never leave the device** |
+| Music, recordings, attachments and images you upload to playlists, subjects and collections | Playback, recording and reference | **They don’t pass through the Provider**; with Wire, and except recordings, through your own Google Drive until all your devices have them |
 | Account images (profile and schedule) | Appearing on your other devices | Private folder of your Account; deleted when the Account is deleted |
 | References to images from Frame’s gallery (which one it is and its crop) | The same image appearing on your other devices | Replicated with the Academic State |
 | Error logs, version and usage indicators (including their daily series) | Diagnosis, improvement and aggregated impact statistics | Pseudonymized; you can object by email |
@@ -480,6 +516,9 @@ This annex details, category by category, what is processed and what for. It ful
 | Access logs | Account security | Kept for 6 months |
 | Support communications | Handling the case | Kept for 24 months |
 | Web AI chat sessions (Account identifier, chat name, fingerprints and dates) | Connecting the chat you chose with your Frame | Cloudflare, only if you connect a chat; calls aren’t stored |
+| Records of your devices (type, system, Frame version, session open or closed, dates and a summary of what’s pending) | Showing you where your session is open and whether everything is synced | Replicated with the Account; no device name, network or location |
+| Lyrics you ask to translate | Translating them into your Frame’s language | Cloudflare Workers AI, without being stored; the translation stays on your computer |
+| Daily counts of schedule readings, lyrics translations and Library downloads | Applying each Account’s daily cap | Cloudflare; deleted the next day |
 
 ## Annex B — Data processors and sub-processors
 
@@ -487,7 +526,7 @@ List in force as of ${effectiveDate}:
 
 - **Supabase** — authentication, database and backup storage — servers in the United States of America (Amazon Web Services region us-west-2, Oregon) — processing contract: to be defined; in the meantime, the data processing agreement incorporated into Supabase’s terms of service applies.
 - **GitHub, Inc.** — hosting of the installers and the update channel — United States.
-- **Cloudflare, Inc.** — relay for web AI chats, only if you connect them (section 3.7), and schedule reading with Workers AI, only if you ask for it (section 3.8) — worldwide network of data centers; database in North America — the data processing agreement incorporated into Cloudflare’s terms of service applies.
+- **Cloudflare, Inc.** — relay for web AI chats, only if you connect them (section 3.7); schedule reading and lyrics translation with Workers AI, only if you ask for them (sections 3.8 and 3.10); and the Library service, only with the AK Lore extension (section 3.11) — worldwide network of data centers; database in North America — the data processing agreement incorporated into Cloudflare’s terms of service applies.
 
 Every addition or replacement of a processor will be communicated in accordance with section 12 of the Privacy Policy.
 

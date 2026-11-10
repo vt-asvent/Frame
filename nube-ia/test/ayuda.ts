@@ -16,6 +16,17 @@ export const VERIFICADOR = 'verificador-de-pruebas-con-longitud-suficiente-12345
 export const sesion = (cuenta: string) => `sb-${cuenta}`;
 export const ANA = '11111111-2222-4333-8444-555555555555';
 export const LUIS = '99999999-8888-4777-8666-555555555555';
+/** AK Lore: el colegio de prueba y sus correos (uno sin comprobar). */
+export const COLEGIO = 'colegio.prueba';
+export const ALUMNA = '22222222-3333-4444-8555-666666666666';
+export const SIN_COMPROBAR = '33333333-4444-4555-8666-777777777777';
+const CORREOS: Record<string, { email: string; email_confirmed_at: string | null }> = {
+  [ALUMNA]: { email: `alumna@${COLEGIO}`, email_confirmed_at: '2026-01-01T00:00:00Z' },
+  [SIN_COMPROBAR]: { email: `nuevo@${COLEGIO}`, email_confirmed_at: null },
+  [LUIS]: { email: 'luis@otro.prueba', email_confirmed_at: '2026-01-01T00:00:00Z' },
+};
+/** El Drive de Asvent de mentira: cada archivo es un PDF corto con su id dentro. */
+export const pdfDe = (id: string) => `%PDF-1.7 archivo ${id}`;
 
 export const HERRAMIENTAS = [
   {
@@ -123,7 +134,20 @@ const IA_FALSA = `
 import { WorkerEntrypoint } from 'cloudflare:workers';
 export class IA extends WorkerEntrypoint {
   async run(model, input) {
-    const foto = input.messages[0].content.find((p) => p.type === 'image_url').image_url.url;
+    const contenido = input.messages[0].content;
+    if (typeof contenido === 'string') {
+      // Letras (letras.ts): «sin-ia» simula la cuota gratuita agotada, «rota»
+      // una respuesta con otro número de líneas y «cortada» una que se queda a
+      // medias (sin su final). Las líneas vuelven numeradas.
+      if (model !== '@cf/google/gemma-4-26b-a4b-it' || !input.response_format) throw new Error('pedido mal formado');
+      if (contenido.includes('sin-ia')) throw new Error('3036: Account limited: you have used up your daily free allocation of 10,000 neurons');
+      const lineas = contenido.split('\\n').filter((l) => /^\\d+\\. /.test(l)).map((l) => l.replace(/^\\d+\\. /, ''));
+      const usage = { neurons: 12 };
+      const salida = contenido.includes('rota') ? [{ n: 1, text: 'una sola' }] : lineas.map((l, i) => ({ n: i + 1, text: (i + 1) + '. [es] ' + l })).reverse();
+      const texto = JSON.stringify({ from: 'EN', lines: salida });
+      return { choices: [{ message: { content: contenido.includes('cortada') ? texto.slice(0, -30) : texto } }], usage };
+    }
+    const foto = contenido.find((p) => p.type === 'image_url').image_url.url;
     const qwen = model === '@cf/qwen/qwen3.8-27b';
     if ((!qwen && model !== '@cf/google/gemma-4-26b-a4b-it') || !/^data:image\\/(jpeg|png|webp);base64,/.test(foto) || !input.response_format) throw new Error('pedido mal formado');
     if (foto.includes('Y3Vwbw')) throw new Error('3036: Account limited: you have used up your daily free allocation of 10,000 neurons');
@@ -154,15 +178,36 @@ export async function crearArnes(): Promise<Arnes> {
         compatibilityDate: '2026-08-01',
         d1Databases: { DB: 'frame-ia-pruebas' },
         durableObjects: { RELAY: { className: 'FrameRelay', useSQLite: true } },
-        bindings: { FRAME_IA_KEY: 'clave-de-pruebas-que-no-es-secreta', SUPABASE_URL: 'https://supabase.prueba/', SUPABASE_ANON_KEY: 'anon-de-pruebas' },
+        bindings: {
+          FRAME_IA_KEY: 'clave-de-pruebas-que-no-es-secreta',
+          SUPABASE_URL: 'https://supabase.prueba/',
+          SUPABASE_ANON_KEY: 'anon-de-pruebas',
+          LORE_DRIVE_REFRESH: 'renovacion-de-prueba',
+          LORE_GOOGLE_ID: 'cliente-de-prueba',
+          LORE_GOOGLE_SECRET: 'secreto-de-prueba',
+          LORE_DOMAIN_HASH: createHash('sha256').update(COLEGIO).digest('hex'),
+        },
         serviceBindings: { AI: { name: 'ia-falsa', entrypoint: 'IA' } },
         outboundService: async (pedido: any) => {
           const url = new URL(pedido.url);
           const auth = pedido.headers.get('authorization') ?? '';
+          if (url.hostname === 'oauth2.googleapis.com' && url.pathname === '/token') {
+            const form = new URLSearchParams(await pedido.text());
+            const ok = form.get('refresh_token') === 'renovacion-de-prueba' && form.get('client_id') === 'cliente-de-prueba' && form.get('client_secret') === 'secreto-de-prueba';
+            return new Response(JSON.stringify(ok ? { access_token: 'acceso-drive', expires_in: 3600 } : { error: 'invalid_grant' }), { status: ok ? 200 : 400 }) as never;
+          }
+          if (url.hostname === 'www.googleapis.com' && url.pathname.startsWith('/drive/v3/files/')) {
+            const id = decodeURIComponent(url.pathname.slice('/drive/v3/files/'.length));
+            if (auth !== 'Bearer acceso-drive' || url.searchParams.get('alt') !== 'media') return new Response('{}', { status: 401 }) as never;
+            if (id === 'falta') return new Response('{}', { status: 404 }) as never;
+            const cuerpo = pdfDe(id);
+            return new Response(cuerpo, { headers: { 'content-type': 'application/pdf', 'content-length': String(cuerpo.length) } }) as never;
+          }
           if (url.hostname !== 'supabase.prueba' || url.pathname !== '/auth/v1/user' || pedido.headers.get('apikey') !== 'anon-de-pruebas' || !auth.startsWith('Bearer sb-')) {
             return new Response(JSON.stringify({ msg: 'invalid' }), { status: 401 }) as never;
           }
-          return new Response(JSON.stringify({ id: auth.slice(10), aud: 'authenticated' }), { headers: { 'content-type': 'application/json' } }) as never;
+          const id = auth.slice(10);
+          return new Response(JSON.stringify({ id, aud: 'authenticated', ...(CORREOS[id] ?? {}) }), { headers: { 'content-type': 'application/json' } }) as never;
         },
       },
       { name: 'ia-falsa', modules: true, compatibilityDate: '2026-08-01', script: IA_FALSA },

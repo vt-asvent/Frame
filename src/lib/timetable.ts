@@ -94,13 +94,63 @@ export function cleanClass(raw: unknown): TimetableClass | null {
 
 const sameSubject = (a: string, b: string) => normalize(a) === normalize(b);
 
-/** Normaliza para comparar nombres («Matemática» ≈ «matematica»). */
+const wordsOf = (value: string) => normalize(value).split(' ').filter(Boolean);
+/** La misma palabra, o su plural («matemática» y «matemáticas», «arte» y «artes»). */
+const sameWord = (a: string, b: string) => {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 4 && long.length - short.length <= 2 && long.startsWith(short);
+};
+
+/**
+ * La asignatura de Frame que corresponde a una clase leída del horario
+ * (1.9.2). De más a menos seguro:
+ *   · el mismo nombre al normalizar;
+ *   · una dentro de la otra por PALABRAS enteras y empezando igual («Física» y
+ *     «Física NM», «Historia» e «Historia del Perú»);
+ *   · una abreviatura de una palabra («Mat», «Comu») o unas siglas («TdC»,
+ *     «CAS»), si solo una asignatura empieza así o tiene esas iniciales.
+ * Si dos encajan igual, ninguna: la tarjeta lleva la imagen, el profesor y
+ * las tareas de la asignatura, y es peor enseñar los de otra que ninguno. Por
+ * eso tampoco vale el parecido letra a letra: «Educación Física» no es
+ * «Física», ni «Aritmética» es «Ética».
+ */
+export function courseForSubject<T extends { name: string }>(courses: readonly T[], subject: string): T | null {
+  const wanted = wordsOf(subject);
+  if (wanted.length === 0) return null;
+  const named = courses.map((course) => ({ course, words: wordsOf(course.name) })).filter((c) => c.words.length > 0);
+  const key = wanted.join(' ');
+  const exact = named.find((c) => c.words.join(' ') === key);
+  if (exact) return exact.course;
+  const within = named.filter((c) => {
+    if (!sameWord(c.words[0], wanted[0])) return false;
+    const [short, long] = c.words.length <= wanted.length ? [c.words, wanted] : [wanted, c.words];
+    return short.every((word) => long.some((other) => sameWord(word, other)));
+  });
+  if (within.length > 0) return within.length === 1 ? within[0].course : null;
+  if (wanted.length > 1) return null;
+  const short = wanted[0];
+  // Una abreviatura («Mat», «Comu»): el comienzo del nombre de una sola asignatura.
+  const starting = short.length >= 3 ? named.filter((c) => c.words[0].startsWith(short)) : [];
+  // Unas siglas («TdC», «CAS», «DPCC»): las iniciales de una sola asignatura, con o sin sus «de», «del» e «y».
+  const initials = (words: string[]) => words.map((word) => word[0]).join('');
+  const spelled = short.length >= 2 ? named.filter((c) => c.words.length >= 2 && (initials(c.words) === short || initials(c.words.filter((word) => word.length > 3)) === short)) : [];
+  const candidates = new Set([...starting, ...spelled]);
+  return candidates.size === 1 ? [...candidates][0].course : null;
+}
+
+/**
+ * Normaliza para comparar nombres («Matemática» ≈ «matematica»). Con letras
+ * de cualquier alfabeto: quedándose solo con a–z, «Математика» y «数学» se
+ * volvían la cadena vacía y todas las asignaturas en ruso o japonés eran «la
+ * misma».
+ */
 export function normalize(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 

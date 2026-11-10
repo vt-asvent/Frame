@@ -89,7 +89,7 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object';
 
 /** El texto (o el objeto) que devolvió el modelo, venga en el formato que venga. */
-function answerOf(out: unknown): unknown {
+export function answerOf(out: unknown): unknown {
   const o = out as { response?: unknown; choices?: { message?: { content?: unknown } }[] } | null;
   return o?.choices?.[0]?.message?.content ?? o?.response ?? null;
 }

@@ -1,3 +1,4 @@
+import { cappedFetchWith } from '@/lib/capped-fetch';
 import { tr } from '@/lib/i18n';
 
 // ============================================================
@@ -12,6 +13,12 @@ import { tr } from '@/lib/i18n';
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+
+// Con plazo (1.9.2): medio minuto para que Google conteste más lo que tarde el
+// archivo a 16 KB/s (una canción de 5 MB, unos cinco minutos; por debajo de
+// eso la red no sirve para mover música). Sin plazo, una petición colgada
+// dejaba el relevo «sincronizando» hasta reiniciar Frame.
+const driveFetch = cappedFetchWith(() => ({ answerMs: 30_000, unsizedBodyMs: 300_000, bytesPerMs: 16 }));
 export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const FIELDS = 'id,name,mimeType,size,appProperties,createdTime,modifiedTime';
 
@@ -79,7 +86,7 @@ export class Drive {
   private async call(url: string, init: RequestInit = {}): Promise<Response> {
     let resp: Response;
     try {
-      resp = await fetch(url, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${await this.token()}` } });
+      resp = await driveFetch(url, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${await this.token()}` } });
     } catch {
       throw new DriveError('network', tr('Sin conexión con Google Drive.'));
     }
@@ -89,7 +96,13 @@ export class Drive {
 
   private async json(url: string, init: RequestInit = {}): Promise<any> {
     const resp = await this.call(url, init);
-    return resp.status === 204 ? null : resp.json();
+    if (resp.status === 204) return null;
+    try {
+      return await resp.json();
+    } catch {
+      // La respuesta se cortó a medias (o se le cumplió el plazo).
+      throw new DriveError('network', tr('Sin conexión con Google Drive.'));
+    }
   }
 
   /** Todo lo que cumple la consulta (sin la papelera), página a página. */
@@ -158,7 +171,12 @@ export class Drive {
 
   async download(id: string): Promise<Blob> {
     const resp = await this.call(`${API}/files/${id}?alt=media`);
-    return resp.blob();
+    try {
+      return await resp.blob();
+    } catch {
+      // La descarga se cortó a medias (o se le cumplió el plazo).
+      throw new DriveError('network', tr('Sin conexión con Google Drive.'));
+    }
   }
 
   async setProperties(id: string, appProperties: Record<string, string>): Promise<void> {
@@ -170,8 +188,21 @@ export class Drive {
   }
 
   /**
-   * A la papelera de Drive, no borrado definitivo: si algo saliera mal, el
-   * usuario lo recupera durante 30 días (Drive la vacía solo).
+   * Borrado definitivo: deja de ocupar el Drive del usuario en el acto. Para
+   * las copias de paso que ya están en los equipos (relay.ts decide cuáles).
+   */
+  async remove(id: string): Promise<void> {
+    try {
+      await this.call(`${API}/files/${id}`, { method: 'DELETE' });
+    } catch (error) {
+      if (!(error instanceof DriveError && error.kind === 'notFound')) throw error;
+    }
+  }
+
+  /**
+   * A la papelera de Drive, no borrado definitivo: el usuario lo recupera
+   * durante 30 días (Drive la vacía solo). Para lo que podría ser la última
+   * copia. Ojo: mientras está en la papelera sigue contando como espacio usado.
    */
   async trash(id: string): Promise<void> {
     try {

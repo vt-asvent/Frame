@@ -11,6 +11,12 @@ export interface Env {
   SUPABASE_ANON_KEY: string;
   /** Workers AI: el lector de horarios (horario.ts). */
   AI: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
+  /** AK Lore (lore.ts): el acceso de Frame al Drive de Asvent. Sin ellos, la Biblioteca dice que no está conectada. */
+  LORE_DRIVE_REFRESH?: string;
+  LORE_GOOGLE_ID?: string;
+  LORE_GOOGLE_SECRET?: string;
+  /** Solo en las pruebas: otro dominio de colegio (su SHA-256). */
+  LORE_DOMAIN_HASH?: string;
 }
 
 const text = new TextEncoder();

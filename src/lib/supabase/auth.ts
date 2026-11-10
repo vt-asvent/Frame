@@ -1,6 +1,7 @@
-import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
+import type { Session, SupabaseClient, User, AuthChangeEvent } from '@supabase/supabase-js';
 import { getRecoveryClient, getSupabase } from './client';
 import { removeCloudImages } from '@/lib/image-sync';
+import { markDeviceUnlinked } from '@/lib/devices';
 import { getLang, tr } from '@/lib/i18n';
 
 const siteUrl =
@@ -52,6 +53,26 @@ interface PersonNames {
 /** Espacios de más fuera: «  Rojas   Gaspar » → «Rojas Gaspar». */
 export const tidyName = (value: string) => value.replace(/\s+/g, ' ').trim();
 
+/**
+ * «Acaba de entrar esta sesión»: lo dice quien la abrió (este archivo), con la
+ * sesión en la mano. El controlador de la app la hidrata con esto, sin
+ * depender del aviso SIGNED_IN de supabase-js: ese aviso se queda en cola
+ * mientras la biblioteca termina de arrancar (hasta medio minuto si arranca
+ * renovando la sesión anterior en una red que no contesta), y mientras tanto
+ * el botón de entrar giraba con la sesión ya abierta.
+ */
+export const SESSION_OPENED_EVENT = 'frame:session-opened';
+/** La sesión entró, pero la app no pudo abrirla (el equipo sin espacio…): el acceso deja de girar y lo dice. */
+export const SESSION_OPEN_FAILED_EVENT = 'frame:session-open-failed';
+
+function announceSession(session: Session | null): void {
+  if (!session?.user || typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<Session>(SESSION_OPENED_EVENT, { detail: session }));
+}
+
+/** Un fallo que no llegó como respuesta (red cortada a media lectura…): se devuelve, nunca se lanza. */
+const thrownMessage = (e: unknown) => String((e as { message?: string } | null)?.message ?? e);
+
 export async function signUpWithEmail(
   email: string,
   password: string,
@@ -68,27 +89,37 @@ export async function signUpWithEmail(
     metadata.full_name = `${metadata.first_names} ${metadata.last_names}`.trim();
   }
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { data: metadata },
-  });
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: metadata },
+    });
 
-  // Con la confirmación por correo activa, Supabase no dice «ya existe» (para
-  // no revelar cuentas): devuelve un usuario fantasma sin identidades.
-  if (!error && data.user && (data.user.identities?.length ?? 0) === 0) {
-    return { user: null, session: null, error: 'User already registered' };
+    // Con la confirmación por correo activa, Supabase no dice «ya existe» (para
+    // no revelar cuentas): devuelve un usuario fantasma sin identidades.
+    if (!error && data.user && (data.user.identities?.length ?? 0) === 0) {
+      return { user: null, session: null, error: 'User already registered' };
+    }
+
+    if (!error) announceSession(data.session);
+    return { user: data.user, session: data.session, error: error?.message ?? null };
+  } catch (e) {
+    return { user: null, session: null, error: thrownMessage(e) };
   }
-
-  return { user: data.user, session: data.session, error: error?.message ?? null };
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<AuthResult> {
   const supabase = getSupabase();
   if (!supabase) return { user: null, session: null, error: tr('Supabase no está configurado.') };
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  return { user: data.user, session: data.session, error: error?.message ?? null };
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) announceSession(data.session);
+    return { user: data.user, session: data.session, error: error?.message ?? null };
+  } catch (e) {
+    return { user: null, session: null, error: thrownMessage(e) };
+  }
 }
 
 /** Página de la web donde se elige la contraseña nueva. Desde la 1.7.3, la web
@@ -103,23 +134,30 @@ const PASSWORD_RECOVERY_URL = 'https://vt-asvent.github.io/frame-app/recuperar/'
 export async function requestPasswordReset(email: string): Promise<{ error: string | null }> {
   const supabase = getRecoveryClient();
   if (!supabase) return { error: tr('Supabase no está configurado.') };
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: PASSWORD_RECOVERY_URL });
-  return { error: error?.message ?? null };
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: PASSWORD_RECOVERY_URL });
+    return { error: error?.message ?? null };
+  } catch (e) {
+    return { error: thrownMessage(e) };
+  }
 }
 
 export async function signInWithGoogle(): Promise<{ error: string | null }> {
   const supabase = getSupabase();
   if (!supabase) return { error: tr('Supabase no está configurado.') };
 
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: siteUrl,
-      queryParams: { prompt: 'select_account', hl: getLang() },
-    },
-  });
-
-  return { error: error?.message ?? null };
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: siteUrl,
+        queryParams: { prompt: 'select_account', hl: getLang() },
+      },
+    });
+    return { error: error?.message ?? null };
+  } catch (e) {
+    return { error: thrownMessage(e) };
+  }
 }
 
 // Inicia sesión en Supabase con un id_token de Google obtenido por el flujo
@@ -130,12 +168,19 @@ export async function signInWithGoogleIdToken(idToken: string): Promise<AuthResu
 
   // Una red de colegio parpadea: solo se repite lo que es fallo de red o del
   // servidor, nunca un «no» de Supabase (repetirlo no cambiaría la respuesta).
+  // Y no más allá de medio minuto: con la red colgada cada intento agota su
+  // plazo, y cinco seguidos eran minuto y medio de botón girando sin decir nada.
   let lastError: string | null = null;
+  const startedAt = Date.now();
   for (const delay of [0, 1000, 2500, 5000, 8000]) {
+    if (delay && Date.now() - startedAt + delay > 30_000) break;
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
     try {
       const { data, error } = await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
-      if (!error) return { user: data.user, session: data.session, error: null };
+      if (!error) {
+        announceSession(data.session);
+        return { user: data.user, session: data.session, error: null };
+      }
       lastError = error.message;
       const status = (error as { status?: number }).status ?? 0;
       const retryable =
@@ -167,7 +212,88 @@ export function consumeIntentionalSignOut(): boolean {
   }
 }
 
-export async function signOut(): Promise<{ error: string | null }> {
+/** Espera a `task` como mucho `ms`: lo que tarde más sigue por detrás, sin retener a quien espera. */
+export function within<T>(task: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([task, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))]);
+}
+
+const AUTH_STORAGE_KEY = 'aether-auth';
+
+/** ¿Hay una sesión guardada en este equipo? (Lo que manda: supabase-js siempre lee de ahí.) */
+export function hasStoredSession(): boolean {
+  try {
+    return localStorage.getItem(AUTH_STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function storedSession(): { access_token?: unknown; user?: { id?: unknown } } | null {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as { access_token?: unknown; user?: { id?: unknown } } | null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** La llave de acceso guardada: con ella se le pide a la nube que cierre ESA sesión. */
+function storedAccessToken(): string | null {
+  const token = storedSession()?.access_token;
+  return typeof token === 'string' && token ? token : null;
+}
+
+/** La cuenta de la sesión guardada en este equipo, o null si no hay ninguna. */
+export function storedSessionUserId(): string | null {
+  const id = storedSession()?.user?.id;
+  return typeof id === 'string' && id ? id : null;
+}
+
+/**
+ * Le pide a la nube que cierre la sesión de esa llave (`global`: todas las de
+ * la cuenta). Es una petición suelta, con su plazo, que no toca la sesión
+ * guardada: llegue cuando llegue, no puede afectar a quien entre después.
+ * Nunca lanza; null si se hizo (o si ya no había nada que cerrar).
+ */
+async function revokeSession(supabase: SupabaseClient, accessToken: string, scope: 'local' | 'global'): Promise<string | null> {
+  try {
+    const result = await within(supabase.auth.admin.signOut(accessToken, scope), 6000);
+    if (!result) return 'timeout';
+    const status = (result.error as { status?: number } | null)?.status;
+    // 401, 403 y 404: esa sesión (o la cuenta) ya no existía, que es lo que se quería.
+    return !result.error || status === 401 || status === 403 || status === 404 ? null : result.error.message;
+  } catch (e) {
+    return thrownMessage(e);
+  }
+}
+
+/**
+ * Cierra la sesión de ESTE equipo. Cuando vuelve, aquí ya no hay sesión, haya
+ * respondido la nube o no.
+ *
+ * Lo que esto cierra (1.9.2):
+ *   · supabase-js cierra por defecto la sesión de TODOS los equipos de la
+ *     cuenta: salir en el celular dejaba a la laptop sin sesión (y sin
+ *     sincronizar) hasta volver a entrar. Ahora solo la de este equipo;
+ *     `everywhere` queda para cuando se borra la cuenta.
+ *   · Con el token vencido y sin red, supabase-js devuelve el error SIN borrar
+ *     la sesión guardada: la app mostraba el acceso, pero la sesión volvía sola
+ *     en el siguiente arranque.
+ *   · Su `signOut` habla con la nube ANTES de borrar la sesión de aquí. En una
+ *     red que se traga los paquetes (portal del colegio) «Cerrar sesión» se
+ *     quedaba girando; y si se dejaba de esperarlo, seguía vivo por detrás: al
+ *     terminar borraba la sesión que hubiera en ese momento, que podía ser la
+ *     de quien acababa de volver a entrar.
+ *
+ * Por eso el orden es el contrario y nada queda pendiente sobre la sesión
+ * guardada: primero se borra aquí (sin red: `_removeSession` es el borrado de
+ * la propia biblioteca, que avisa SIGNED_OUT y anula cualquier renovación en
+ * marcha) y después se avisa a la nube con una petición suelta.
+ *
+ * Devuelve el fallo de la nube solo con `everywhere`, que es cuando se espera
+ * su respuesta; en un cierre normal la nube se entera por detrás.
+ */
+export async function signOut(options: { everywhere?: boolean } = {}): Promise<{ error: string | null }> {
   const supabase = getSupabase();
   if (!supabase) return { error: null };
   try {
@@ -176,8 +302,33 @@ export async function signOut(): Promise<{ error: string | null }> {
     /* sin marca, el controlador lo tratará como cierre inesperado (no expulsa) */
   }
 
-  const { error } = await supabase.auth.signOut();
-  return { error: error?.message ?? null };
+  // 1. Dispositivos: este equipo queda «desvinculado» en la cuenta. Necesita la
+  //    sesión, así que va antes; se cancela solo si tarda (ver devices.ts).
+  await within(markDeviceUnlinked(), 3000);
+
+  // 2. Aquí: fuera ya. La llave se lee después del paso 1, que pudo renovarla.
+  const accessToken = storedAccessToken();
+  try {
+    const auth = supabase.auth as unknown as { _removeSession?: () => Promise<void> };
+    if (typeof auth._removeSession === 'function') await within(auth._removeSession(), 2000);
+  } catch {
+    /* se quita a mano abajo */
+  }
+  if (hasStoredSession()) {
+    try {
+      for (const suffix of ['', '-code-verifier', '-user']) localStorage.removeItem(AUTH_STORAGE_KEY + suffix);
+      // Sin aviso SIGNED_OUT nadie consumió la marca: fuera, para que un
+      // cierre posterior de la nube no se tome por pedido del usuario.
+      localStorage.removeItem(INTENTIONAL_SIGN_OUT_KEY);
+    } catch {
+      /* almacenamiento vetado: nada más que hacer */
+    }
+  }
+
+  // 3. En la nube: que esa sesión deje de valer.
+  if (!accessToken) return { error: null };
+  const revoked = revokeSession(supabase, accessToken, options.everywhere ? 'global' : 'local');
+  return { error: options.everywhere ? await revoked : null };
 }
 
 export async function getActiveSession(): Promise<Session | null> {

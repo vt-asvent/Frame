@@ -81,6 +81,8 @@ interface Row {
   preview?: string | null;
   /** Del catálogo remoto y sin instalar: solo se ve al buscarla. */
   remote?: boolean;
+  /** Oficial que, sin instalar, solo se ve al buscarla por su nombre. */
+  searchOnly?: boolean;
 }
 
 const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -113,7 +115,7 @@ export default function ExtensionsCenter() {
       (e) => EXTENSION_PANELS[e.id] && (!e.domainHash || e.domainHash === domainHash)
     ).map((e) => {
       const entry = installed.find((i) => i.id === e.id) ?? null;
-      return { id: e.id, manifest: (entry && manifestOf(entry)) || e.manifest(), official: true, entry };
+      return { id: e.id, manifest: (entry && manifestOf(entry)) || e.manifest(), official: true, entry, searchOnly: !!e.searchOnly && !entry };
     });
     const thirdParty: Row[] = installed
       .filter((i) => i.manifest)
@@ -131,12 +133,16 @@ export default function ExtensionsCenter() {
   }, [installed, domainHash, catalog]);
 
   const q = normalize(query.trim());
+  /** Sin espacios: «aklore» encuentra «AK Lore». */
+  const squeezed = (text: string) => normalize(text).replace(/\s+/g, '');
   const visible = q
     ? rows.filter((r) =>
         // Las del catálogo, solo por su nombre (no aparecen buscando «música»).
-        r.remote ? normalize(r.manifest.name).includes(q) : normalize(`${r.manifest.name} ${r.manifest.description} ${r.manifest.author}`).includes(q)
+        r.remote || r.searchOnly
+          ? normalize(r.manifest.name).includes(q) || squeezed(r.manifest.name).includes(squeezed(query))
+          : normalize(`${r.manifest.name} ${r.manifest.description} ${r.manifest.author}`).includes(q)
       )
-    : rows.filter((r) => r.official);
+    : rows.filter((r) => r.official && !r.searchOnly);
 
   const open = rows.find((r) => r.id === openId) ?? null;
   const inUse = installed.filter((e) => e.enabled).length;

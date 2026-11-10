@@ -3,6 +3,7 @@ import {
   ChevronDown,
   FileText,
   Heart,
+  Languages,
   LoaderCircle,
   MicVocal,
   Minus,
@@ -34,6 +35,8 @@ import { decimalText, tr } from '@/lib/i18n';
 import { artistLabel } from '@/lib/enum-labels';
 import { formatListened, listeningAllTime, playsText, useListening } from '@/lib/listening';
 import { songKey } from '@/lib/song-keys';
+import { setTranslationWanted, translationWanted, useLyricsTranslation, type TranslationState } from '@/lib/lyrics-translate';
+import { useMediaQuery } from '@/hooks/use-media-query';
 
 // ============================================================
 // «Reproduciendo»: la canción a pantalla completa DENTRO de Frame.
@@ -56,12 +59,15 @@ function LyricsPanel({
   loading,
   note,
   onAttach,
+  translation,
 }: {
   lyrics: SongLyrics | null;
   loading: boolean;
   /** Aviso tras elegir un archivo que no servía. */
   note: string | null;
   onAttach: () => void;
+  /** «Traducción» (1.9.2): línea original → traducida. */
+  translation: Map<string, string> | null;
 }) {
   const { progress } = usePlaybackPosition();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -121,7 +127,16 @@ function LyricsPanel({
     return (
       <div className="hide-scrollbar h-full overflow-y-auto px-2 py-6">
         <p className="mb-4 text-[10px] font-semibold text-white/50">{tr('Letra sin sincronizar')}</p>
-        <p className="whitespace-pre-wrap text-lg font-semibold leading-relaxed text-white/85">{lyrics.plain}</p>
+        {translation ? (
+          lyrics.plain.split(/\r?\n/).map((line, index) => (
+            <p key={index} className="text-lg font-semibold leading-relaxed text-white/85">
+              {line || '\u00a0'}
+              {translation.get(line.trim()) && <span className="mb-1 block text-base leading-snug text-white/55">{translation.get(line.trim())}</span>}
+            </p>
+          ))
+        ) : (
+          <p className="whitespace-pre-wrap text-lg font-semibold leading-relaxed text-white/85">{lyrics.plain}</p>
+        )}
       </div>
     );
   }
@@ -151,6 +166,9 @@ function LyricsPanel({
             )}
           >
             {line.text || '♪'}
+            {translation?.get(line.text.trim()) && (
+              <span className="mt-1 block text-base font-semibold leading-snug opacity-70 lg:text-lg">{translation.get(line.text.trim())}</span>
+            )}
           </button>
         ))}
       </div>
@@ -167,14 +185,22 @@ function LyricsFooter({
   offset,
   onOffset,
   onAttach,
+  translate,
+  translation,
+  onTranslate,
 }: {
   synced: boolean;
   offset: number;
   onOffset: (delta: number) => void;
   onAttach: () => void;
+  /** «Traducción» encendida. */
+  translate: boolean;
+  translation: TranslationState;
+  onTranslate: () => void;
 }) {
   return (
-    <div className="mt-3 flex items-center justify-between text-[11px] text-white/55">
+    <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-white/55">
+      <div className="flex min-w-0 items-center gap-1">
       <Button
         variant="ghost"
         onClick={onAttach}
@@ -184,6 +210,26 @@ function LyricsFooter({
         <FileText className="mr-1.5 h-3.5 w-3.5" />
         {tr('Cambiar letra…')}
       </Button>
+      <Button
+        variant="ghost"
+        onClick={onTranslate}
+        aria-pressed={translate}
+        title={
+          translation.status === 'error'
+            ? translation.message
+            : translation.status === 'same'
+              ? tr('La letra ya está en tu idioma.')
+              : tr('Ver la traducción de cada línea, en el idioma de Frame')
+        }
+        className={cn(
+          'h-7 rounded-full px-3 text-[11px] hover:bg-white/15 hover:text-white',
+          translate ? 'bg-white/15 text-white' : 'text-white/70'
+        )}
+      >
+        {translation.status === 'loading' ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Languages className="mr-1.5 h-3.5 w-3.5" />}
+        {tr('Traducción')}
+      </Button>
+      </div>
       {synced && (
       <div className="flex items-center rounded-full border border-white/15" title={tr('Ajusta si la letra va adelantada o atrasada')}>
         <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-white/75 hover:bg-white/15 hover:text-white" onClick={() => onOffset(-0.5)} title={tr('Letra 0,5 s antes')}>
@@ -219,24 +265,35 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
   // Cuánto ha sonado esta canción desde que Frame lo mide (1.8.0).
   const allTime = useListening(open ? userProfile?.id : null, listeningAllTime, []);
   const songStats = allTime && currentSong ? allTime.songs.find((s) => s.key === songKey(currentSong)) : undefined;
-  const [lyrics, setLyrics] = useState<SongLyrics | null>(null);
-  const [loading, setLoading] = useState(false);
+  // La letra guardada y de qué canción es: al cambiar de canción, la anterior
+  // sigue un instante en el estado, y no es la de la que suena.
+  const [loaded, setLoaded] = useState<{ songId: string; lyrics: SongLyrics | null } | null>(null);
   const [lyricsNote, setLyricsNote] = useState<string | null>(null);
   const lyricsInputRef = useRef<HTMLInputElement>(null);
 
   const songId = currentSong?.id ?? null;
+  const loading = !!songId && loaded?.songId !== songId;
+  const lyrics = loaded && !loading ? loaded.lyrics : null;
+  // «Traducción» (1.9.2): encendida o no se recuerda; se pide solo con la letra
+  // a la vista (la vista abierta y con ancho para su panel, que en estrecho no sale).
+  const [translate, setTranslate] = useState(translationWanted);
+  const lyricsVisible = useMediaQuery('(min-width: 1024px)');
+  const translation = useLyricsTranslation(songId, open && lyricsVisible ? lyrics : null, translate);
+  const toggleTranslate = () =>
+    setTranslate((on) => {
+      setTranslationWanted(!on);
+      return !on;
+    });
 
   // La letra guardada se lee al abrir y al cambiar de canción.
   useEffect(() => {
     if (!open || !songId) return;
     let alive = true;
-    setLyrics(null);
+    setLoaded(null);
     setLyricsNote(null);
-    setLoading(true);
     void storedLyrics(songId)
-      .then((result) => alive && setLyrics(result))
-      .catch(() => alive && setLyrics(null))
-      .finally(() => alive && setLoading(false));
+      .then((result) => alive && setLoaded({ songId, lyrics: result }))
+      .catch(() => alive && setLoaded({ songId, lyrics: null }));
     return () => {
       alive = false;
     };
@@ -260,14 +317,14 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
     }
     await importLyrics(song.id, parsed);
     if (songRef.current?.id !== song.id) return; // cambió la canción mientras tanto
-    setLyrics(parsed);
+    setLoaded({ songId: song.id, lyrics: parsed });
     setLyricsNote(null);
   };
 
   const changeOffset = (delta: number) => {
     if (!currentSong || !lyrics) return;
     const next = Math.max(-30, Math.min(30, Math.round(((lyrics.offset ?? 0) + delta) * 10) / 10));
-    setLyrics({ ...lyrics, offset: next });
+    setLoaded({ songId: currentSong.id, lyrics: { ...lyrics, offset: next } });
     void setLyricsOffset(currentSong.id, next);
   };
 
@@ -394,6 +451,7 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
               loading={loading}
               note={lyricsNote}
               onAttach={() => lyricsInputRef.current?.click()}
+              translation={translate && translation.status === 'done' ? translation.map : null}
             />
           </div>
           {!loading && lyrics && !lyrics.missing && (
@@ -402,9 +460,15 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
               offset={lyrics.offset ?? 0}
               onOffset={changeOffset}
               onAttach={() => lyricsInputRef.current?.click()}
+              translate={translate}
+              translation={translation}
+              onTranslate={toggleTranslate}
             />
           )}
           {!loading && lyrics && lyricsNote && <p className="mt-2 text-right text-xs text-white/60">{lyricsNote}</p>}
+          {!loading && translate && (translation.status === 'error' || translation.status === 'same') && (
+            <p className="mt-2 text-xs text-white/60">{translation.status === 'error' ? translation.message : tr('La letra ya está en tu idioma.')}</p>
+          )}
           <input
             ref={lyricsInputRef}
             type="file"

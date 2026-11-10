@@ -2,8 +2,10 @@ import { useSyncExternalStore } from 'react';
 import {
   COVER_BYTES_GUESS,
   EngineClient,
+  EngineTimeout,
   LYRICS_BYTES_GUESS,
   mp3Bytes,
+  safeFileName,
   songBytes,
   SOURCE_BYTES_PER_SECOND,
   thumbnailUrl,
@@ -18,7 +20,9 @@ import { MIN_ENGINE, ensureEngine, versionBelow } from '@/lib/extensions/engine-
 import { cleanTitle, findSongLyrics, firstArtist } from '@/lib/extensions/yt-mp3-lyrics';
 import { findOfficialRelease, findSongVideo, songOfVideo, squareFromThumbnail } from '@/lib/extensions/yt-mp3-match';
 import { memorySource, planMusicImport, releaseMemorySource, storeImportedSongs } from '@/lib/music-import';
+import { getImage, saveImage } from '@/lib/music-db';
 import { foldName } from '@/lib/song-names';
+import { trackEvent } from '@/lib/telemetry';
 import { decimalText, errorText, tr } from '@/lib/i18n';
 import type { Playlist, Song } from '@/types';
 
@@ -41,6 +45,20 @@ import type { Playlist, Song } from '@/types';
 // Hasta 4 canciones a la vez entre preparar y bajar (el programa baja dos a
 // la vez). Pausar detiene el programa y la preparación; reanudar sigue donde
 // iba (el programa continúa el archivo a medias).
+//
+// Desde la 1.9.2 un enlace mete hasta mil canciones de un clic, así que la
+// cola se cuida sola:
+//   · la misma canción no entra dos veces, ni se baja a la vez por dos listas;
+//   · lo que ya bajó una vez se reconoce aunque el vídeo dure distinto que en
+//     la lista (índice de lo descargado, por perfil y en este equipo);
+//   · una descarga que falla se reintenta sola dos veces, con espera; lo que
+//     no tiene arreglo (vídeo privado o retirado) no se reintenta;
+//   · si varias seguidas fallan, o el equipo se queda sin espacio, la cola se
+//     pausa y dice por qué, en vez de quemar la lista entera; sin conexión,
+//     espera;
+//   · una canción cuya preparación no llega a tiempo tres veces se da por
+//     fallida: el lote siempre termina;
+//   · «Cancelar todo» la vacía de una vez.
 //
 // La cola es de cada perfil (localStorage `musicDownloads_<uid>`).
 // ============================================================
@@ -121,6 +139,12 @@ export interface DownloadItem {
   /** Id en la biblioteca. */
   songId?: string;
   error?: string;
+  /** Veces que el programa falló al bajarla (se reintenta sola hasta `MAX_ATTEMPTS`). */
+  attempts?: number;
+  /** Veces que prepararla (su vídeo, su portada, su letra) no llegó a tiempo. */
+  slow?: number;
+  /** No se vuelve a intentar antes de este momento (ms). */
+  retryAt?: number;
   addedAt: number;
   /** Cuándo empezó en el programa y cuándo llegó el primer byte (yt-dlp tarda en arrancar). */
   startedAt?: number;
@@ -129,14 +153,20 @@ export interface DownloadItem {
   finishedAt?: number;
 }
 
-export type DownloadProblem = 'engine' | 'outdated' | 'extension' | null;
+export type DownloadProblem = 'engine' | 'outdated' | 'extension' | 'offline' | null;
+
+/** Por qué se pausó sola: varias descargas seguidas fallaron, o el equipo se quedó sin espacio. */
+export type SelfPause = 'failing' | 'storage';
 
 export interface DownloadsSnapshot {
   items: DownloadItem[];
   paused: boolean;
+  /** La pausa la puso la propia cola (y su motivo, para decirlo). Se va al reanudar. */
+  pausedWhy?: SelfPause;
+  pausedDetail?: string;
   /** Velocidad de descarga de todo junto (B/s), suavizada. */
   speed: number;
-  /** Algo impide seguir: el programa no responde, es viejo o la extensión está apagada. */
+  /** Algo impide seguir: el programa no responde, es viejo, la extensión está apagada o no hay conexión. */
   problem: DownloadProblem;
   /** Segundos de cada canción aparte de bajar, aprendidos: hasta el primer byte (yt-dlp arrancando) y tras bajar (conversión e importación). */
   startupSeconds: number;
@@ -157,6 +187,19 @@ const ENGINE_LANES = 2;
 /** Supuestos hasta aprender los de este equipo (segundos). */
 const STARTUP_GUESS = 15;
 const FINISH_GUESS = 6;
+/** Intentos de bajar una canción (el primero y dos más), y lo que espera cada reintento. */
+const MAX_ATTEMPTS = 3;
+const RETRY_WAIT_MS = [20_000, 90_000];
+/** Veces que la preparación de una canción puede no llegar a tiempo. */
+const MAX_SLOW = 3;
+/** Descargas seguidas que fallan (sin ninguna bien entre medias) antes de pausarse sola. */
+const FAIL_STREAK = 4;
+/**
+ * Fallos sin arreglo (mensajes de yt-dlp): reintentar no cambia nada, y no
+ * dicen nada de la conexión.
+ */
+const PERMANENT_FAILURE =
+  /private video|video unavailable|is unavailable|not available|has been removed|removed by|deleted|terminated|copyright|members[- ]only|join this channel|age[- ]restricted|confirm your age|unsupported url|premieres in|v[ií]deo privado|no est[aá] disponible|eliminado/i;
 
 const ACTIVE: ReadonlySet<DownloadState> = new Set(['waiting', 'resolving', 'queued', 'downloading', 'converting', 'importing']);
 const IN_ENGINE: ReadonlySet<DownloadState> = new Set(['queued', 'downloading', 'converting']);
@@ -230,6 +273,8 @@ function save() {
         JSON.stringify({
           items,
           paused: state.paused,
+          pausedWhy: state.pausedWhy,
+          pausedDetail: state.pausedDetail,
           batch: state.batch,
           finalized: state.finalized,
           startupSeconds: state.startupSeconds,
@@ -245,9 +290,11 @@ function load(profile: string): DownloadsSnapshot {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_PREFIX + profile) ?? 'null') as Partial<DownloadsSnapshot> | null;
     if (!raw || !Array.isArray(raw.items)) return empty();
+    const pausedWhy = raw.paused && (raw.pausedWhy === 'failing' || raw.pausedWhy === 'storage') ? raw.pausedWhy : undefined;
     return {
       ...empty(),
       paused: !!raw.paused,
+      ...(pausedWhy ? { pausedWhy, pausedDetail: typeof raw.pausedDetail === 'string' ? raw.pausedDetail : undefined } : {}),
       batch: Number(raw.batch) || 0,
       finalized: Number(raw.finalized) || 0,
       startupSeconds: Number(raw.startupSeconds) || STARTUP_GUESS,
@@ -264,23 +311,152 @@ function load(profile: string): DownloadsSnapshot {
 // Biblioteca
 // ------------------------------------------------------------
 
-const songKey = (title: string) => foldName(cleanTitle(title));
-const artistKey = (artist: string) => foldName(firstArtist(artist) || artist);
+// (Una fila de una lista puede venir sin artista, o sin título: nunca `undefined` a `foldName`.)
+const songKey = (title: string | undefined) => foldName(cleanTitle(title ?? ''));
+const artistKey = (artist: string | undefined) => foldName(firstArtist(artist ?? '') || (artist ?? ''));
+
+/** Lo que identifica una canción pedida. */
+export interface WantedSong {
+  title: string;
+  artist: string;
+  /** Segundos, si se sabe. */
+  duration?: number;
+  videoId?: string;
+  spotifyId?: string;
+}
+
+const wantedOf = (item: DownloadItem): WantedSong => ({
+  title: item.title,
+  artist: item.artist,
+  duration: item.duration,
+  videoId: item.videoId,
+  spotifyId: item.spotifyId,
+});
+
+/** La duración es la misma (±3 s), o alguna no se sabe. */
+const sameLength = (a: number | undefined, b: number | undefined) => !a || !b || Math.abs(a - b) <= 3;
 
 /**
- * La misma canción ya en la biblioteca: título y primer artista, y duración
- * (±3 s) si se sabe. Solo con el título no basta («Intro» hay muchas).
+ * Canciones ya vistas: la misma se reconoce por su vídeo, por su id de Spotify
+ * o por su título, su primer artista y su duración. Solo con el título no
+ * basta («Intro» hay muchas), y con otra duración es otra versión.
  */
-export function findInLibrary(songs: Song[], title: string, artist: string, duration?: number): Song | undefined {
-  const t = songKey(title);
-  const a = artistKey(artist);
-  if (!t || (!a && !duration)) return undefined;
-  return songs.find(
-    (song) =>
-      songKey(song.title) === t &&
-      (!a || artistKey(song.artist) === a) &&
-      (!duration || !song.duration || Math.abs(song.duration - duration) <= 3)
-  );
+class SongSet {
+  private readonly videos = new Set<string>();
+  private readonly spotify = new Set<string>();
+  private readonly named = new Map<string, (number | undefined)[]>();
+
+  private static name(wanted: WantedSong): string | null {
+    const title = songKey(wanted.title);
+    const artist = artistKey(wanted.artist);
+    return title && artist ? `${title}|${artist}` : null;
+  }
+
+  has(wanted: WantedSong): boolean {
+    if (wanted.videoId && this.videos.has(wanted.videoId)) return true;
+    if (wanted.spotifyId && this.spotify.has(wanted.spotifyId)) return true;
+    const name = SongSet.name(wanted);
+    return !!name && !!this.named.get(name)?.some((duration) => sameLength(duration, wanted.duration));
+  }
+
+  add(wanted: WantedSong) {
+    if (wanted.videoId) this.videos.add(wanted.videoId);
+    if (wanted.spotifyId) this.spotify.add(wanted.spotifyId);
+    const name = SongSet.name(wanted);
+    if (name) this.named.set(name, [...(this.named.get(name) ?? []), wanted.duration]);
+  }
+}
+
+// ------------------------------------------------------------
+// Lo ya descargado (por perfil, en este equipo)
+// ------------------------------------------------------------
+// Qué canción de la biblioteca salió de cada pedido. «Ya está en tu
+// biblioteca» se decide por título, artista y duración (±3 s), pero el vídeo
+// que se baja puede durar distinto que la canción en la lista (un vídeo
+// oficial con su introducción): sin este índice, esas se volverían a bajar
+// cada vez que se relee la lista. Va con lo demás de Música (IndexedDB), no en
+// localStorage, y no viaja: lo descargado es de este equipo.
+
+const INDEX_PREFIX = 'musicDownloaded_';
+const INDEX_LIMIT = 9000;
+/** Clave del pedido → id de la canción en la biblioteca. */
+let downloaded = new Map<string, string>();
+let indexTimer = 0;
+
+/** Las claves exactas de un pedido: su vídeo, su id de Spotify, y su título con su artista y su duración. */
+function requestKeys(wanted: WantedSong): string[] {
+  const keys: string[] = [];
+  if (wanted.videoId) keys.push(`v:${wanted.videoId}`);
+  if (wanted.spotifyId) keys.push(`s:${wanted.spotifyId}`);
+  const title = songKey(wanted.title);
+  const artist = artistKey(wanted.artist);
+  if (title && artist) keys.push(`t:${title}|${artist}|${Math.round(wanted.duration ?? 0)}`);
+  return keys;
+}
+
+async function loadDownloaded(profile: string) {
+  const raw = await getImage(INDEX_PREFIX + profile).catch(() => null);
+  if (uid !== profile || !raw) return;
+  try {
+    const list = JSON.parse(raw) as unknown;
+    if (!Array.isArray(list)) return;
+    const stored = list.filter((pair): pair is [string, string] => Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string');
+    // (Lo anotado mientras se leía, encima.)
+    downloaded = new Map([...stored, ...downloaded]);
+  } catch {
+    /* un índice ilegible se rehace solo */
+  }
+}
+
+function saveDownloaded() {
+  window.clearTimeout(indexTimer);
+  indexTimer = 0;
+  if (uid) void saveImage(INDEX_PREFIX + uid, JSON.stringify([...downloaded])).catch(() => undefined);
+}
+
+function rememberDownloaded(wanted: WantedSong, songId: string) {
+  for (const key of requestKeys(wanted)) {
+    downloaded.delete(key);
+    downloaded.set(key, songId);
+  }
+  for (const key of downloaded.keys()) {
+    if (downloaded.size <= INDEX_LIMIT) break;
+    downloaded.delete(key);
+  }
+  indexTimer ||= window.setTimeout(saveDownloaded, 2000);
+}
+
+/**
+ * Para preguntar muchas veces por la misma biblioteca (el resumen de una lista
+ * de mil canciones): ¿ya está esta canción? Primero, lo que ya se descargó
+ * para ese mismo pedido; si no, por título y primer artista, y duración
+ * (±3 s) si se sabe.
+ */
+export function libraryMatcher(songs: Song[]): (wanted: WantedSong) => Song | undefined {
+  const byId = new Map(songs.map((song) => [song.id, song]));
+  const byTitle = new Map<string, Song[]>();
+  for (const song of songs) {
+    const key = songKey(song.title);
+    if (!key) continue;
+    const same = byTitle.get(key);
+    if (same) same.push(song);
+    else byTitle.set(key, [song]);
+  }
+  return (wanted) => {
+    for (const key of requestKeys(wanted)) {
+      const song = byId.get(downloaded.get(key) ?? '');
+      if (song) return song;
+    }
+    const title = songKey(wanted.title);
+    const artist = artistKey(wanted.artist);
+    if (!title || (!artist && !wanted.duration)) return undefined;
+    return byTitle.get(title)?.find((song) => (!artist || artistKey(song.artist) === artist) && sameLength(song.duration, wanted.duration));
+  };
+}
+
+/** La misma canción ya en la biblioteca (ver `libraryMatcher`). */
+function findInLibrary(songs: Song[], title: string, artist: string, duration?: number): Song | undefined {
+  return libraryMatcher(songs)({ title, artist, duration });
 }
 
 // ------------------------------------------------------------
@@ -305,21 +481,41 @@ let timer = 0;
 
 export function attachDownloads(next: DownloadsHost): () => void {
   if (uid !== next.uid) {
-    if (uid) save();
+    if (uid) {
+      save();
+      if (indexTimer) saveDownloaded();
+    }
+    // (Lo que quedaba por contar era del perfil anterior: no se le apunta a este.)
+    uncounted = 0;
     uid = next.uid;
     prepared.clear();
+    lastDownloaded.clear();
+    failStreak = 0;
+    streak.clear();
+    downloaded = new Map();
+    void loadDownloaded(next.uid);
     state = load(next.uid);
     listeners.forEach((listener) => listener());
   }
   host = next;
   window.clearInterval(timer);
   timer = window.setInterval(() => void tick(), TICK_MS);
-  window.addEventListener('pagehide', save);
+  const keep = () => {
+    save();
+    if (indexTimer) saveDownloaded();
+  };
+  // Al cerrar Frame, además, lo que quedaba por contar (al cambiar de perfil
+  // no: ya no se sabría de quién es).
+  const leaving = () => {
+    keep();
+    flushDownloadCount();
+  };
+  window.addEventListener('pagehide', leaving);
   return () => {
     if (host === next) host = null;
     window.clearInterval(timer);
-    window.removeEventListener('pagehide', save);
-    save();
+    window.removeEventListener('pagehide', leaving);
+    keep();
   };
 }
 
@@ -360,38 +556,65 @@ export function describeDownload(id: string, info: { videoTitle?: string; channe
   });
 }
 
-/** Las canciones de un CSV, ya empezadas. */
-export function addCsvDownloads(sourceId: string, songs: CsvSong[], playlist: string) {
+/**
+ * Las canciones de un CSV (o de una lista leída de su enlace), ya empezadas.
+ * No entran las que ya esperan o bajan para esa misma playlist, ni las
+ * repetidas dentro de la propia lista: devuelve cuántas entraron y cuántas no.
+ */
+export function addCsvDownloads(sourceId: string, songs: CsvSong[], playlist: string): { added: number; repeated: number } {
   const now = Date.now();
-  const items: DownloadItem[] = songs.map((song, index) => {
+  const listKey = playlist.trim().toLowerCase();
+  const seen = new SongSet();
+  for (const item of state.items) {
+    if ((item.state === 'pending' || isActive(item)) && (item.playlist ?? '').trim().toLowerCase() === listKey) seen.add(wantedOf(item));
+  }
+  const items: DownloadItem[] = [];
+  let repeated = 0;
+  songs.forEach((song, index) => {
     const videoId = song.url ? youtubeId(song.url) ?? undefined : undefined;
-    return {
-    id: crypto.randomUUID(),
-    sourceId,
-    origin: 'csv',
-    batch: 0,
-    videoId,
-    image: song.cover ?? (videoId ? thumbnailUrl(videoId) : undefined),
-    title: song.title,
-    artist: song.artist,
-    album: song.album,
-    albumArtist: song.albumArtist,
-    track: song.track,
-    year: song.year,
-    spotifyId: song.spotifyId,
-    coverUrl: song.cover,
-    duration: song.duration,
-    playlist,
-    order: index,
-    state: 'pending',
-    progress: 0,
-    downloaded: 0,
-    speed: 0,
-    addedAt: now,
-    };
+    // De una lista de YouTube: va como un vídeo añadido a mano (la canción,
+    // con su título y artista, la dice YouTube Music al empezar).
+    const video = !!song.fromYouTube && !!videoId;
+    const title = video ? '' : song.title ?? '';
+    const artist = video ? '' : song.artist ?? '';
+    const wanted: WantedSong = { title, artist, duration: song.duration, videoId, spotifyId: song.spotifyId };
+    if (seen.has(wanted)) {
+      repeated += 1;
+      return;
+    }
+    seen.add(wanted);
+    items.push({
+      id: crypto.randomUUID(),
+      sourceId,
+      origin: video ? 'video' : 'csv',
+      batch: 0,
+      videoId,
+      ...(video ? { videoTitle: song.title ?? '', channel: song.artist ?? '' } : {}),
+      image: song.cover ?? (videoId ? thumbnailUrl(videoId) : undefined),
+      title,
+      artist,
+      album: song.album,
+      albumArtist: song.albumArtist,
+      track: song.track,
+      year: song.year,
+      spotifyId: song.spotifyId,
+      coverUrl: song.cover,
+      duration: song.duration,
+      playlist,
+      // (La posición en la lista, con sus huecos: es el orden de la playlist.)
+      order: index,
+      state: 'pending',
+      progress: 0,
+      downloaded: 0,
+      speed: 0,
+      addedAt: now,
+    });
   });
-  set({ items: [...state.items, ...items] });
-  startDownloads();
+  if (items.length > 0) {
+    set({ items: [...state.items, ...items] });
+    startDownloads();
+  }
+  return { added: items.length, repeated };
 }
 
 /**
@@ -438,20 +661,58 @@ export function startDownloads() {
     items = items.filter((item) => item.state === 'pending');
   }
   items = items.map((item) => (item.state === 'pending' ? { ...item, state: 'waiting' as const, batch } : item));
-  set({ items, batch, paused: false });
+  unpause();
+  set({ items, batch });
   void tick();
 }
 
-export async function pauseDownloads() {
-  set({ paused: true });
+/** Fuera la pausa (la del usuario o la que la cola se puso sola), con la cuenta de fallos a cero. */
+function unpause() {
+  failStreak = 0;
+  streak.clear();
+  if (state.paused || state.pausedWhy) set({ paused: false, pausedWhy: undefined, pausedDetail: undefined });
+}
+
+/** Detiene en el programa lo que esté bajando. */
+async function pauseJobs() {
   for (const item of state.items) {
     const client = item.job ? host?.clientFor(item.sourceId) : null;
     if (client && item.job && IN_ENGINE.has(item.state)) await client.pause(item.job).catch(() => undefined);
   }
 }
 
+export async function pauseDownloads() {
+  set({ paused: true, pausedWhy: undefined, pausedDetail: undefined });
+  await pauseJobs();
+}
+
+/**
+ * La cola se pausa sola y dice por qué. Lo que se dio por fallido en esta
+ * racha vuelve a la espera: al reanudar se intenta otra vez, desde cero.
+ */
+function pauseItself(why: SelfPause, detail: string) {
+  // (Ya en pausa: solo se anota el motivo si es la falta de espacio, que además detiene la importación.)
+  if (state.paused && (why !== 'storage' || state.pausedWhy === 'storage')) return;
+  const again = new Set(streak);
+  streak.clear();
+  failStreak = 0;
+  set({
+    paused: true,
+    pausedWhy: why,
+    pausedDetail: detail.slice(0, 200),
+    items: state.items.map((item) =>
+      again.has(item.id) && item.state === 'failed'
+        ? { ...item, state: 'waiting' as const, job: undefined, attempts: 0, retryAt: undefined, finishedAt: undefined, progress: 0, downloaded: 0, speed: 0 }
+        : item
+    ),
+  });
+  void pauseJobs();
+}
+
 export async function resumeDownloads() {
-  set({ paused: false });
+  unpause();
+  // (Lo que esperaba su reintento ya esperó de sobra.)
+  set({ paused: false, items: state.items.map((item) => (item.retryAt ? { ...item, retryAt: undefined } : item)) });
   for (const item of state.items) {
     const client = item.job ? host?.clientFor(item.sourceId) : null;
     if (client && item.job && IN_ENGINE.has(item.state)) await client.resume(item.job).catch(() => undefined);
@@ -459,14 +720,37 @@ export async function resumeDownloads() {
   void tick();
 }
 
+/** Lo de una canción que la cola guarda fuera de su tarjeta. */
+function forget(item: DownloadItem) {
+  const client = item.job ? host?.clientFor(item.sourceId) : null;
+  if (client && item.job && (IN_ENGINE.has(item.state) || item.state === 'importing')) void client.cancel(item.job).catch(() => undefined);
+  prepared.delete(item.id);
+  lastDownloaded.delete(item.id);
+  streak.delete(item.id);
+}
+
 /** Quita una tarjeta (y, si estaba bajando, la cancela en el programa). */
 export function removeDownload(id: string) {
   const item = find(id);
   if (!item) return;
-  const client = item.job ? host?.clientFor(item.sourceId) : null;
-  if (client && item.job && (IN_ENGINE.has(item.state) || item.state === 'importing')) void client.cancel(item.job).catch(() => undefined);
-  prepared.delete(id);
+  forget(item);
   set({ items: state.items.filter((other) => other.id !== id) });
+}
+
+/**
+ * «Cancelar todo»: fuera de la cola lo que no ha terminado (y cancelado en el
+ * programa lo que estuviera bajando). Lo ya descargado se queda en la
+ * biblioteca y en la cola, como terminado. Devuelve cuántas se quitaron.
+ */
+export function cancelDownloads(): number {
+  const going = state.items.filter((item) => item.state === 'pending' || isActive(item));
+  if (going.length === 0) return 0;
+  going.forEach(forget);
+  const gone = new Set(going.map((item) => item.id));
+  failStreak = 0;
+  set({ items: state.items.filter((item) => !gone.has(item.id)), paused: false, pausedWhy: undefined, pausedDetail: undefined, speed: 0 });
+  void tick();
+  return going.length;
 }
 
 /** Las que fallaron (o no se encontraron), otra vez. */
@@ -475,9 +759,9 @@ export function retryDownloads(ids?: string[]) {
   if (!state.items.some(again)) return;
   const busy = state.items.some(isActive);
   const batch = busy ? state.batch : state.batch + 1;
+  unpause();
   set({
     batch,
-    paused: false,
     items: state.items.map((item) =>
       again(item)
         ? {
@@ -486,6 +770,9 @@ export function retryDownloads(ids?: string[]) {
             batch,
             error: undefined,
             job: undefined,
+            attempts: 0,
+            slow: 0,
+            retryAt: undefined,
             progress: 0,
             downloaded: 0,
             speed: 0,
@@ -691,8 +978,23 @@ let lastSyncAt = 0;
 let stalledSince = 0;
 const lastDownloaded = new Map<string, number>();
 let engineCheckedAt = 0;
+/** Descargas que han fallado seguidas, sin ninguna bien entre medias, y cuáles se dieron por fallidas en esa racha. */
+let failStreak = 0;
+const streak = new Set<string>();
+/** Canciones bajadas que aún no se han contado en las métricas (van de varias en varias), y desde cuándo. */
+let uncounted = 0;
+let uncountedSince = 0;
 
-const isNetworkError = (error: unknown) => error instanceof TypeError || (error instanceof DOMException && error.name === 'AbortError');
+/** El programa no está (cerrado, o reiniciándose): `fetch` no llegó a hablar con él. */
+const isNetworkError = (error: unknown) => error instanceof TypeError;
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
+/** Las descargas de la sesión, a las métricas: un evento con cuántas, no uno por canción (hay un tope diario de eventos). */
+function flushDownloadCount() {
+  if (uncounted <= 0) return;
+  trackEvent('song_download', { n: uncounted });
+  uncounted = 0;
+}
 
 /**
  * ¿Se puede hablar con el programa de esta fuente? Bien, se vuelve a mirar
@@ -701,15 +1003,19 @@ const isNetworkError = (error: unknown) => error instanceof TypeError || (error 
  */
 async function engineReady(client: EngineClient, sourceId: string): Promise<boolean> {
   const now = Date.now();
-  if (state.problem === null && now - engineCheckedAt < 15_000) return true;
-  if (state.problem !== null && state.problem !== 'extension' && now - engineCheckedAt < 4_000) return false;
+  const bad = state.problem === 'engine' || state.problem === 'outdated';
+  if (!bad && state.problem !== 'extension' && now - engineCheckedAt < 15_000) return true;
+  if (bad && now - engineCheckedAt < 4_000) return false;
   engineCheckedAt = now;
   try {
     const status = await client.status();
-    const problem: DownloadProblem = versionBelow(status.version, MIN_ENGINE) ? 'outdated' : null;
-    if (state.problem !== problem) set({ problem }, false);
-    if (problem) void ensureEngine(sourceId, client);
-    return problem === null;
+    if (versionBelow(status.version, MIN_ENGINE)) {
+      if (state.problem !== 'outdated') set({ problem: 'outdated' }, false);
+      void ensureEngine(sourceId, client);
+      return false;
+    }
+    if (bad || state.problem === 'extension') set({ problem: null }, false);
+    return true;
   } catch {
     if (state.problem !== 'engine') set({ problem: 'engine' }, false);
     void ensureEngine(sourceId, client);
@@ -724,7 +1030,7 @@ async function tick() {
     const active = state.items.filter(isActive);
     if (active.length === 0) {
       finalizeBatch();
-      if (state.speed !== 0) set({ speed: 0 }, false);
+      if (state.speed !== 0 || state.problem === 'offline') set({ speed: 0, ...(state.problem === 'offline' ? { problem: null } : {}) }, false);
       return;
     }
     // Una sola fuente en la práctica: la de la primera canción pendiente.
@@ -736,8 +1042,13 @@ async function tick() {
     if (!(await engineReady(client, active[0].sourceId))) return;
 
     await syncJobs(client);
-    if (!state.paused) dispatch(client);
-    if (!importing) {
+    // Sin conexión no se empieza nada (fallaría una tras otra): la cola espera a que vuelva.
+    const offline = isOffline();
+    if (offline && state.problem === null) set({ problem: 'offline' }, false);
+    else if (!offline && state.problem === 'offline') set({ problem: null }, false);
+    if (!state.paused && !offline) dispatch(client);
+    // (Sin espacio en el equipo no se importa: se reintenta al reanudar.)
+    if (!importing && state.pausedWhy !== 'storage') {
       const next = state.items.find((item) => item.state === 'importing');
       if (next) void importItem(client, next);
     }
@@ -766,6 +1077,10 @@ async function syncJobs(client: EngineClient) {
   let gained = 0;
   let transferring = false;
   const startupSamples: number[] = [];
+  /** Lo que falló en esta vuelta (por si es una racha) y cuántas bajaron bien. */
+  const failures: { id: string; error: string; final: boolean }[] = [];
+  let succeeded = 0;
+  const offline = isOffline();
   const now = Date.now();
   const elapsed = lastSyncAt ? (now - lastSyncAt) / 1000 : 0;
   lastSyncAt = now;
@@ -825,6 +1140,7 @@ async function syncJobs(client: EngineClient) {
         return { ...next, speed: 0 };
       case 'done':
         lastDownloaded.delete(item.id);
+        succeeded += 1;
         return {
           ...next,
           state: 'importing' as const,
@@ -834,9 +1150,31 @@ async function syncJobs(client: EngineClient) {
           ...(job.size ? { finalBytes: job.size } : {}),
           ...(job.file ? { fileName: job.file.split(/[\\/]/).pop() } : {}),
         };
-      case 'failed':
+      case 'failed': {
         lastDownloaded.delete(item.id);
-        return { ...next, state: 'failed' as const, speed: 0, error: job.error || tr('La descarga falló.'), finishedAt: now };
+        const error = job.error || tr('La descarga falló.');
+        if (PERMANENT_FAILURE.test(error)) return { ...next, state: 'failed' as const, speed: 0, error, finishedAt: now };
+        // Sin conexión no cuenta como intento: no fue culpa de la canción.
+        const attempts = (item.attempts ?? 0) + (offline ? 0 : 1);
+        const final = attempts >= MAX_ATTEMPTS;
+        if (!offline) failures.push({ id: item.id, error, final });
+        if (final) return { ...next, state: 'failed' as const, speed: 0, error, attempts, finishedAt: now };
+        // Se reintenta sola, tras una espera (lo preparado se reutiliza).
+        return {
+          ...next,
+          state: 'waiting' as const,
+          job: undefined,
+          attempts,
+          retryAt: now + (RETRY_WAIT_MS[attempts - 1] ?? RETRY_WAIT_MS[0]),
+          error,
+          progress: 0,
+          downloaded: 0,
+          speed: 0,
+          startedAt: undefined,
+          firstByteAt: undefined,
+          downloadEndedAt: undefined,
+        };
+      }
       case 'cancelled':
         lastDownloaded.delete(item.id);
         return { ...next, state: 'failed' as const, speed: 0, error: tr('Se canceló en el programa de descargas.'), finishedAt: now };
@@ -861,16 +1199,43 @@ async function syncJobs(client: EngineClient) {
   const startupSeconds = startupSamples.reduce((average, sample) => Math.min(120, Math.max(1, average * 0.7 + sample * 0.3)), state.startupSeconds);
   // Solo se guarda si algo cambió de estado (el avance se vuelve a leer del programa).
   const changed = items.some((item, index) => item !== before[index] && (item.state !== before[index].state || item.job !== before[index].job));
-  set({ items, speed, problem: null, startupSeconds }, changed);
+  // (El programa contestó: si el problema era él, ya no lo hay.)
+  const problem = state.problem === 'engine' || state.problem === 'outdated' ? null : state.problem;
+  set({ items, speed, problem, startupSeconds }, changed);
+
+  // Una racha de fallos (YouTube frenando, la red a medias…): con una sola que
+  // baje bien se olvida; si no, la cola se pausa en vez de quemar la lista.
+  if (succeeded > 0) {
+    failStreak = 0;
+    streak.clear();
+  }
+  for (const failure of failures) {
+    failStreak += 1;
+    if (failure.final) streak.add(failure.id);
+  }
+  if (failStreak >= FAIL_STREAK && failures.length > 0) pauseItself('failing', failures[failures.length - 1].error);
 }
 
 /** Empieza (prepara y pide) las siguientes, hasta 4 a la vez. */
 function dispatch(client: EngineClient) {
-  const inFlight = state.items.filter((item) => IN_ENGINE.has(item.state) || preparing.has(item.id)).length;
+  // Lo que ya está en marcha: la misma canción (pedida por otra lista) no se
+  // baja a la vez; espera, y al llegar su turno ya la encuentra en la biblioteca.
+  const flying = new SongSet();
+  let inFlight = 0;
+  for (const item of state.items) {
+    const busy = IN_ENGINE.has(item.state) || preparing.has(item.id);
+    if (busy) inFlight += 1;
+    if (busy || item.state === 'importing' || item.state === 'resolving') flying.add(wantedOf(item));
+  }
   let free = IN_FLIGHT - inFlight;
+  const now = Date.now();
   for (const item of state.items) {
     if (free <= 0) break;
     if (item.state !== 'waiting' || preparing.has(item.id)) continue;
+    if (item.retryAt && item.retryAt > now) continue;
+    const wanted = wantedOf(item);
+    if (flying.has(wanted)) continue;
+    flying.add(wanted);
     free -= 1;
     void prepare(client, item);
   }
@@ -899,7 +1264,7 @@ async function prepare(client: EngineClient, start: DownloadItem) {
       void client.cancel(job).catch(() => undefined);
       return;
     }
-    patch(id, { job, state: 'queued', progress: 0, downloaded: 0 });
+    patch(id, { job, state: 'queued', progress: 0, downloaded: 0, retryAt: undefined });
   } catch (error) {
     if (isNetworkError(error)) {
       set({ problem: 'engine' }, false);
@@ -908,6 +1273,14 @@ async function prepare(client: EngineClient, start: DownloadItem) {
       // el pedido pudo quedar sin ellas: se vuelve a preparar entero.
       prepared.delete(id);
       patch(id, { state: 'waiting' });
+    } else if (error instanceof EngineTimeout) {
+      // El programa está, pero no contestó a tiempo (YouTube lento, la red a
+      // medias). Se intenta otra vez tras una espera, y a la tercera se deja:
+      // sin tope, la canción volvería a la espera para siempre y el lote no cerraría.
+      prepared.delete(id);
+      const slow = (find(id)?.slow ?? 0) + (isOffline() ? 0 : 1);
+      if (slow >= MAX_SLOW) patch(id, { state: 'failed', slow, error: tr('El programa de descargas tardó demasiado en responder.'), finishedAt: Date.now() });
+      else patch(id, { state: 'waiting', slow, retryAt: Date.now() + 15_000 });
     } else {
       patch(id, { state: 'failed', error: errorText(error).slice(0, 200), finishedAt: Date.now() });
     }
@@ -924,8 +1297,12 @@ async function buildOrder(client: EngineClient, start: DownloadItem): Promise<So
   const id = start.id;
   const current = () => find(id) ?? start;
 
-  // 1. Una canción del CSV que ya está en la biblioteca no se busca ni se baja.
-  if (start.origin === 'csv' && start.title && alreadyHave(start, start.title, start.artist, start.duration)) return null;
+  // 1. Lo que ya está en la biblioteca no se busca ni se baja: una canción del
+  //    CSV, por su título y artista; cualquiera, si ya se bajó por este mismo
+  //    vídeo o esta misma canción de Spotify.
+  if (((start.origin === 'csv' && start.title) || start.videoId || start.spotifyId) && alreadyHave(start, start.title, start.artist, start.duration)) {
+    return null;
+  }
 
   // 2. El vídeo de una canción del CSV sin enlace.
   /** La duración del audio que se baja (la de YouTube): la letra se ajusta a ella. */
@@ -1001,6 +1378,9 @@ async function buildOrder(client: EngineClient, start: DownloadItem): Promise<So
   });
 
   const sourceBytes = current().sourceBytes;
+  // La carpeta es el nombre de la playlist, que ahora puede venir de un
+  // servicio («Rock 80's/90's», «..\x»): solo lo que vale como nombre de carpeta.
+  const folder = item.playlist ? safeFileName(item.playlist) : '';
   return {
     url: watchUrl(videoId),
     title: edition.title,
@@ -1011,7 +1391,7 @@ async function buildOrder(client: EngineClient, start: DownloadItem): Promise<So
     ...(edition.albumArtist ? { album_artist: edition.albumArtist } : {}),
     ...(cover ? { cover } : {}),
     ...(lyrics ? { lyrics: lyrics.text } : {}),
-    ...(item.playlist ? { folder: item.playlist } : {}),
+    ...(folder ? { folder } : {}),
     ...(sourceBytes ? { expected: sourceBytes } : {}),
   };
 }
@@ -1020,7 +1400,7 @@ async function buildOrder(client: EngineClient, start: DownloadItem): Promise<So
 function alreadyHave(item: DownloadItem, title: string, artist: string, duration?: number): boolean {
   // Una tarjeta quitada (o de otro perfil, si se cambió a mitad) no toca la biblioteca.
   if (!find(item.id)) return true;
-  const existing = findInLibrary(host?.songs() ?? [], title, artist, duration);
+  const existing = libraryMatcher(host?.songs() ?? [])({ title, artist, duration, videoId: item.videoId, spotifyId: item.spotifyId });
   if (!existing) return false;
   if (item.playlist) host?.mergePlaylistSongs(item.playlist, [existing.id]);
   patch(item.id, { state: 'skipped', songId: existing.id, finishedAt: Date.now() });
@@ -1042,7 +1422,8 @@ async function importItem(client: EngineClient, item: DownloadItem) {
     try {
       bytes = await client.file(item.job);
     } catch (error) {
-      if (isNetworkError(error)) {
+      if (isNetworkError(error) || error instanceof EngineTimeout) {
+        // El programa no está o se quedó a medias: se vuelve a pedir el archivo cuando conteste.
         set({ problem: 'engine' }, false);
         engineCheckedAt = 0;
       } else {
@@ -1058,6 +1439,7 @@ async function importItem(client: EngineClient, item: DownloadItem) {
       const plan = await planMusicImport(source, library);
       let songId: string | undefined = [...plan.existing.values()][0];
       let reason: string | undefined;
+      let stoppedFor: string | undefined;
       if (plan.entries.length > 0) {
         const outcome = await storeImportedSongs(
           plan,
@@ -1071,11 +1453,19 @@ async function importItem(client: EngineClient, item: DownloadItem) {
           },
           () => uid !== profile
         );
+        stoppedFor = outcome.stoppedFor;
         reason = outcome.skipped[0]?.reason ?? outcome.stoppedFor;
       }
       if (uid !== profile || !find(item.id)) return;
       // La misma canción con otro nombre de archivo: la que ya estaba.
       songId ??= findInLibrary(owner.songs(), item.title, item.artist, item.duration)?.id;
+      if (!songId && stoppedFor) {
+        // Sin espacio en el equipo: las siguientes fallarían igual después de
+        // bajar. La cola se pausa y esta se queda lista para entrar al reanudar
+        // (el archivo sigue en el programa).
+        pauseItself('storage', stoppedFor);
+        return;
+      }
       if (!songId) {
         patch(item.id, { state: 'failed', error: reason ?? tr('No se pudo añadir a tu biblioteca.'), finishedAt: Date.now() });
         return;
@@ -1088,7 +1478,12 @@ async function importItem(client: EngineClient, item: DownloadItem) {
         set({ finishSeconds: Math.min(120, Math.max(1, state.finishSeconds * 0.7 + sample * 0.3)) });
       }
       prepared.delete(item.id);
-      patch(item.id, { state: 'done', songId, finishedAt, error: undefined });
+      rememberDownloaded(wantedOf(current ?? item), songId);
+      // A las métricas, de veinte en veinte o cada diez minutos (y al cerrar el lote).
+      if (uncounted === 0) uncountedSince = finishedAt;
+      uncounted += 1;
+      if (uncounted >= 20 || finishedAt - uncountedSince >= 600_000) flushDownloadCount();
+      patch(item.id, { state: 'done', songId, finishedAt, error: undefined, attempts: undefined, slow: undefined, retryAt: undefined });
     } finally {
       releaseMemorySource(source);
     }
@@ -1104,6 +1499,7 @@ function finalizeBatch() {
   if (!host || state.batch === 0 || state.finalized === state.batch) return;
   const items = state.items.filter((item) => item.batch === state.batch);
   set({ finalized: state.batch });
+  flushDownloadCount();
   if (items.length === 0) return;
   const lists = new Map<string, DownloadItem[]>();
   for (const item of items) {

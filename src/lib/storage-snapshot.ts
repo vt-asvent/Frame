@@ -66,6 +66,9 @@ export const SCOPED_KEYS = [
   'songFavorites',
   // Horarios de Inicio (1.9.0): fichas por mes; la foto viaja con image-sync.
   'timetables',
+  // Favoritos de la Biblioteca (1.9.2, extensión AK Lore): una ficha por
+  // archivo marcado. Las versiones anteriores no la conocen y la conservan.
+  'loreFavorites',
 ] as const;
 
 /** Las claves que esta versión conoce (lo demás de la nube es de una versión más nueva). */

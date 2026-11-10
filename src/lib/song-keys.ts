@@ -197,8 +197,20 @@ export function localizePlaylists(uid: string): boolean {
 
 /** Ids de la biblioteca de este dispositivo (los publica el estado de la música). */
 let library: Set<string> | null = null;
+const libraryListeners = new Set<() => void>();
 export const setLibraryIds = (ids: string[]) => {
-  library = new Set(ids);
+  const next = new Set(ids);
+  const same = library !== null && library.size === next.size && ids.every((id) => library!.has(id));
+  library = next;
+  // Llegó o se fue una canción: lo que le falta a una playlist cambió (verificador de sincronización).
+  if (!same) libraryListeners.forEach((listener) => listener());
 };
 /** null mientras la música aún se carga. */
 export const libraryIds = (): ReadonlySet<string> | null => library;
+/** Avisa cuando cambian las canciones que este dispositivo tiene. */
+export const subscribeLibrary = (listener: () => void): (() => void) => {
+  libraryListeners.add(listener);
+  return () => {
+    libraryListeners.delete(listener);
+  };
+};

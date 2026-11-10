@@ -6,6 +6,9 @@
 #       y package.json (las tres iguales, p. ej. 1.0.2).
 #    2. pwsh scripts/release.ps1            (compila + publica)
 #       pwsh scripts/release.ps1 -SkipBuild (solo publica lo ya compilado)
+#       … -Minima 1.9.1  (la versión nueva queda disponible, pero no obligatoria:
+#                         siguen valiendo las instaladas desde esa; sin -Minima,
+#                         la mínima es la que se publica y todas deben actualizar)
 #
 #  Qué hace: compila el instalador NSIS FIRMADO (clave keys/frame-updater.key),
 #  genera latest.json, crea el Release vX.Y.Z en vt-asvent/frame-app y en
@@ -19,7 +22,7 @@
 #  Con eso: la página web ya entrega la nueva versión (enlace /latest) y
 #  todas las apps instaladas se actualizan solas.
 # ============================================================
-param([switch]$SkipBuild)
+param([switch]$SkipBuild, [string]$Minima)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -100,7 +103,7 @@ function Publish-Release([string]$owner) {
         version  = $version
         notes    = "Frame $version"
         pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-        frame    = @{ size = $size; minimum = $version }
+        frame    = @{ size = $size; minimum = $(if ($Minima) { $Minima } else { $version }) }
         platforms = @{
             'windows-x86_64' = @{
                 signature = (Get-Content $sig -Raw).Trim()

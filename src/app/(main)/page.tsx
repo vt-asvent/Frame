@@ -15,10 +15,11 @@ import { tr } from '@/lib/i18n';
 // Inicio (1.9.0, Diego), de arriba abajo:
 //   · el horario, a todo el ancho (ScheduleBoard);
 //   · el clima;
-//   · «Tareas pendientes» y, a su derecha, el pomodoro (arriba) con la
-//     playlist más escuchada (3/4) y la racha (1/4) debajo;
+//   · «Tareas pendientes» y, a su derecha, el pomodoro (4/7 del alto, con el
+//     temporizador y el cronómetro) y debajo la playlist más escuchada (3/4)
+//     y la racha (1/4);
 //   · en modo Avanzado, «Tu semana en datos»: el ritmo en la mitad izquierda y
-//     la constancia y las tareas culminadas a su derecha.
+//     la constancia y las tareas culminadas, un cuarto cada una (1.9.2).
 // La matriz de competencias se retiró en la 1.9.0.
 // ---------------------------------------------------------------------------
 
@@ -47,9 +48,12 @@ export default function HomePage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <PendingTasks columns={1} />
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-rows-2">
-          <QuickStudyCard className="min-h-[10rem]" />
-          <div className="grid min-h-[10rem] grid-cols-4 gap-4">
+        {/* El pomodoro ocupa 4/7 del alto; la playlist y la racha, el resto (1.9.2).
+            La columna mide lo de antes (o lo que mida «Tareas pendientes»): al crecer
+            el pomodoro, la fila de abajo se reduce. Los mínimos guardan la proporción 4:3. */}
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-rows-[minmax(0,4fr)_minmax(0,3fr)]">
+          <QuickStudyCard className="min-h-[13rem] lg:min-h-[11.5rem]" />
+          <div className="grid min-h-[9rem] grid-cols-4 gap-4 lg:min-h-[8.5rem]">
             <TopPlaylistCard className="col-span-3" />
             <StreakCard streak={streak} className="col-span-1" />
           </div>
@@ -62,12 +66,11 @@ export default function HomePage() {
             <h2 className="font-headline text-lg font-bold text-primary">{tr('Tu semana en datos')}</h2>
             <p className="text-xs text-muted-foreground">{pulse.rangeLabel}</p>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <WeekRhythmCard pulse={pulse} showScore={selectionMode === 'rendimiento'} />
-            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2">
-              <ConsistencyCard pulse={pulse} />
-              <TasksDoneCard pulse={pulse} />
-            </div>
+          {/* El ritmo en la mitad; la constancia y las tareas culminadas, un cuarto cada una (1.9.2). */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <WeekRhythmCard pulse={pulse} showScore={selectionMode === 'rendimiento'} className="sm:col-span-2" />
+            <ConsistencyCard pulse={pulse} />
+            <TasksDoneCard pulse={pulse} />
           </div>
         </section>
       )}

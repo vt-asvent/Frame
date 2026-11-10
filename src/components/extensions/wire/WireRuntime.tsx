@@ -2,12 +2,15 @@ import { useEffect, useRef } from 'react';
 import { useCourse } from '@/context/CourseContext';
 import { useExtensionOn } from '@/lib/extensions/store';
 import { requestWireCycle, runWireCycle, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
+import { onPeerMessage } from '@/lib/sync-peers';
+import { SYNC_NOW_EVENT } from '@/lib/sync-status';
 
 // ============================================================
 // El relevo de Wire en segundo plano (montado en el diseño principal).
 // Da una vuelta al arrancar, cada minuto y medio (cada 20 s mientras la
-// vista en vivo de Ajustes está a la vista), al volver a la ventana y poco
-// después de que cambie la biblioteca o los adjuntos.
+// vista en vivo de Ajustes está a la vista), al volver a la ventana, poco
+// después de que cambie la biblioteca o los adjuntos y, desde la 1.9.2, en
+// cuanto otro equipo de la cuenta avisa de que algo viajó.
 // ============================================================
 
 const SLOW_MS = 90_000;
@@ -39,11 +42,21 @@ export default function WireRuntime() {
     const onVisible = () => {
       if (document.visibilityState === 'visible' && ctxRef.current) requestWireCycle(1500);
     };
+    // «Sincronizar ahora» / «Corregir» (Ajustes → Dispositivos): una vuelta ya.
+    const onNow = () => ctxRef.current && requestWireCycle(0);
+    // Otro equipo subió o bajó algo: esta vuelta no espera al minuto y medio
+    // (ni a que la ventana esté a la vista: en la laptop, minimizada también llega).
+    const stopPeers = onPeerMessage((message) => {
+      if (message.t === 'wire' && ctxRef.current) requestWireCycle(1500);
+    });
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener(SYNC_NOW_EVENT, onNow);
     return () => {
       stop = true;
       window.clearTimeout(timer);
+      stopPeers();
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener(SYNC_NOW_EVENT, onNow);
     };
   }, [on, userProfile?.id]);
 

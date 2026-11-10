@@ -1,24 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, FileUp, LoaderCircle, Pause, Play, Plus, RefreshCw, RotateCcw, Weight, X } from 'lucide-react';
+import { ArrowLeft, Download, FileDown, FileUp, Link2, ListMusic, LoaderCircle, Pause, Play, Plus, RefreshCw, RotateCcw, Weight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import GoogleEmbed from '@/components/integrations/GoogleEmbed';
 import { useCourse } from '@/context/CourseContext';
 import type { ExtensionManifest, MusicSourceContribution } from '@/lib/extensions/manifest';
-import { EngineClient, parseSongsCsv, songBytes, youtubeId, type CsvSong } from '@/lib/extensions/yt-mp3';
+import { EngineClient, parseSongsCsv, safeFileName, songBytes, youtubeId, type CsvSong } from '@/lib/extensions/yt-mp3';
 import { engineError, ensureEngine, useEngineStep } from '@/lib/extensions/engine-app';
 import {
   addCsvDownloads,
   addVideoDownload,
+  cancelDownloads,
   clearFinishedDownloads,
   describeDownload,
-  findInLibrary,
   formatEta,
   isActive,
   isFinished,
+  libraryMatcher,
   pauseDownloads,
   preciseBytes,
   probeDownload,
@@ -32,6 +33,8 @@ import {
   type DownloadItem,
 } from '@/lib/extensions/yt-mp3-downloads';
 import { formatVideoDuration, readYoutubeVideo, youtubeIdFromUrl } from '@/lib/study-videos';
+import { LinkError, readPlaylistLink, SERVICE_NAME, songsToCsv, type LinkService, type PartialReason } from '@/lib/extensions/playlist-link';
+import { useSaveCopy } from '@/hooks/use-save-copy';
 import { decodeTextFile } from '@/lib/lyrics';
 import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -47,7 +50,12 @@ import { cn } from '@/lib/utils';
 //   │                                                │ vídeo · canal ·    │
 //   │                                                │ peso), con barra   │
 //   └────────────────────────────────────────────────┴────────────────────┘
-//   [Elegir un CSV] → resumen de lo que se bajará → [Iniciar descarga]
+//   [enlace de una playlist · Leer la lista] [Elegir un CSV]
+//     → resumen de lo que se bajará → [Guardar CSV] [Iniciar descarga]
+//
+// Desde la 1.9.2 la lista se puede leer de su enlace (Spotify, Deezer,
+// YouTube Music, Apple Music; lib/extensions/playlist-link.ts), sin exportar
+// nada en el navegador, y el CSV admite los formatos de varias apps.
 //
 // «Añadir» toma el vídeo abierto en YouTube. La descarga la hace el programa
 // de la fuente, en MP3 de 320 kbps con la portada y la letra oficiales, y la
@@ -63,11 +71,19 @@ const BOX = 'h-[clamp(420px,calc(100vh-17rem),960px)]';
 const CSV_LIMIT = 1000;
 
 interface CsvChoice {
+  /** Nombre del archivo, o de la lista leída de su enlace. */
   file: string;
   songs: CsvSong[];
   playlist: string;
   truncated: boolean;
+  /** Leída de su enlace en este servicio. */
+  from?: LinkService;
+  /** No llegó entera: el servicio enseña solo las primeras por enlace, o una página no llegó. */
+  partial?: PartialReason;
 }
+
+/** Nombre de archivo sin los caracteres que Windows no admite. */
+const fileSafe = (name: string) => safeFileName(name) || 'Playlist';
 
 /** Nombre de playlist a partir del archivo («mi_lista.csv» → «Mi lista»). */
 function playlistNameOf(fileName: string): string {
@@ -92,6 +108,12 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
   const [notice, setNotice] = useState<string | null>(null);
   const [csv, setCsv] = useState<CsvChoice | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
+  const [link, setLink] = useState('');
+  const [reading, setReading] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const saveCopy = useSaveCopy();
+  /** «¿Ya está en la biblioteca?», preparado una vez para todas las preguntas. */
+  const inLibrary = useMemo(() => libraryMatcher(songs), [songs]);
   const [sizesShown, setSizesShown] = useState<Set<string>>(() => new Set());
   const listRef = useRef<HTMLUListElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -123,6 +145,13 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  // «Cancelar todo» pide un segundo clic, y la pregunta se retira sola.
+  useEffect(() => {
+    if (!confirmCancel) return;
+    const timer = window.setTimeout(() => setConfirmCancel(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [confirmCancel]);
+
   // Si el programa se cae a mitad, la cola lo dice; al volver, se ve aquí.
   const engineProblem = downloads.problem === 'engine' || downloads.problem === 'outdated' ? downloads.problem : null;
   const shownEngine: EngineState = engine === 'up' && engineProblem ? (engineProblem === 'engine' ? 'down' : 'outdated') : engine;
@@ -130,6 +159,19 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
   const items = downloads.items;
   const pending = items.filter((item) => item.state === 'pending').length;
   const finished = items.filter(isFinished).length;
+  const unfinished = items.length - finished;
+  /** Por qué la cola está parada sin que nadie la parara. */
+  const queueNote =
+    downloads.pausedWhy === 'failing'
+      ? tr('La cola se pausó sola: varias descargas seguidas fallaron ({error}). Revisa tu conexión, o espera un rato si YouTube las está frenando, y pulsa «Reanudar».', {
+          // (El detalle es el del programa de descargas, en su idioma: sin su «ERROR:» y sin alargarse.)
+          error: (downloads.pausedDetail ?? tr('La descarga falló.')).replace(/^ERROR:\s*/i, '').slice(0, 110),
+        })
+      : downloads.pausedWhy === 'storage'
+        ? tr('La cola se pausó sola: {error}. Libera espacio y pulsa «Reanudar».', { error: downloads.pausedDetail ?? tr('el disco del equipo se quedó sin espacio') })
+        : downloads.problem === 'offline' && summary.active && !downloads.paused
+          ? tr('Sin conexión: la cola espera y sigue sola cuando vuelva.')
+          : null;
   const scrollToEnd = () =>
     window.setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }), 60);
 
@@ -185,28 +227,73 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
     }
   };
 
+  // (Por las canciones, no por `csv`: escribir el nombre de la playlist no lo recalcula.)
+  const csvSongs = csv?.songs;
   const csvSummary = useMemo(() => {
-    if (!csv) return null;
+    if (!csvSongs) return null;
     let seconds = 0;
     let known = 0;
     let bytes = 0;
-    let inLibrary = 0;
+    let have = 0;
     let linked = 0;
-    for (const song of csv.songs) {
+    for (const song of csvSongs) {
       if (song.duration) {
         seconds += song.duration;
         known += 1;
       }
       if (song.url) linked += 1;
-      if (findInLibrary(songs, song.title, song.artist, song.duration)) inLibrary += 1;
+      const videoId = song.url ? youtubeId(song.url) ?? undefined : undefined;
+      // (De una lista de YouTube, su título y su artista son los del vídeo: solo vale su vídeo.)
+      const wanted = song.fromYouTube ? { title: '', artist: '', videoId } : { title: song.title, artist: song.artist, duration: song.duration, videoId, spotifyId: song.spotifyId };
+      if (inLibrary(wanted)) have += 1;
       else bytes += songBytes(song.duration ?? 210);
     }
-    return { seconds, known, bytes, inLibrary, linked };
-  }, [csv, songs]);
+    return { seconds, known, bytes, inLibrary: have, linked };
+  }, [csvSongs, inLibrary]);
+
+  /** «Leer la lista»: las canciones de una playlist por su enlace. Lo que no se puede leer, se dice. */
+  const readLink = async () => {
+    if (reading || !link.trim()) return;
+    setReading(true);
+    setCsvError(null);
+    try {
+      const list = await readPlaylistLink(link, CSV_LIMIT);
+      setCsv({
+        file: list.name || SERVICE_NAME[list.service],
+        songs: list.songs,
+        // (El nombre viene del servicio: como mucho, lo que admite el campo.)
+        playlist: list.name.slice(0, 80),
+        truncated: list.songs.length >= CSV_LIMIT,
+        from: list.service,
+        partial: list.partial,
+      });
+      setLink('');
+    } catch (error) {
+      setCsvError(error instanceof LinkError ? error.message : errorText(error).slice(0, 180));
+    } finally {
+      setReading(false);
+    }
+  };
+
+  /** «Guardar CSV»: la lista leída, en Descargas (Frame la vuelve a leer igual). */
+  const saveCsv = () => {
+    if (!csv) return;
+    void saveCopy(new Blob([songsToCsv(csv.songs)], { type: 'text/csv' }), `${fileSafe(csv.playlist || csv.file)}.csv`);
+  };
 
   const startCsv = () => {
     if (!csv) return;
-    addCsvDownloads(id, csv.songs, csv.playlist.trim() || playlistNameOf(csv.file));
+    // De un enlace, sin nombre (una canción suelta) no entra en ninguna playlist.
+    const { added, repeated } = addCsvDownloads(id, csv.songs, csv.from ? csv.playlist.trim() : csv.playlist.trim() || playlistNameOf(csv.file));
+    setNotice(
+      added === 0
+        ? tr('Esas canciones ya están en la cola.')
+        : repeated === 1
+          ? tr('1 ya estaba en la cola: no se repite.')
+          : repeated > 1
+            ? tr('{count} ya estaban en la cola: no se repiten.', { count: repeated })
+            : null
+    );
     setCsv(null);
     scrollToEnd();
   };
@@ -263,6 +350,11 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
             </div>
 
             {notice && <p className="shrink-0 rounded-md bg-primary/10 px-2 py-1.5 text-[11px] text-foreground">{notice}</p>}
+            {queueNote && (
+              <p role="status" className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-foreground">
+                {queueNote}
+              </p>
+            )}
 
             {shownEngine !== 'up' && (
               <div className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-border/70 px-2 py-1.5 text-[11px] text-muted-foreground">
@@ -302,7 +394,7 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
               {items.length === 0 ? (
                 <li className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center text-xs text-muted-foreground">
                   <Plus className="h-5 w-5 text-primary/70" />
-                  {tr('Abre una canción en YouTube, a la izquierda, y pulsa «Añadir». También puedes subir un CSV abajo.')}
+                  {tr('Abre una canción en YouTube, a la izquierda, y pulsa «Añadir». También puedes pegar abajo el enlace de una playlist o subir un CSV.')}
                 </li>
               ) : (
                 items.map((item) => (
@@ -313,15 +405,19 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
                     paused={downloads.paused}
                     sizeShown={sizesShown.has(item.id)}
                     onToggleSize={() => toggleSize(item.id)}
-                    inLibrary={item.state === 'pending' && item.origin === 'video' && !!findInLibrary(songs, item.title, item.artist, item.duration)}
+                    inLibrary={
+                      item.state === 'pending' &&
+                      item.origin === 'video' &&
+                      !!inLibrary({ title: item.title, artist: item.artist, duration: item.duration, videoId: item.videoId })
+                    }
                   />
                 ))
               )}
             </ul>
 
             {(summary.active || finished > 0) && (
-              <div className="flex shrink-0 items-center gap-2 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
-                <span className="min-w-0 flex-1 truncate tabular-nums">
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
+                <span className="min-w-[11rem] flex-1 truncate tabular-nums">
                   {summary.active
                     ? [
                         summary.total === 1
@@ -335,10 +431,25 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
                       : tr('{count} terminadas', { count: finished })}
                 </span>
                 {summary.active ? (
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => void (downloads.paused ? resumeDownloads() : pauseDownloads())}>
-                    {downloads.paused ? <Play className="mr-1 h-3 w-3" /> : <Pause className="mr-1 h-3 w-3" />}
-                    {downloads.paused ? tr('Reanudar') : tr('Pausar')}
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className={cn('h-6 shrink-0 px-2 text-[11px]', confirmCancel && 'bg-destructive/15 text-foreground hover:bg-destructive/25')}
+                      onClick={() => {
+                        if (confirmCancel) cancelDownloads();
+                        setConfirmCancel(!confirmCancel);
+                      }}
+                      title={tr('Quitar de la cola todo lo que no ha terminado. Lo ya descargado se queda en tu biblioteca.')}
+                    >
+                      <X className="mr-1 h-3 w-3" />
+                      {!confirmCancel ? tr('Cancelar todo') : unfinished === 1 ? tr('¿Quitar la que falta?') : tr('¿Quitar las {count} que faltan?', { count: unfinished })}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-6 shrink-0 px-2 text-[11px]" onClick={() => void (downloads.paused ? resumeDownloads() : pauseDownloads())}>
+                      {downloads.paused ? <Play className="mr-1 h-3 w-3" /> : <Pause className="mr-1 h-3 w-3" />}
+                      {downloads.paused ? tr('Reanudar') : tr('Pausar')}
+                    </Button>
+                  </>
                 ) : (
                   <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={clearFinishedDownloads}>
                     {tr('Quitar las terminadas')}
@@ -350,16 +461,23 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
         </div>
 
         {/* CSV */}
-        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void onCsvFile(event)} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+          className="hidden"
+          onChange={(event) => void onCsvFile(event)}
+        />
         {csv && csvSummary ? (
           <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-xs">
             <div className="flex items-center gap-2">
-              <FileUp className="h-4 w-4 shrink-0 text-primary" />
+              {csv.from ? <Link2 className="h-4 w-4 shrink-0 text-primary" /> : <FileUp className="h-4 w-4 shrink-0 text-primary" />}
               <p className="min-w-0 flex-1 truncate font-semibold text-foreground" title={csv.file}>
                 {csv.file}
+                {csv.from && csv.file !== SERVICE_NAME[csv.from] && <span className="font-normal text-muted-foreground"> · {SERVICE_NAME[csv.from]}</span>}
               </p>
-              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => fileRef.current?.click()}>
-                {tr('Elegir otro')}
+              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => (csv.from ? setCsv(null) : fileRef.current?.click())}>
+                {csv.from ? tr('Otra lista') : tr('Elegir otro')}
               </Button>
             </div>
             <ul className="grid gap-x-6 gap-y-1 text-muted-foreground sm:grid-cols-2">
@@ -388,6 +506,23 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
                     : tr('{linked} traen su enlace de YouTube; {search} se buscan.', { linked: csvSummary.linked, search: csv.songs.length - csvSummary.linked })}
               </li>
               {csv.truncated && <li className="text-destructive">{tr('Solo se toman las primeras {count} canciones.', { count: CSV_LIMIT })}</li>}
+              {csv.partial && csv.from && !csv.truncated && (
+                <li className="text-amber-600 dark:text-amber-400 sm:col-span-2">
+                  {csv.partial === 'failed'
+                    ? tr('Se leyeron las primeras {count} canciones y el resto no llegó. Vuelve a leer la lista más tarde: lo ya descargado no se repite.', {
+                        count: csv.songs.length,
+                      })
+                    : csv.from === 'apple'
+                      ? tr(
+                          'Apple Music solo enseña por enlace las primeras {count} canciones de una lista. Para tenerla entera, pásala a un CSV (con TuneMyMusic o Soundiiz, o con «Exportar playlist» de iTunes) y elige aquí ese archivo.',
+                          { count: csv.songs.length }
+                        )
+                      : tr('{service} solo enseña por enlace las primeras {count} canciones de una lista. Para tenerla entera, usa su CSV (por ejemplo, de Exportify).', {
+                          service: SERVICE_NAME[csv.from],
+                          count: csv.songs.length,
+                        })}
+                </li>
+              )}
             </ul>
             <label className="flex items-center gap-2 text-muted-foreground">
               <span className="shrink-0">{tr('Playlist:')}</span>
@@ -397,12 +532,18 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
                 className="h-7 max-w-xs text-xs"
                 maxLength={80}
               />
-              <span className="hidden truncate text-[11px] sm:inline">{tr('en el orden del CSV')}</span>
+              <span className="hidden truncate text-[11px] sm:inline">{csv.from ? tr('en el orden de la lista') : tr('en el orden del CSV')}</span>
             </label>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button size="sm" variant="gris" onClick={() => setCsv(null)}>
                 {tr('Quitar')}
               </Button>
+              {csv.from && (
+                <Button size="sm" variant="outline" onClick={saveCsv} title={tr('Guardar la lista como CSV en Descargas')}>
+                  <FileDown className="mr-2 h-4 w-4" />
+                  {tr('Guardar CSV')}
+                </Button>
+              )}
               <Button size="sm" onClick={startCsv} disabled={shownEngine !== 'up'}>
                 <Download className="mr-2 h-4 w-4" />
                 {tr('Iniciar descarga')}
@@ -410,13 +551,40 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
             </div>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="outline" onClick={() => fileRef.current?.click()}>
-              <FileUp className="mr-2 h-4 w-4" />
-              {tr('Elegir un CSV')}
-            </Button>
-            <p className="min-w-0 flex-1 text-[11px] text-muted-foreground">
-              {csvError ?? tr('Una lista de canciones (por ejemplo, una playlist exportada de Spotify): cada una se busca, se descarga y entra en su playlist.')}
+          <div className="space-y-1.5">
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void readLink();
+              }}
+            >
+              <label className="flex h-10 min-w-[16rem] flex-1 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm focus-within:ring-2 focus-within:ring-ring">
+                <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  value={link}
+                  onChange={(event) => {
+                    setLink(event.target.value);
+                    setCsvError(null);
+                  }}
+                  placeholder={tr('Pega el enlace de una playlist de Spotify, Deezer, YouTube Music o Apple Music')}
+                  aria-label={tr('Enlace de una playlist')}
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+                  spellCheck={false}
+                />
+              </label>
+              <Button type="submit" disabled={reading || !link.trim()}>
+                {reading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <ListMusic className="mr-2 h-4 w-4" />}
+                {reading ? tr('Leyendo…') : tr('Leer la lista')}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
+                <FileUp className="mr-2 h-4 w-4" />
+                {tr('Elegir un CSV')}
+              </Button>
+            </form>
+            <p className={cn('text-[11px]', csvError ? 'text-destructive' : 'text-muted-foreground')}>
+              {csvError ??
+                tr('Frame lee la lista (o un CSV de Exportify, TuneMyMusic, Soundiiz, Google Takeout o Apple Music) y baja cada canción en MP3 de 320 kbps con su portada, su letra y sus datos, dentro de su playlist.')}
             </p>
           </div>
         )}
@@ -453,7 +621,7 @@ function statusText(item: DownloadItem, engineName: string, paused: boolean): st
     case 'pending':
       return item.duration ? `${formatVideoDuration(item.duration)} · ${tr('Sin empezar')}` : tr('Sin empezar');
     case 'waiting':
-      return tr('En espera');
+      return item.retryAt ? tr('No salió a la primera: se reintenta sola en un momento') : tr('En espera');
     case 'resolving':
       return item.videoId ? tr('Buscando su portada y su letra…') : tr('Buscando la canción en YouTube…');
     case 'queued':

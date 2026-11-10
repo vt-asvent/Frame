@@ -5,7 +5,9 @@
 // Ver README.md.
 import { readTimetable } from './horario';
 import { accessFrom, authorize, metadata, newPairing, ownerStatus, register, revokeOwner, token } from './oauth';
-import { ownerFromApp } from './supabase';
+import { translateLyrics } from './letras';
+import { loreFile, loreIndex } from './lore';
+import { userFromApp } from './supabase';
 import { type Env, json, random, relayOf, signToken, verifyToken } from './util';
 
 export { FrameRelay } from './relay';
@@ -14,7 +16,7 @@ const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
   'access-control-allow-headers': 'authorization, content-type, mcp-protocol-version, mcp-session-id',
-  'access-control-expose-headers': 'www-authenticate, mcp-session-id',
+  'access-control-expose-headers': 'www-authenticate, mcp-session-id, content-disposition, content-length',
 };
 const MAX_BODY = 1_000_000;
 /** El pase de la app para abrir su WebSocket: un minuto y un solo uso. */
@@ -44,8 +46,10 @@ async function mcp(req: Request, env: Env, origin: string): Promise<Response> {
 
 /** Lo que pide la app, con su sesión de Frame. */
 async function app(req: Request, env: Env, path: string): Promise<Response> {
-  const owner = await ownerFromApp(env, req.headers.get('authorization'));
-  if (!owner) return json({ error: 'unauthorized' }, 401);
+  const user = await userFromApp(env, req.headers.get('authorization'));
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const owner = user.owner;
+  if (req.method === 'GET' && path.startsWith('/app/lore/archivo/')) return loreFile(env, user, path.slice('/app/lore/archivo/'.length));
   switch (`${req.method} ${path}`) {
     case 'POST /app/pair':
       return json(await newPairing(env, owner));
@@ -58,6 +62,10 @@ async function app(req: Request, env: Env, path: string): Promise<Response> {
       return json({ ok: true });
     case 'POST /app/horario':
       return readTimetable(req, env, owner);
+    case 'POST /app/traducir':
+      return translateLyrics(req, env, owner);
+    case 'GET /app/lore':
+      return loreIndex(env, user);
     default:
       return json({ error: 'not_found' }, 404);
   }
@@ -104,7 +112,7 @@ export default {
     }
   },
 
-  /** Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas y de neuronas de días pasados. */
+  /** Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas, traducciones, neuronas y descargas de días pasados. */
   async scheduled(_event: ScheduledController, env: Env, wait: ExecutionContext): Promise<void> {
     const now = Date.now();
     wait.waitUntil(
@@ -114,7 +122,9 @@ export default {
         env.DB.prepare('DELETE FROM sessions WHERE expires<?').bind(now),
         env.DB.prepare('DELETE FROM clients WHERE used=0 AND created<?').bind(now - 86_400_000),
         env.DB.prepare('DELETE FROM lecturas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
+        env.DB.prepare('DELETE FROM traducciones WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
         env.DB.prepare('DELETE FROM neuronas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
+        env.DB.prepare('DELETE FROM lore_descargas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
       ]).then(() => undefined),
     );
   },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ImageUp, Loader2, Plus, RotateCw, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ImageUp, Loader2, Plus, RotateCw, Sparkles, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils';
 // ============================================================
 // Inicio → Horario (1.9.0, Diego).
 //
-//   Horario                         [Noviembre ▾] [Semanal] [Ver original]
+//   Horario                           Noviembre ▾  Semanal  [Ver original]
 //   ── la línea del día (ScheduleTimeline), la semana (ScheduleWeek) o la foto
 //
 // «Mes» elige entre los horarios guardados (uno o varios por mes) y añade o
@@ -47,6 +47,10 @@ import { cn } from '@/lib/utils';
 // ============================================================
 
 type View = 'line' | 'week' | 'original';
+
+/** «Mes» y «Semanal»: solo texto gris y pequeño, sin borde ni color (1.9.2, Diego). */
+const TEXT_BUTTON =
+  'inline-flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
 
 export default function ScheduleBoard({ uid }: { uid: string }) {
   const { list, selected, labels, select } = useTimetables(uid);
@@ -117,11 +121,10 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="fantasma" size="sm" className="rounded-full">
-                <CalendarDays />
+              <button type="button" className={TEXT_BUTTON}>
                 {label}
-                <ChevronDown className="opacity-70" />
-              </Button>
+                <ChevronDown className="h-3 w-3 opacity-70" />
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[13rem]">
               {list.map((item) => (
@@ -149,13 +152,12 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant={view === 'week' ? 'default' : 'fantasma'} size="sm" className="rounded-full" disabled={!selected} aria-pressed={view === 'week'} onClick={() => toggle('week')}>
+          <button type="button" className={cn(TEXT_BUTTON, view === 'week' && 'font-semibold text-foreground')} disabled={!selected} aria-pressed={view === 'week'} onClick={() => toggle('week')}>
             {trc('vista del horario', 'Semanal')}
-          </Button>
+          </button>
           <Button
             variant={view === 'original' ? 'default' : 'fantasma'}
             size="sm"
-            className="rounded-full"
             disabled={!selected}
             aria-pressed={view === 'original'}
             onClick={() => toggle('original')}

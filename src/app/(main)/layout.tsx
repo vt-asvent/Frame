@@ -42,12 +42,23 @@ import IaRuntime from '@/components/extensions/ia/IaRuntime';
 import MusicDownloadsRuntime from '@/components/music/MusicDownloadsRuntime';
 import AppBackdrop from '@/components/extensions/animaciones/Backdrops';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { getActiveSession, onAuthChange, tidyName, updatePersonNames, updateUsername } from '@/lib/supabase/auth';
+import {
+  SESSION_OPENED_EVENT,
+  SESSION_OPEN_FAILED_EVENT,
+  getActiveSession,
+  hasStoredSession,
+  onAuthChange,
+  storedSessionUserId,
+  tidyName,
+  updatePersonNames,
+  updateUsername,
+} from '@/lib/supabase/auth';
 import { CLOUD_APPLIED_EVENT, pushToCloud, pullFromCloud } from '@/lib/supabase/sync';
 import { startLiveSync } from '@/lib/supabase/live-sync';
 import { startAccountSettings } from '@/lib/account-settings';
 import { startImageRefs } from '@/lib/image-refs';
 import { startSyncCheck } from '@/lib/sync-check';
+import { startDevices } from '@/lib/devices';
 import { resetSyncStatus } from '@/lib/sync-status';
 import SyncIssuesDialog from '@/components/sync/SyncIssuesDialog';
 import { startImageSync } from '@/lib/image-sync';
@@ -379,6 +390,8 @@ function MainApp({ children, userProfile }: { children: ReactNode; userProfile: 
     const stopImageRefs = startImageRefs(uid);
     const stopSettings = startAccountSettings(uid);
     const stopSyncCheck = startSyncCheck(uid);
+    // 1.9.2: este equipo en Ajustes → Dispositivos (lib/devices.ts).
+    const stopDevices = startDevices(uid);
     const handleUnload = () => { void pushToCloud(uid); };
     window.addEventListener('beforeunload', handleUnload);
 
@@ -388,9 +401,13 @@ function MainApp({ children, userProfile }: { children: ReactNode; userProfile: 
       stopImageRefs();
       stopSettings();
       stopSyncCheck();
+      stopDevices();
       resetSyncStatus();
       window.removeEventListener('beforeunload', handleUnload);
-      void pushToCloud(uid);
+      // Último respaldo, solo si la sesión de esta cuenta sigue aquí. Al cerrar
+      // sesión ya no está (el respaldo se hizo antes de salir): intentarlo solo
+      // dejaba un «la sincronización falló» que recibía a quien entrara después.
+      if (storedSessionUserId() === uid) void pushToCloud(uid);
     };
   }, [syncUid]);
 
@@ -517,10 +534,17 @@ function AppController({ children }: { children: React.ReactNode }) {
             setAuthStatus('needs-completion');
           }
         } else {
+          // Pantalla de acceso: quien entre ahora se hidrata SIEMPRE. Sin esto,
+          // si el cierre de sesión no llegó a avisar (SIGNED_OUT), volver a
+          // entrar con la misma cuenta se ignoraba y el botón giraba sin fin.
+          // Y el perfil en memoria se suelta aquí, no solo con ese aviso.
+          hydratedUid = null;
+          setUserProfile(null);
           setAuthStatus('unauthenticated');
         }
       } catch (e) {
         console.error("Failed to parse user profile from localStorage", e);
+        hydratedUid = null;
         // El perfil es la llave de todos los datos (`courses_<id>`, `tasks_<id>`…):
         // borrarlo a ciegas los dejaba huérfanos. El valor ilegible se aparta
         // por si hay que rescatar el id a mano, y se vuelve al acceso.
@@ -715,18 +739,48 @@ function AppController({ children }: { children: React.ReactNode }) {
         // La misma cuenta que ya está pintada: la nube, en segundo plano. Otra
         // (o ninguna guardada): se hidrata como siempre.
         const background = !!stored && !stored.isGuest && stored.id === session.user.id;
+        // Alguien entró mientras esto esperaba y ya se le hidrató (SESSION_OPENED_EVENT).
+        if (!background && session.user.id === hydratedUid) return;
         await hydrateFromSession(session, false, background);
       } catch (e) {
         console.error('Supabase session check failed', e);
       }
     };
 
-    void init().finally(() => {
+    void init().finally(async () => {
       booting = false;
+      // Quien inició sesión MIENTRAS Frame arrancaba vio descartado su SIGNED_IN
+      // (abajo): si hay una sesión que nadie hidrató, se atiende ahora.
+      if (!isSupabaseConfigured) return;
+      try {
+        const session = await getActiveSession();
+        if (session?.user && session.user.id !== hydratedUid) await hydrateFromSession(session, true);
+      } catch (e) {
+        console.error('Supabase late session check failed', e);
+      }
     });
 
     // Listen for custom event to reload profile
     window.addEventListener('profileUpdated', loadProfile);
+
+    // Alguien acaba de entrar (correo, Google): auth.ts lo dice con la sesión en
+    // la mano. No se espera al SIGNED_IN de supabase-js, que puede tardar medio
+    // minuto si la biblioteca aún está arrancando; cuando llegue, ya es la
+    // misma cuenta y se ignora abajo.
+    /** Abre la sesión de quien entra; si algo lo impide (el equipo sin espacio…), el acceso lo dice y deja reintentar. */
+    const openSession = (session: Session) => {
+      void hydrateFromSession(session, true).catch((error) => {
+        console.error('No se pudo abrir la sesión', error);
+        hydratedUid = null;
+        window.dispatchEvent(new Event(SESSION_OPEN_FAILED_EVENT));
+      });
+    };
+    const onSessionOpened = (event: Event) => {
+      const session = (event as CustomEvent<Session | null>).detail;
+      if (!session?.user || session.user.id === hydratedUid) return;
+      openSession(session);
+    };
+    window.addEventListener(SESSION_OPENED_EVENT, onSessionOpened);
 
     const unsubscribe = isSupabaseConfigured
       ? onAuthChange((event, session) => {
@@ -737,8 +791,15 @@ function AppController({ children }: { children: React.ReactNode }) {
             // todas las canciones de IndexedDB y reiniciar la cola de música.
             // Solo se hidrata cuando de verdad entra un usuario distinto.
             if (booting || session.user.id === hydratedUid) return;
-            void hydrateFromSession(session, true);
+            openSession(session);
           } else if (event === 'SIGNED_OUT') {
+            // Un aviso atrasado (supabase-js lo tuvo en cola mientras arrancaba):
+            // si hay una sesión guardada, alguien entró DESPUÉS de ese cierre. No
+            // se le echa por un cierre que ya pasó.
+            if (hasStoredSession()) {
+              consumeIntentionalSignOut();
+              return;
+            }
             // ¿Lo pidió el usuario? Si no (la nube cerró la sesión por su
             // cuenta: token revocado, cambio de contraseña…), NO se le echa:
             // sus datos siguen en el equipo y una franja le ofrece volver a
@@ -758,6 +819,7 @@ function AppController({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener('profileUpdated', loadProfile);
+      window.removeEventListener(SESSION_OPENED_EVENT, onSessionOpened);
       unsubscribe();
     };
   }, []);

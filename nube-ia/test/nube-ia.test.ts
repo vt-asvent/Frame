@@ -2,7 +2,7 @@
 // Frame abiertas (respaldo entre equipos, cortes, permisos retirados, frenos).
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type Arnes, CLAUDE, crearArnes, esperar, ORIGEN, sesion, VERIFICADOR } from './ayuda';
+import { ALUMNA, type Arnes, CLAUDE, crearArnes, esperar, LUIS, ORIGEN, pdfDe, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
 
 let a: Arnes;
 beforeAll(async () => {
@@ -369,5 +369,154 @@ describe('lector de horarios', () => {
     await a.cron();
     expect(await a.sql("SELECT * FROM lecturas WHERE owner='alguien'")).toEqual([]);
     expect(await a.sql("SELECT * FROM neuronas WHERE day='2020-01-01'")).toEqual([]);
+  });
+});
+
+describe('traducción de letras', () => {
+  const hoy = () => new Date().toISOString().slice(0, 10);
+  const letra = (lineas = ['Hello darkness, my old friend', "I've come to talk with you again"], to = 'es') => ({ lines: lineas, to });
+
+  it('solo con sesión de Frame y una letra válida', async () => {
+    expect((await a.pedir('/app/traducir', { json: letra() })).estado).toBe(401);
+    const yo = sesion(cuenta());
+    for (const mala of [{}, letra([]), letra(['hola'], 'xx'), letra(['']), letra(Array(151).fill('la')), letra(['a'.repeat(301)]), { lines: [3], to: 'es' }]) {
+      const r = await a.pedir('/app/traducir', { token: yo, json: mala });
+      expect(r.estado).toBe(400);
+      expect(r.datos).toEqual({ error: 'lines' });
+    }
+  });
+
+  it('devuelve una línea por línea, sin números, y solo cuenta la traducción', async () => {
+    const yo = cuenta();
+    await a.sql('INSERT OR REPLACE INTO neuronas(day, n) VALUES(?, 0)', hoy());
+    const r = await a.pedir('/app/traducir', { token: sesion(yo), json: letra() });
+    expect(r.estado).toBe(200);
+    expect(r.datos).toEqual({ from: 'en', lines: ['[es] Hello darkness, my old friend', "[es] I've come to talk with you again"] });
+    expect(await a.sql('SELECT n FROM traducciones WHERE owner=?', yo)).toEqual([{ n: 1 }]);
+    expect(await a.sql('SELECT n FROM neuronas WHERE day=?', hoy())).toEqual([{ n: 12 }]);
+  });
+
+  it('cada cuenta tiene un cupo diario; la cuota agotada de Cloudflare no lo gasta', async () => {
+    const yo = cuenta();
+    expect((await a.pedir('/app/traducir', { token: sesion(yo), json: letra(['sin-ia']) })).datos).toEqual({ error: 'daily' });
+    expect(await a.sql('SELECT n FROM traducciones WHERE owner=?', yo)).toEqual([{ n: 0 }]);
+    // El modelo trabajó aunque devolviera otro número de líneas: cuenta, y se
+    // dice que esa letra no salió (repetir el pedido daría lo mismo).
+    const rota = await a.pedir('/app/traducir', { token: sesion(yo), json: letra(['rota', 'dos']) });
+    expect(rota.estado).toBe(422);
+    expect(rota.datos).toEqual({ error: 'unusable' });
+    for (let i = 0; i < 29; i++) expect((await a.pedir('/app/traducir', { token: sesion(yo), json: letra() })).estado).toBe(200);
+    const pasado = await a.pedir('/app/traducir', { token: sesion(yo), json: letra() });
+    expect(pasado.estado).toBe(429);
+    expect(pasado.datos).toEqual({ error: 'quota', limit: 30 });
+    expect((await a.pedir('/app/traducir', { token: sesion(cuenta()), json: letra() })).estado).toBe(200);
+  });
+
+  it('no traduce si el gasto del día deja sin margen a los horarios (que van primero)', async () => {
+    const yo = cuenta();
+    // El tope queda por debajo de donde Qwen deja de leer horarios (7000): con sitio para varias lecturas suyas.
+    await a.sql('INSERT OR REPLACE INTO neuronas(day, n) VALUES(?, 5000)', hoy());
+    const r = await a.pedir('/app/traducir', { token: sesion(yo), json: letra() });
+    expect(r.estado).toBe(429);
+    expect(r.datos).toEqual({ error: 'daily' });
+    expect(await a.sql('SELECT n FROM traducciones WHERE owner=?', yo)).toEqual([]);
+    await a.sql('UPDATE neuronas SET n=4999 WHERE day=?', hoy());
+    expect((await a.pedir('/app/traducir', { token: sesion(yo), json: letra() })).estado).toBe(200);
+    await a.sql('UPDATE neuronas SET n=0 WHERE day=?', hoy());
+  });
+
+  it('una letra larga se traduce por partes y vuelve entera y en orden', async () => {
+    const yo = cuenta();
+    await a.sql('INSERT OR REPLACE INTO neuronas(day, n) VALUES(?, 0)', hoy());
+    // 150 líneas (lo más que admite un pedido): tres partes, de 60, 60 y 30.
+    const lineas = Array.from({ length: 150 }, (_, i) => `verso ${String(i + 1).padStart(3, '0')} de una letra bastante larga`);
+    const r = await a.pedir('/app/traducir', { token: sesion(yo), json: letra(lineas) });
+    expect(r.estado).toBe(200);
+    expect(r.datos).toEqual({ from: 'en', lines: lineas.map((l) => `[es] ${l}`) });
+    expect(await a.sql('SELECT n FROM traducciones WHERE owner=?', yo)).toEqual([{ n: 1 }]);
+    expect(await a.sql('SELECT n FROM neuronas WHERE day=?', hoy())).toEqual([{ n: 36 }]);
+    await a.sql('UPDATE neuronas SET n=0 WHERE day=?', hoy());
+  });
+
+  it('de una respuesta cortada a medias se aprovechan las líneas que llegaron enteras', async () => {
+    const yo = cuenta();
+    const lineas = ['cortada uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis'];
+    const r = await a.pedir('/app/traducir', { token: sesion(yo), json: letra(lineas) });
+    expect(r.estado).toBe(200);
+    // (La IA de mentira las devuelve al revés: la que se pierde con el corte es la primera.)
+    expect(r.datos).toEqual({ from: 'en', lines: ['', '[es] dos', '[es] tres', '[es] cuatro', '[es] cinco', '[es] seis'] });
+  });
+
+  it('la limpieza diaria olvida las cuentas de días pasados', async () => {
+    await a.sql("INSERT INTO traducciones(owner, day, n) VALUES('alguien', '2020-01-01', 3)");
+    await a.cron();
+    expect(await a.sql("SELECT * FROM traducciones WHERE owner='alguien'")).toEqual([]);
+  });
+});
+
+describe('AK Lore: la Biblioteca', () => {
+  const fila = (id: string, drive: string, extra: Partial<Record<string, unknown>> = {}) =>
+    a.sql(
+      'INSERT OR REPLACE INTO lore (id, drive_id, title, subject, section, kind, component, lang, year, size, pages, summary, format, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      id,
+      drive,
+      extra.title ?? `Guía ${id}`,
+      extra.subject ?? 'Historia',
+      'Asignaturas NS',
+      'Guía',
+      'General',
+      'es',
+      2025,
+      1000,
+      12,
+      'Resumen.',
+      'pdf',
+      '2026-11-09T00:00:00.000Z',
+    );
+  const hoy = () => new Date().toISOString().slice(0, 10);
+
+  it('solo para cuentas del colegio con el correo comprobado', async () => {
+    await fila('guia-historia', 'drive-1');
+    expect((await a.pedir('/app/lore')).estado).toBe(401);
+    expect((await a.pedir('/app/lore', { token: sesion(LUIS) })).datos).toEqual({ error: 'school' });
+    expect((await a.pedir('/app/lore', { token: sesion(SIN_COMPROBAR) })).estado).toBe(403);
+    expect((await a.pedir('/app/lore/archivo/guia-historia', { token: sesion(LUIS) })).estado).toBe(403);
+    const r = await a.pedir('/app/lore', { token: sesion(ALUMNA) });
+    expect(r.estado).toBe(200);
+    expect(r.datos.format).toBe(1);
+    const guia = r.datos.guides.find((g: { id: string }) => g.id === 'guia-historia');
+    expect(guia).toMatchObject({ title: 'Guía guia-historia', subject: 'Historia', section: 'Asignaturas NS', kind: 'Guía', size: 1000, format: 'pdf' });
+    expect(guia.drive_id).toBeUndefined();
+  });
+
+  it('pasa el archivo de Drive sin guardarlo y lo cuenta', async () => {
+    await fila('guia-fisica', 'drive-2', { title: 'Guía de Física' });
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    const r = await a.pedir('/app/lore/archivo/guia-fisica', { token: sesion(ALUMNA) });
+    expect(r.estado).toBe(200);
+    expect(r.texto).toBe(pdfDe('drive-2'));
+    expect(r.r.headers.get('content-type')).toBe('application/pdf');
+    expect(r.r.headers.get('content-disposition')).toContain(encodeURIComponent('Guía de Física.pdf'));
+    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: 1000 }]);
+  });
+
+  it('un archivo que falta o un tope agotado no cuentan', async () => {
+    await fila('guia-perdida', 'falta');
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    expect((await a.pedir('/app/lore/archivo/guia-perdida', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/lore/archivo/no-existe', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/lore/archivo/..%2Fx', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 0 }]);
+    await a.sql('UPDATE lore_descargas SET n=300 WHERE owner=?', ALUMNA);
+    const r = await a.pedir('/app/lore/archivo/guia-historia', { token: sesion(ALUMNA) });
+    expect(r.estado).toBe(429);
+    expect(r.datos).toEqual({ error: 'quota', files: 300 });
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 300 }]);
+  });
+
+  it('la limpieza diaria olvida las descargas de días pasados', async () => {
+    await a.sql("INSERT INTO lore_descargas(owner, day, n, bytes) VALUES('alguien', '2020-01-01', 3, 10)");
+    await a.cron();
+    expect(await a.sql("SELECT * FROM lore_descargas WHERE owner='alguien'")).toEqual([]);
   });
 });

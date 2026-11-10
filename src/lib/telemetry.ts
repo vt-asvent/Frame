@@ -425,6 +425,9 @@ type TelemetryEventName =
   | 'help_asked'
   // Recorrido «Descubrir» de una respuesta (hasta la 1.6.4; ya no se envía).
   | 'help_tour'
+  // 1.9.2: archivos descargados (`n`: cuántos; el panel los cuenta por archivo).
+  | 'library_download'
+  | 'song_download'
   | 'error';
 
 interface QueuedEvent {
@@ -504,7 +507,7 @@ function sanitizeProps(props: Record<string, unknown>): Record<string, unknown> 
  * Registra un evento de uso. Se puede llamar desde cualquier sitio: si no hay
  * perfil o no hay Supabase, no hace nada. Nunca lanza.
  */
-export function trackEvent(event: TelemetryEventName, props: Record<string, unknown> = {}) {
+export function trackEvent(event: TelemetryEventName, props: Record<string, unknown> = {}): void {
   try {
     if (!isSupabaseConfigured) return;
     const uid = currentUserId();

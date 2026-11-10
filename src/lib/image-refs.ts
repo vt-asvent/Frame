@@ -190,7 +190,7 @@ export async function reconcileImageRefs(uid: string): Promise<ImageRefsReport> 
       notifiedChanged = true;
       const texts = inBothLangs(() => ({
         title: tr('Imagen propia en otro dispositivo'),
-        detail: tr('«{name}»: las imágenes que subes se quedan en el dispositivo donde las subiste. Elige una de la galería de Frame para verla en todos.', { name: entity.name }),
+        detail: tr('«{name}»: las imágenes que subes viajan con la extensión Wire. Sin Wire, elige una de la galería de Frame para verla en todos.', { name: entity.name }),
       }));
       const shown = texts.es ?? { title: '', detail: '' };
       logNotification({ id: `imagen-propia-${mark}`, kind: 'aviso', title: shown.title, detail: shown.detail, texts, route: entity.route });

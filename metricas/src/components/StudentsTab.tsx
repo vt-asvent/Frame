@@ -257,6 +257,9 @@ function StudentDialog({
               <Fact label={tr('Última vez')} value={ago(user.ls)} />
               <Fact label={tr('Días activos (400 días)')} value={numberLabel(user.a.length)} />
               <Fact label={tr('Racha actual · mejor')} value={`${user.st ?? '—'} · ${user.bs ?? '—'}`} />
+              <Fact label={tr('Dispositivos vinculados (30 días)')} value={user.g ? '—' : numberLabel(user.nd ?? 0)} />
+              <Fact label={tr('Archivos de la Biblioteca (400 días)')} value={numberLabel(user.e.library_download ?? 0)} />
+              <Fact label={tr('Canciones descargadas (400 días)')} value={numberLabel(user.e.song_download ?? 0)} />
             </div>
           </Section>
 

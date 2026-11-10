@@ -4,9 +4,13 @@ import { authorizeDrive, refreshGoogleAccess, revokeGoogleToken } from '@/lib/go
 import { extRead, extWrite, onExtensionTeardown } from '@/lib/extensions/store';
 import { deleteSecret, getSecret, setSecret } from '@/lib/extensions/native';
 import { libraryKeys } from '@/lib/song-keys';
-import { addSongFileToDB, getImage, getSongFileFromDB, saveImage } from '@/lib/music-db';
+import { addSongFileToDB, getImage, getImageRecord, getSongFileFromDB, saveImage } from '@/lib/music-db';
+import { entityOfImage, isEntityImageKey, readImageRefs, reconcileImageRefs, type ImageRef } from '@/lib/image-refs';
+import { fingerprint } from '@/lib/profile-scope';
 import { importLyrics, storedLyrics, type SongLyrics } from '@/lib/lyrics';
 import { hasAttachment, readAttachment, storeAttachmentCopy } from '@/lib/file-handles';
+import { sendPeerMessage } from '@/lib/sync-peers';
+import { SYNC_RECHECK_EVENT } from '@/lib/sync-status';
 import { tr } from '@/lib/i18n';
 import { UNKNOWN_ARTIST } from '@/lib/enum-labels';
 import type { ArchivedNote, ArchivedTask, Note, Song, Task } from '@/types';
@@ -19,8 +23,14 @@ import { planCycle, updateDeclined, WEEK_MS, type DeviceRecord, type ItemKind, t
 // En el Drive del usuario, una carpeta «Frame · Wire» por cuenta de Frame
 // (marcada con un resumen de su id, no con el id): la ficha de cada equipo
 // («Equipo · …json») y lo que está de paso (canciones con su ficha de datos,
-// adjuntos de tareas y archivos de recursos). Lo que llega a un equipo entra
-// en Frame como si se hubiera importado ahí.
+// adjuntos de tareas, archivos de recursos y, desde la 1.9.2, las imágenes
+// propias de asignaturas, colecciones y playlists). Lo que llega a un equipo
+// entra en Frame como si se hubiera importado ahí.
+//
+// 1.9.2: lo que ya está en todos los equipos se borra de Drive del todo (en
+// su papelera seguía ocupando espacio un mes); cuando algo viaja, los demás
+// equipos abiertos se enteran al momento por el canal de la cuenta en vez de
+// en su vuelta del minuto y medio; y una cola larga no espera entre vueltas.
 //
 // La cuenta de Drive es de ESTE equipo: el token de renovación lo guarda
 // cifrado el núcleo nativo; aquí solo vive en memoria el de acceso.
@@ -162,7 +172,7 @@ export async function disconnectWire(): Promise<void> {
   stopped = true;
   try {
     const own = extRead<string | null>(WIRE, 'deviceFile', null);
-    if (own) await new Drive(accessToken).trash(own);
+    if (own) await new Drive(accessToken).remove(own);
   } catch {
     /* sin red: los demás dejarán de esperarlo en una semana */
   }
@@ -229,12 +239,20 @@ async function hash(text: string): Promise<string> {
 
 /** Archivos de recursos que ya se vio que están aquí (leerlos para saberlo cuesta). */
 const noteFilesHere = new Set<string>();
+/** Imágenes propias (clave con su huella) que ya se vio que están aquí. */
+const imagesHere = new Set<string>();
+
+/** «i:<clave de la imagen>:<huella>»: si la imagen cambia, es otra. */
+const imageItemKey = (ref: ImageRef) => `i:${ref.id}:${ref.h}`;
+const parseImageKey = (key: string) => /^i:(.+):([^:]+)$/.exec(key);
 
 interface Inventory {
   view: LocalView;
   songsByKey: Map<string, Song>;
   attachments: Map<string, { taskName: string }>;
   noteFiles: Map<string, Note>;
+  images: Map<string, ImageRef>;
+  uid: string;
 }
 
 async function inventory(ctx: WireContext, deviceId: string, state: RelayState): Promise<Inventory> {
@@ -273,12 +291,29 @@ async function inventory(ctx: WireContext, deviceId: string, state: RelayState):
       uploadable.set(key, 'note');
     }
   }
+  // Imágenes propias (1.9.2): la referencia viaja con la cuenta; la imagen, por aquí.
+  const images = new Map<string, ImageRef>();
+  for (const ref of readImageRefs(ctx.uid)) {
+    if (ref.kind !== 'own' || !ref.h || !isEntityImageKey(ref.id)) continue;
+    const key = imageItemKey(ref);
+    images.set(key, ref);
+    if (!imagesHere.has(key)) {
+      const local = await getImageRecord(ref.id).catch(() => null);
+      if (local && (await fingerprint(local.dataUrl)) === ref.h) imagesHere.add(key);
+    }
+    if (imagesHere.has(key)) {
+      have.add(key);
+      uploadable.set(key, 'image');
+    }
+  }
   const declined = updateDeclined(new Set(state.known), have, new Set(state.declined));
   return {
     view: { deviceId, now: Date.now(), have, declined, keep, uploadable },
     songsByKey,
     attachments,
     noteFiles,
+    images,
+    uid: ctx.uid,
   };
 }
 
@@ -361,7 +396,7 @@ async function readDevices(drive: Drive, files: DriveFile[]): Promise<{ records:
 const toItem = (file: DriveFile): RelayItem | null => {
   const p = file.appProperties;
   if (p.frameWire !== 'item' || !p.key || !p.from) return null;
-  const kind = p.kind === 'song' || p.kind === 'attachment' || p.kind === 'note' ? p.kind : null;
+  const kind = p.kind === 'song' || p.kind === 'attachment' || p.kind === 'note' || p.kind === 'image' ? p.kind : null;
   if (!kind) return null;
   return { id: file.id, key: p.key, kind, from: p.from, permanent: p.permanent === '1', created: file.created, name: file.name, size: file.size };
 };
@@ -412,8 +447,15 @@ export async function runWireCycle(ctx: WireContext): Promise<void> {
   running = true;
   patch({ phase: 'syncing', error: null });
   try {
-    await cycle(ctx);
+    const { moved, pending } = await cycle(ctx);
     patch({ phase: 'idle', lastSync: Date.now(), transfer: null });
+    if (moved > 0) {
+      // Algo viajó: que los otros equipos abiertos den su vuelta ya (uno baja lo
+      // que este subió; el que lo subió lo quita de Drive cuando todos lo tienen).
+      sendPeerMessage({ t: 'wire' });
+      // Y si quedó cola (el tope por vuelta), se sigue enseguida.
+      if (pending > 0) requestWireCycle(2000);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     patch({ phase: 'error', error: message, transfer: null });
@@ -427,7 +469,8 @@ export async function runWireCycle(ctx: WireContext): Promise<void> {
   }
 }
 
-async function cycle(ctx: WireContext): Promise<void> {
+/** Una vuelta. Devuelve cuánto viajó (subidas y bajadas) y cuánto queda en cola. */
+async function cycle(ctx: WireContext): Promise<{ moved: number; pending: number }> {
   const drive = new Drive(accessToken);
   const me = await device();
   const userTag = (await hash(`frame-user:${ctx.uid}`)).slice(0, 16);
@@ -445,10 +488,13 @@ async function cycle(ctx: WireContext): Promise<void> {
     const key = meta.appProperties.key;
     const orphan = metas.has(key) || !items.some((i) => i.key === key);
     if (!orphan) metas.set(key, meta);
-    else if (Date.now() - meta.created > 60 * 60 * 1000) await drive.trash(meta.id);
+    else if (Date.now() - meta.created > 60 * 60 * 1000) await drive.remove(meta.id);
   }
   const { records, fileOf } = await readDevices(drive, deviceFiles.filter((f) => f.appProperties.device !== me.id));
   const inv = await inventory(ctx, me.id, state);
+  // Una imagen que ya cambió (o se quitó) no se baja: cuenta como «la tengo»
+  // para que salga de Drive en cuanto todos digan lo mismo.
+  for (const item of items) if (item.kind === 'image' && !inv.images.has(item.key)) inv.view.have.add(item.key);
   const plan = planCycle(inv.view, records, items);
   const names = new Map(records.map((r) => [r.id, r.name]));
   names.set(me.id, me.name);
@@ -456,7 +502,7 @@ async function cycle(ctx: WireContext): Promise<void> {
   // 1. Equipos que llevan más de una semana sin aparecer: dejan de esperarse.
   for (const gone of plan.dropDevices) {
     const id = fileOf.get(gone.id);
-    if (id) await drive.trash(id);
+    if (id) await drive.remove(id);
     note('info', tr('«{name}» lleva más de una semana sin conectarse: ya no se le espera.', { name: gone.name }));
   }
 
@@ -466,12 +512,16 @@ async function cycle(ctx: WireContext): Promise<void> {
     item.permanent = permanent;
   }
 
-  // 3. Lo que ya tienen todos sale de Drive (a la papelera de Drive).
+  // 3. Lo que ya tienen todos sale de Drive: del todo si sus bytes siguen en
+  //    algún equipo (así deja de ocupar espacio en el acto); a la papelera de
+  //    Drive si ya nadie lo tiene (ver plan.ts).
   const removed = new Set<string>();
+  const forGood = new Set(plan.purge.map((item) => item.id));
   for (const item of plan.remove) {
-    await drive.trash(item.id);
+    const drop = (id: string) => (forGood.has(item.id) ? drive.remove(id) : drive.trash(id));
+    await drop(item.id);
     const meta = metas.get(item.key);
-    if (meta && !items.some((other) => other.key === item.key && other.id !== item.id && !plan.remove.includes(other))) await drive.trash(meta.id);
+    if (meta && !items.some((other) => other.key === item.key && other.id !== item.id && !plan.remove.includes(other))) await drop(meta.id);
     removed.add(item.id);
     note('remove', tr('«{name}» ya está en todos tus equipos: salió de Drive.', { name: item.name }));
   }
@@ -479,6 +529,7 @@ async function cycle(ctx: WireContext): Promise<void> {
   // 4. Bajar lo que falta aquí.
   let transfers = 0;
   let bytes = 0;
+  let moved = 0;
   const arrived: Song[] = [];
   for (const item of plan.download) {
     if (transfers >= MAX_TRANSFERS || bytes + item.size > MAX_BYTES) break;
@@ -492,7 +543,12 @@ async function cycle(ctx: WireContext): Promise<void> {
       note('down', tr('«{name}» llegó de {device}.', { name: item.name, device: names.get(item.from) ?? tr('otro equipo') }));
     }
   }
+  moved += transfers;
   if (arrived.length > 0) await ctx.addSongs(arrived);
+  // Que el verificador y los avisos dejen de decir que la imagen es de otro equipo.
+  if (plan.download.some((i) => i.kind === 'image' && inv.view.have.has(i.key))) await reconcileImageRefs(ctx.uid).catch(() => undefined);
+  // Un adjunto o un archivo de recurso que llegó ya no falta: que el verificador lo vea ahora.
+  if (plan.download.some((i) => (i.kind === 'attachment' || i.kind === 'note') && inv.view.have.has(i.key))) window.dispatchEvent(new Event(SYNC_RECHECK_EVENT));
 
   // 5. Subir lo que otro equipo no tiene (o lo que va para siempre).
   transfers = 0;
@@ -508,6 +564,7 @@ async function cycle(ctx: WireContext): Promise<void> {
       note('up', tr('«{name}» subió a Drive.', { name: sent.name }));
     }
   }
+  moved += uploaded.length;
 
   // 6. La ficha de este equipo.
   const have = [...inv.view.have].sort();
@@ -551,6 +608,7 @@ async function cycle(ctx: WireContext): Promise<void> {
       ...records.map((r) => ({ id: r.id, name: r.name, lastSeen: r.lastSeen, self: false, active: Date.now() - r.lastSeen <= WEEK_MS })),
     ],
   });
+  return { moved, pending: after.upload.length + after.download.length };
 }
 
 async function writeOwnRecord(drive: Drive, root: string, userTag: string, record: DeviceRecord, existing: DriveFile | undefined) {
@@ -597,18 +655,22 @@ async function receive(drive: Drive, item: RelayItem, metas: Map<string, DriveFi
       arrived.push(song);
       return true;
     }
+    if (item.kind === 'image') {
+      const [, imageKey, h] = parseImageKey(item.key) ?? [];
+      const current = imageKey ? readImageRefs(ctx.uid).find((r) => r.id === imageKey) : undefined;
+      if (!imageKey || current?.kind !== 'own' || current.h !== h) return false;
+      const dataUrl = await blobToDataUrl(await drive.download(item.id));
+      if ((await fingerprint(dataUrl)) !== h) return false;
+      await saveImage(imageKey, dataUrl, { fromSync: true, at: current.at });
+      imagesHere.add(item.key);
+      return true;
+    }
     const blob = await drive.download(item.id);
     if (item.kind === 'attachment') {
       await storeAttachmentCopy(item.key.slice(2), new File([blob], item.name, { type: blob.type }));
       return true;
     }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    await saveImage(`noteFile_${item.key.slice(2)}`, dataUrl);
+    await saveImage(`noteFile_${item.key.slice(2)}`, await blobToDataUrl(blob));
     noteFilesHere.add(item.key.slice(2));
     return true;
   } catch (error) {
@@ -617,6 +679,14 @@ async function receive(drive: Drive, item: RelayItem, metas: Map<string, DriveFi
     return false;
   }
 }
+
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 
 /** Sube un objeto. null si no se pudo leer aquí. */
 async function send(
@@ -658,6 +728,13 @@ async function send(
     if (!resolved || resolved.file.size > MAX_FILE) return null;
     blob = resolved.file;
     name = safeName(resolved.file.name);
+  } else if (job.kind === 'image') {
+    const ref = inv.images.get(job.key);
+    const local = ref ? await getImageRecord(ref.id).catch(() => null) : null;
+    if (!ref || !local) return null;
+    blob = await (await fetch(local.dataUrl)).blob();
+    const entity = entityOfImage(inv.uid, ref.id);
+    name = safeName(`${tr('Imagen')} · ${entity?.name ?? ref.id}`) + (blob.type === 'image/png' ? '.png' : blob.type === 'image/webp' ? '.webp' : '.jpg');
   } else {
     const n = inv.noteFiles.get(job.key);
     const dataUrl = n ? await getImage(`noteFile_${n.id}`) : null;

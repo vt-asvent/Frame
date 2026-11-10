@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { domainHashOf, officialById } from '@/lib/extensions/catalog';
 import { useExtensionOn } from '@/lib/extensions/store';
-import { AKLORE } from '@/lib/extensions/aklore/source';
+import { AKLORE, demoOn } from '@/lib/extensions/aklore/source';
 
 /**
  * ¿Puede esta cuenta usar AK Lore ahora? Solo con la extensión activa y un
@@ -24,6 +24,8 @@ export function useAkLoreAccess(email: string | null | undefined): 'off' | 'chec
   }, [on, email]);
 
   if (!on) return 'off';
+  // Solo en desarrollo: los datos de ejemplo se ven con cualquier cuenta.
+  if (demoOn()) return 'allowed';
   if (!email || !expected) return 'denied';
   if (!hash || hash.email !== email) return 'checking';
   return hash.hash === expected ? 'allowed' : 'denied';

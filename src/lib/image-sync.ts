@@ -1,5 +1,6 @@
 import { getSupabase } from '@/lib/supabase/client';
 import { CLOUD_APPLIED_EVENT } from '@/lib/supabase/sync';
+import { SYNC_NOW_EVENT } from '@/lib/sync-status';
 import {
   IMAGE_UPDATED_EVENT,
   deleteImage,
@@ -480,6 +481,7 @@ export function startImageSync(uid: string): () => void {
 
   window.addEventListener(IMAGE_UPDATED_EVENT, onImage);
   window.addEventListener(CLOUD_APPLIED_EVENT, onCloud);
+  window.addEventListener(SYNC_NOW_EVENT, onCloud);
   window.addEventListener('online', onOnline);
 
   // Primera vuelta completa: sube lo que este dispositivo tenía antes de la
@@ -493,6 +495,7 @@ export function startImageSync(uid: string): () => void {
     if (retryTimer !== null) window.clearTimeout(retryTimer);
     window.removeEventListener(IMAGE_UPDATED_EVENT, onImage);
     window.removeEventListener(CLOUD_APPLIED_EVENT, onCloud);
+    window.removeEventListener(SYNC_NOW_EVENT, onCloud);
     window.removeEventListener('online', onOnline);
   };
 }

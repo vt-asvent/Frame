@@ -4,6 +4,7 @@ import {
   ArrowUp,
   CloudOff,
   FileText,
+  Image as ImageIcon,
   HardDrive,
   Heart,
   Laptop,
@@ -183,7 +184,7 @@ export function WirePanel() {
   );
 }
 
-const kindIcon = (item: WireItemView) => (item.kind === 'song' ? Music : FileText);
+const kindIcon = (item: WireItemView) => (item.kind === 'song' ? Music : item.kind === 'image' ? ImageIcon : FileText);
 
 /** Sección propia en Ajustes: el relevo en vivo, como una ventana de Drive. */
 export function WireSection() {
@@ -380,7 +381,7 @@ export function WireSection() {
         </div>
       </div>
       <p className="mt-3 text-[11px] text-muted-foreground">
-        {tr('Lo que sale de Drive va a su papelera: Google lo guarda 30 días por si acaso. Un equipo que no se conecta en una semana deja de esperarse.')}
+        {tr('Lo que ya está en todos tus equipos se borra de Drive del todo, sin pasar por su papelera: deja de ocupar espacio en el acto. Un equipo que no se conecta en una semana deja de esperarse.')}
       </p>
     </section>
   );

@@ -13,6 +13,10 @@
 // - Cada equipo baja lo que le falta.
 // - Cuando TODOS los equipos activos lo tienen (o lo rechazaron) y nadie lo
 //   quiere para siempre, se quita de Drive: Drive es un relevo, no un almacén.
+//   Si sus bytes siguen en algún equipo se BORRA del todo (1.9.2: en la
+//   papelera de Drive seguía ocupando espacio 30 días, y una biblioteca entera
+//   pasando por ahí lo llenaba). Si ya nadie lo tiene, la de Drive podría ser
+//   la última copia: eso va a la papelera.
 // - Un equipo que no aparece desde hace más de una semana deja de esperarse:
 //   su ficha se quita y ya no frena el borrado de nada.
 // - Si dos equipos suben lo mismo a la vez, queda la copia más antigua y cada
@@ -21,7 +25,7 @@
 
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type ItemKind = 'song' | 'attachment' | 'note';
+export type ItemKind = 'song' | 'attachment' | 'note' | 'image';
 
 export interface DeviceRecord {
   id: string;
@@ -70,6 +74,8 @@ export interface CyclePlan {
   setPermanent: { item: RelayItem; permanent: boolean }[];
   /** Ya lo tienen todos (o es una copia repetida de este equipo). */
   remove: RelayItem[];
+  /** De `remove`, lo que se borra del todo; el resto va a la papelera de Drive. */
+  purge: RelayItem[];
   /** Para la vista: qué equipos activos esperan aún cada objeto del relevo. */
   waitingFor: Map<string, string[]>;
 }
@@ -88,9 +94,14 @@ export function planCycle(local: LocalView, devices: DeviceRecord[], items: Rela
   // Una copia por clave: la más antigua. Las demás, las quita quien las subió.
   const canonical = new Map<string, RelayItem>();
   const remove: RelayItem[] = [];
+  const purge: RelayItem[] = [];
   for (const item of [...items].sort(byAge)) {
     if (!canonical.has(item.key)) canonical.set(item.key, item);
-    else if (item.from === local.deviceId) remove.push(item);
+    else if (item.from === local.deviceId) {
+      // Repetida: la otra copia sigue en Drive.
+      remove.push(item);
+      purge.push(item);
+    }
   }
 
   const download: RelayItem[] = [];
@@ -104,7 +115,14 @@ export function planCycle(local: LocalView, devices: DeviceRecord[], items: Rela
     if (!local.have.has(item.key) && !local.declined.has(item.key)) waiting.unshift(local.deviceId);
     waitingFor.set(item.id, waiting);
     // Nadie lo espera y nadie lo quiere para siempre: fuera de Drive.
-    if (!forever && waiting.length === 0) remove.push(item);
+    if (!forever && waiting.length === 0) {
+      remove.push(item);
+      // Del todo, solo si sus bytes siguen en algún equipo: entonces la de Drive no
+      // es la última copia. Si todos la «rechazaron» (la borraron, o perdieron su
+      // base de música), a la papelera, por si acaso.
+      const held = local.have.has(item.key) || sets.some((s) => s.have.has(item.key));
+      if (held) purge.push(item);
+    }
   }
 
   const upload: CyclePlan['upload'] = [];
@@ -115,7 +133,7 @@ export function planCycle(local: LocalView, devices: DeviceRecord[], items: Rela
     if (forever || someoneNeeds) upload.push({ key, kind, permanent: forever });
   }
 
-  return { activeOthers, dropDevices, download, upload, setPermanent, remove, waitingFor };
+  return { activeOthers, dropDevices, download, upload, setPermanent, remove, purge, waitingFor };
 }
 
 /**

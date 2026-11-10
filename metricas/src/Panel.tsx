@@ -11,6 +11,7 @@ import {
   Flame,
   Globe2,
   LoaderCircle,
+  MonitorSmartphone,
   Repeat,
   RefreshCw,
   Sparkles,
@@ -469,7 +470,7 @@ function UsagePanel() {
             </TabsList>
 
             <TabsContent value="summary">
-              <SummaryTab snapshot={snapshot} users={users} range={range} grouping={groupingNow} />
+              <SummaryTab snapshot={snapshot} users={users} range={range} grouping={groupingNow} filtered={!!(country || continent)} />
             </TabsContent>
             <TabsContent value="students">
               <StudentsTab snapshot={snapshot} users={users} range={range} newest={newestVersions(snapshot.users)} loadDetail={loadDetail} />
@@ -512,13 +513,42 @@ function UsagePanel() {
 // ------------------------------------------------------------
 // Resumen
 // ------------------------------------------------------------
-function SummaryTab({ snapshot, users, range, grouping }: { snapshot: UsageSnapshot; users: UsageSnapshot['users']; range: Range; grouping: Grouping }) {
+function SummaryTab({ snapshot, users, range, grouping, filtered }: { snapshot: UsageSnapshot; users: UsageSnapshot['users']; range: Range; grouping: Grouping; filtered: boolean }) {
   const summary = useMemo(() => summarize(snapshot, range, users), [snapshot, range, users]);
   const series = useMemo(
     () => seriesOf(snapshot, range, grouping, users).map((point) => ({ ...point, label: bucketLabel(point.from, point.to) })),
     [snapshot, range, grouping, users]
   );
   const a = summary.activity;
+  // Descargas (1.9.2). La cifra grande es la del plazo y sale de la serie por día, que es de
+  // todos (no se separa por lugar); quiénes y cuánto cada uno sale de lo que la foto guarda de
+  // cada estudiante, que son 400 días y sí sigue el filtro. La pista dice cuál es cuál.
+  const downloads = (() => {
+    const totals = new Map(seriesTotals(snapshot.ev, range).map((row) => [row.key, row.count]));
+    const of = (event: string) => {
+      const who = users.filter((user) => (user.e[event] ?? 0) > 0);
+      const all = who.reduce((n, user) => n + (user.e[event] ?? 0), 0);
+      const values = { all: numberLabel(all), users: who.length, per: who.length ? decimalText(Math.round((all / who.length) * 10) / 10) : '—' };
+      return {
+        inRange: totals.get(event) ?? 0,
+        hint: filtered
+          ? tr('en el plazo, de todos los lugares · aquí, en 400 días: {all} entre {users} estudiantes', values)
+          : tr('en el plazo · en 400 días: {all} entre {users} estudiantes ({per} de media)', values),
+      };
+    };
+    return { library: of('library_download'), songs: of('song_download') };
+  })();
+  // Dispositivos (1.9.2): los de cada cuenta siguen el filtro; el reparto por tipo es de todos.
+  const linked = (() => {
+    const counts = users.map((user) => user.nd ?? 0);
+    const kinds = { laptop: snapshot.devices?.laptop ?? 0, phone: snapshot.devices?.phone ?? 0, tablet: snapshot.devices?.tablet ?? 0 };
+    return {
+      total: filtered ? counts.reduce((n, count) => n + count, 0) : kinds.laptop + kinds.phone + kinds.tablet,
+      kinds,
+      accounts: counts.filter((count) => count >= 1).length,
+      several: counts.filter((count) => count >= 2).length,
+    };
+  })();
   const levels = (Object.keys(summary.levels) as (keyof typeof summary.levels)[]).map((key) => ({ label: LEVEL_LABEL[key](), value: summary.levels[key], hint: LEVEL_HINT[key]() }));
   const devices = countBy(users, (user) => (user.dv ? `${user.dv}` : user.pl === 'android' ? 'phone' : user.pl ? 'desktop' : null)).map((row) => ({
     label: DEVICE_LABEL[row.key]?.() ?? tr('Sin dato'),
@@ -538,6 +568,24 @@ function SummaryTab({ snapshot, users, range, grouping }: { snapshot: UsageSnaps
         <Kpi icon={Target} label={tr('Constancia de hábitos')} value={pctLabel(summary.habitsPct)} hint={tr('{done} de {possible} marcas posibles', { done: a.habitsDone, possible: a.habitsPossible })} />
         <Kpi icon={Sparkles} label={tr('Enfoque medio')} value={summary.focusAvg === null ? '—' : `${decimalText(summary.focusAvg)} / 20`} hint={tr('el que declaran al terminar una sesión')} />
         <Kpi icon={Globe2} label={tr('Alcance')} value={tr('{n} países', { n: summary.countries })} hint={tr('{cities} ciudades · {opens} aperturas en el plazo', { cities: summary.cities, opens: numberLabel(a.opens) })} />
+        <Kpi icon={Download} label={tr('Archivos de la Biblioteca')} value={numberLabel(downloads.library.inRange)} hint={downloads.library.hint} />
+        <Kpi icon={Download} label={tr('Canciones descargadas')} value={numberLabel(downloads.songs.inRange)} hint={downloads.songs.hint} />
+        <Kpi
+          icon={MonitorSmartphone}
+          label={tr('Dispositivos vinculados')}
+          value={numberLabel(linked.total)}
+          hint={
+            filtered
+              ? tr('abiertos en 30 días, de {n} cuentas de este lugar', { n: linked.accounts })
+              : tr('{laptop} laptops · {phone} celulares · {tablet} tablets (abiertos en 30 días)', linked.kinds)
+          }
+        />
+        <Kpi
+          icon={Repeat}
+          label={tr('Cuentas en varios dispositivos')}
+          value={numberLabel(linked.several)}
+          hint={tr('de {n} cuentas con algún dispositivo vinculado (30 días)', { n: linked.accounts })}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

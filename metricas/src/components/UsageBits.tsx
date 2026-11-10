@@ -147,6 +147,7 @@ export const SCREEN_LABEL: Record<string, () => string> = {
   '/cursos': () => tr('Asignatura (detalle)'),
   '/knowledge': () => tr('Asignaturas'),
   '/calendario': () => tr('Calendario'),
+  '/biblioteca': () => tr('Biblioteca'),
   '/gmail': () => 'Gmail',
   '/youtube': () => 'YouTube',
   '/drive': () => 'Drive',
@@ -169,6 +170,8 @@ export const EVENT_LABEL: Record<string, () => string> = {
   account_signed_in: () => tr('Inicios de sesión'),
   guest_started: () => tr('Entradas como invitado'),
   guest_linked: () => tr('Invitados que vincularon Google'),
+  library_download: () => tr('Archivos descargados de la Biblioteca'),
+  song_download: () => tr('Canciones descargadas'),
 };
 
 /** Lunes primero. */

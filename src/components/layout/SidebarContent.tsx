@@ -73,8 +73,8 @@ const navItems: NavItem[] = [
   { href: '/music', get label() { return tr('Música'); }, icon: Music, ghostFor: ['/playlists'], group: 3 },
 ];
 
-/** Extensión AK Lore (1.7.3): tras Calendario, solo para cuentas del colegio. */
-const akLoreItem: NavItem = { href: '/aklore', label: 'AK Lore', icon: Library, group: 1 };
+/** Extensión AK Lore → «Biblioteca» (1.9.2): tras Calendario, solo para cuentas del colegio. */
+const akLoreItem: NavItem = { href: '/biblioteca', get label() { return tr('Biblioteca'); }, icon: Library, group: 1 };
 
 /** Extensión Wire (1.8.0): Drive, con la cuenta conectada en Wire, bajo Classroom. */
 const driveItem: NavItem = { href: '/drive', label: 'Drive', icon: DriveNavIcon, group: 2 };

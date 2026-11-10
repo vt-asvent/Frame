@@ -18,6 +18,8 @@ export interface OfficialExtension {
    * debe decir de qué colegio es nadie.
    */
   domainHash?: string;
+  /** Sin instalar, solo aparece al buscarla por su nombre (como las del catálogo). */
+  searchOnly?: boolean;
 }
 
 const official = (
@@ -42,7 +44,7 @@ export const OFFICIAL_EXTENSIONS: OfficialExtension[] = [
       'frame.wire',
       'Wire',
       () =>
-        tr('Lleva tus canciones y adjuntos a tus otros equipos usando tu Google Drive como relevo. Cuando todos los tienen, se borran de Drive, salvo lo que marques para siempre.'),
+        tr('Lleva tus canciones, adjuntos e imágenes propias a tus otros equipos usando tu Google Drive como relevo. Cuando todos los tienen, se borran de Drive, salvo lo que marques para siempre.'),
       ['google.drive', 'music.read', 'music.write']
     ),
   },
@@ -79,10 +81,12 @@ export const OFFICIAL_EXTENSIONS: OfficialExtension[] = [
     manifest: official(
       'frame.aklore',
       'AK Lore',
-      () => tr('Busca, mira y descarga las guías del material recopilado del colegio.'),
+      () =>
+        tr('Abre la Biblioteca: guías, exámenes pasados, esquemas de calificación y ejemplos del Programa del Diploma, con buscador, filtros, favoritos y descarga por colección.'),
       ['school.account']
     ),
     domainHash: '0c072257f310f7ab180aa97e5d30aa09faff66bb44510472c3826a59ebc3c8de',
+    searchOnly: true,
   },
 ];
 

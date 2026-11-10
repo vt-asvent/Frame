@@ -62,6 +62,9 @@ const COLLECTION_KEYS = [
   'songFavorites',
   // Horarios de Inicio (1.9.0, id propio): uno por foto subida.
   'timetables',
+  // Favoritos de la Biblioteca (1.9.2, id = el del archivo): como el corazón
+  // de las canciones, quitar uno deja su lápida.
+  'loreFavorites',
 ] as const;
 
 /**

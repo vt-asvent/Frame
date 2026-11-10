@@ -442,6 +442,92 @@ async fn http_get_data_url(url: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, base64::engine::general_purpose::STANDARD.encode(&bytes)))
 }
 
+/// Playlists por enlace (1.9.2, Música → Añadir; lib/extensions/playlist-link.ts):
+/// la página pública de la lista en Spotify, YouTube (Music) o Apple Music, o
+/// la API pública de Deezer. Lista cerrada de servicios; las redirecciones de
+/// los enlaces cortos, solo dentro de ella; y POST solo para pedir a YouTube
+/// la página siguiente de una lista larga.
+const PLAYLIST_HOSTS: [&str; 11] = [
+    "open.spotify.com",
+    "spotify.link",
+    "spotify.app.link",
+    "api.deezer.com",
+    "www.deezer.com",
+    "deezer.com",
+    "link.deezer.com",
+    "deezer.page.link",
+    "www.youtube.com",
+    "music.youtube.com",
+    "music.apple.com",
+];
+const PLAYLIST_MAX_BYTES: usize = 8 * 1024 * 1024;
+
+fn playlist_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        let policy = reqwest::redirect::Policy::custom(|attempt| {
+            let allowed = attempt.url().scheme() == "https"
+                && attempt.url().host_str().map_or(false, |host| PLAYLIST_HOSTS.contains(&host));
+            if attempt.previous().len() >= 5 {
+                attempt.error("Demasiadas redirecciones.")
+            } else if allowed {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        });
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(25))
+            .user_agent(concat!("Frame/", env!("CARGO_PKG_VERSION"), " (Asvent)"))
+            .redirect(policy)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+#[derive(serde::Serialize)]
+struct PlaylistPage {
+    /// Adonde llegó (o adonde apunta una redirección fuera de la lista).
+    url: String,
+    status: u16,
+    body: String,
+}
+
+#[tauri::command]
+async fn playlist_page(url: String, body: Option<String>) -> Result<PlaylistPage, String> {
+    let parsed = checked_https(&url, &PLAYLIST_HOSTS)?;
+    let client = playlist_client();
+    let request = match body {
+        Some(json) => {
+            if parsed.host_str() != Some("www.youtube.com") || parsed.path() != "/youtubei/v1/browse" || json.len() > 64 * 1024 {
+                return Err("Servicio no permitido.".into());
+            }
+            client.post(parsed).header("Content-Type", "application/json").body(json)
+        }
+        None => client.get(parsed),
+    };
+    let resp = request
+        .header("Accept-Language", ui("es", "en"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let landed = if status.is_redirection() {
+        resp.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string()
+    } else {
+        resp.url().to_string()
+    };
+    if resp.content_length().map_or(false, |len| len as usize > PLAYLIST_MAX_BYTES) {
+        return Err("La página es demasiado grande.".into());
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > PLAYLIST_MAX_BYTES {
+        return Err("La página es demasiado grande.".into());
+    }
+    Ok(PlaylistPage { url: landed, status: status.as_u16(), body: String::from_utf8_lossy(&bytes).into_owned() })
+}
+
 /// Servicios de Google REALES incrustados en la interfaz (Gmail, YouTube,
 /// Classroom): un webview hijo superpuesto exactamente sobre el
 /// recuadro que dibuja la app. El frontend reporta posición/tamaño del
@@ -1270,16 +1356,39 @@ fn save_in_downloads(
     fallback: &str,
     mark: bool,
 ) -> Result<String, String> {
+    save_in_downloads_at(app_handle, None, file_name, data_base64, allowed, fallback, mark)
+}
+
+/// Igual, pero dentro de una carpeta propia de Descargas (`folder`, un solo
+/// nombre: sin barras ni «..»).
+fn save_in_downloads_at(
+    app_handle: &tauri::AppHandle,
+    folder: Option<&str>,
+    file_name: &str,
+    data_base64: &str,
+    allowed: Option<&[&str]>,
+    fallback: &str,
+    mark: bool,
+) -> Result<String, String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.as_bytes())
         .map_err(|e| format!("Informe ilegible: {e}"))?;
 
-    let dir = app_handle
+    let mut dir = app_handle
         .path()
         .download_dir()
         .or_else(|_| app_handle.path().document_dir())
         .map_err(|e| format!("Sin carpeta de descargas: {e}"))?;
+    if let Some(folder) = folder {
+        let clean: String = folder
+            .chars()
+            .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+            .take(80)
+            .collect();
+        let clean = clean.trim().trim_matches('.').trim();
+        dir = dir.join(if clean.is_empty() { "Frame" } else { clean });
+    }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let safe: String = file_name
@@ -1343,6 +1452,18 @@ fn save_file_copy(
     data_base64: String,
 ) -> Result<String, String> {
     save_in_downloads(&app_handle, &file_name, &data_base64, None, "Archivo", true)
+}
+
+/// «Descarga por colección» de la Biblioteca (1.9.2): cada archivo va a una
+/// carpeta propia de Descargas («Biblioteca 2026-11-09»), no suelto.
+#[tauri::command]
+fn save_file_in_folder(
+    app_handle: tauri::AppHandle,
+    folder: String,
+    file_name: String,
+    data_base64: String,
+) -> Result<String, String> {
+    save_in_downloads_at(&app_handle, Some(&folder), &file_name, &data_base64, None, "Archivo", true)
 }
 
 // ============================================================
@@ -1742,6 +1863,7 @@ pub fn run() {
             google_token_request,
             http_get_text,
             http_get_data_url,
+            playlist_page,
             google_embed_update,
             google_embed_close_all,
             clear_shared_google_session,
@@ -1773,6 +1895,7 @@ pub fn run() {
             focus_main_window,
             save_report_file,
             save_file_copy,
+            save_file_in_folder,
             schedule_peek,
             schedule_peek_enable,
             schedule_peek_resize,

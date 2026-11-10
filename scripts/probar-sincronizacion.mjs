@@ -24,6 +24,12 @@
 // (--solo=playlists): reordenar canciones y el menú, cambios a la vez, uno sin
 // conexión, uno dormido y dos copias con el mismo título y artista.
 //
+// Desde la 1.9.2, Ajustes → Dispositivos (--solo=dispositivos): la tabla de
+// equipos y sus cuatro funciones, con las reglas de las migraciones 0018 y
+// 0019; quién está vinculado, quién al día, «Corregir», cerrar sesión (y el
+// latido que llega tarde), una sesión cerrada desde fuera, y cuánto late cada
+// equipo con la tarjeta abierta y sin nadie mirando.
+//
 // No usa la red ni la nube real.
 // ============================================================
 
@@ -99,6 +105,7 @@ const engines = {
     '@/lib/supabase/sync': path.join(dir, 'sync-1.6.8.ts'),
     '@/lib/storage-snapshot': path.join(dir, 'storage-snapshot-1.6.8.ts'),
     '@/lib/sync-merge': path.join(dir, 'sync-merge-1.6.8.ts'),
+    '@/lib/sync-check': path.join(dir, 'sync-check-1.6.8.ts'),
   }),
   '1.6.7': await compile('dispositivo-1.6.7.ts', {
     '@/lib/supabase/sync': path.join(dir, 'sync-1.6.7.ts'),
@@ -119,6 +126,17 @@ const cloud = {
   down: 0,
   up: 0,
   writers: [],
+  // Dispositivos (1.9.2): la tabla `devices`, las sesiones vivas de la cuenta y
+  // cada llamada a sus funciones ([equipo, función, llegó]).
+  devices: new Map(),
+  sessions: new Set(),
+  calls: [],
+  /** (equipo, función) → ms de más en el viaje de ida (para dejar una llamada «en camino»). */
+  delayRpc: null,
+  seq: 0,
+  /** (equipo) → true: la nube le responde con un error (servicio caído). `failed`: cuántas veces. */
+  failing: null,
+  failed: 0,
 };
 
 /** Postgres devuelve «…+00:00» y sin ceros de más en los milisegundos. */
@@ -166,9 +184,15 @@ class Query {
   }
   async run() {
     await sleep(latency()); // la petición viaja
-    const response = this.dev.offline ? { data: null, error: { message: 'TypeError: Failed to fetch' } } : this.execute();
+    const response = this.dev.offline ? { data: null, error: { message: 'TypeError: Failed to fetch' } } : this.broken() ?? this.execute();
     await sleep(latency()); // y la respuesta vuelve
     return response;
+  }
+  /** El servicio está caído para este equipo: contesta con un error. */
+  broken() {
+    if (!cloud.failing?.(this.dev)) return null;
+    cloud.failed++;
+    return { data: null, error: { message: 'upstream connect error or disconnect/reset before headers (503)' } };
   }
   execute() {
     const row = cloud.row;
@@ -205,6 +229,129 @@ class Query {
     return { data: this.returning ? [{ user_id: row.user_id }] : null, error: null };
   }
 }
+
+// ------------------------------------------------------------
+// Dispositivos de la cuenta (1.9.2): las cuatro funciones de
+// supabase/migrations/0018 y 0019, con sus mismas reglas (comprobadas contra
+// el SQL en la base real). Las horas son las del servidor: el reloj de cada
+// dispositivo no cuenta.
+// ------------------------------------------------------------
+const GOODBYE_MS = 120_000;
+const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const DEVICE_KINDS = new Set(['laptop', 'phone', 'tablet']);
+const DEVICE_PLATFORMS = new Set(['windows', 'android', 'ios', 'macos', 'linux', 'web']);
+const stamp = (ms) => (ms === null ? null : pg(new Date(ms).toISOString()));
+
+/** La fila como la devuelve el latido (la sesión nunca sale de la base). */
+const publicRow = (row) => ({
+  device_id: row.device_id,
+  kind: row.kind,
+  platform: row.platform,
+  app_version: row.app_version,
+  linked: row.linked,
+  first_seen: stamp(row.first_seen),
+  last_seen: stamp(row.last_seen),
+  unlinked_at: stamp(row.unlinked_at),
+  sync: JSON.parse(JSON.stringify(row.sync)),
+  resync_at: stamp(row.resync_at),
+});
+
+const deviceFunctions = {
+  device_heartbeat(dev, args) {
+    const id = args.p_device_id;
+    if (typeof id !== 'string' || !DEVICE_ID.test(id)) return { data: null, error: { code: '22023', message: 'dispositivo no válido' } };
+    const now = Date.now();
+    const sid = dev.session ?? null;
+    // ¿Sigue existiendo la sesión que late? (su llave vale un rato más que ella)
+    const alive = sid === null || cloud.sessions.has(sid);
+    const kind = DEVICE_KINDS.has(args.p_kind) ? args.p_kind : 'laptop';
+    const platform = DEVICE_PLATFORMS.has(args.p_platform) ? args.p_platform : 'web';
+    const app_version = String(args.p_app_version ?? '').slice(0, 20);
+    const plain = args.p_sync !== null && typeof args.p_sync === 'object' && !Array.isArray(args.p_sync);
+    const sync = plain && JSON.stringify(args.p_sync).length <= 2000 ? JSON.parse(JSON.stringify(args.p_sync)) : {};
+    const old = cloud.devices.get(id);
+    if (alive) {
+      // La despedida manda: esta misma sesión acaba de cerrar aquí (0019).
+      const goodbye = !!old && !old.linked && old.unlinked_at !== null && now - old.unlinked_at < GOODBYE_MS && old.session_id === sid;
+      cloud.devices.set(id, {
+        device_id: id,
+        kind,
+        platform,
+        app_version,
+        linked: !goodbye,
+        first_seen: old?.first_seen ?? now,
+        last_seen: now,
+        unlinked_at: goodbye ? old.unlinked_at : null,
+        sync,
+        resync_at: old?.resync_at ?? null,
+        session_id: sid,
+        seq: ++cloud.seq,
+      });
+    } else if (old) {
+      // Sesión cerrada desde fuera: se ve, pero no está vinculado. Sin fila, no se crea.
+      Object.assign(old, { kind, platform, app_version, last_seen: now, sync, session_id: sid, linked: false, seq: ++cloud.seq });
+    }
+    // Los equipos cuya sesión ya no existe dejan de estar vinculados (sin hora de despedida).
+    for (const row of cloud.devices.values()) {
+      if (row.linked && row.session_id !== null && !cloud.sessions.has(row.session_id)) row.linked = false;
+    }
+    // Tope: 20 por cuenta, los vistos más recientemente.
+    const rows = [...cloud.devices.values()].sort((a, b) => b.last_seen - a.last_seen || b.seq - a.seq);
+    for (const row of rows.splice(20)) cloud.devices.delete(row.device_id);
+    return { data: { cloud_at: cloud.row ? pg(cloud.row.updated_at) : null, now: stamp(now), devices: rows.map(publicRow) }, error: null };
+  },
+  device_unlink(dev, args) {
+    const row = cloud.devices.get(args.p_device_id);
+    if (row) Object.assign(row, { linked: false, unlinked_at: Date.now(), session_id: dev.session ?? row.session_id });
+    return { data: null, error: null };
+  },
+  device_forget(_dev, args) {
+    cloud.devices.delete(args.p_device_id);
+    return { data: null, error: null };
+  },
+  device_request_resync(_dev, args) {
+    for (const row of cloud.devices.values()) if (row.linked && row.device_id !== (args.p_from ?? '')) row.resync_at = Date.now();
+    return { data: null, error: null };
+  },
+};
+
+/** Una llamada a función (`supabase.rpc`), con su viaje de ida y vuelta y cancelable como la de verdad. */
+class Rpc {
+  constructor(dev, name, args) {
+    this.dev = dev;
+    this.name = name;
+    this.args = args ?? {};
+    this.signal = null;
+  }
+  abortSignal(signal) {
+    this.signal = signal;
+    return this;
+  }
+  then(resolve, reject) {
+    return this.run().then(resolve, reject);
+  }
+  async run() {
+    const cancelled = () => (this.signal?.aborted ? { data: null, error: { message: 'AbortError: The operation was aborted.' } } : null);
+    const entry = [this.dev.name, this.name, false];
+    cloud.calls.push(entry);
+    await sleep(latency() + (cloud.delayRpc?.(this.dev, this.name) ?? 0)); // la petición viaja
+    if (cancelled()) return cancelled(); // cancelada antes de salir: el servidor no la ve
+    let response;
+    if (this.dev.offline) response = { data: null, error: { message: 'TypeError: Failed to fetch' } };
+    // Sin llave válida (sesión caducada): la función ni se ejecuta.
+    else if (this.dev.jwt === false) response = { data: null, error: { code: '42501', message: `permission denied for function ${this.name}` } };
+    else {
+      entry[2] = true;
+      response = deviceFunctions[this.name]?.(this.dev, this.args) ?? { data: null, error: { code: 'PGRST202', message: `no existe la función ${this.name}` } };
+    }
+    await sleep(latency()); // y la respuesta vuelve
+    return cancelled() ?? response;
+  }
+}
+
+/** Llamadas de un equipo a una función desde `from`: las que llegaron al servidor, o todas (`tried`). */
+const callsOf = (dev, name = 'device_heartbeat', from = 0, tried = false) =>
+  cloud.calls.slice(from).filter(([who, what, arrived]) => who === dev.name && what === name && (tried || arrived)).length;
 
 // ------------------------------------------------------------
 // El canal en vivo de la cuenta (Realtime Broadcast, `self: false`)
@@ -276,8 +423,19 @@ const bus = {
 
 function supabaseFor(dev) {
   return {
-    auth: { getSession: async () => ({ data: { session: { user: { id: UID } } } }) },
+    auth: {
+      // `sessionDown`: la llave venció y no se pudo renovar (la red no contestó), como lo dice supabase-js.
+      getSession: async () =>
+        dev.sessionDown
+          ? { data: { session: null }, error: { name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' } }
+          : { data: { session: { user: { id: UID } } }, error: null },
+      onAuthStateChange(callback) {
+        dev.authListeners.add(callback);
+        return { data: { subscription: { unsubscribe: () => dev.authListeners.delete(callback) } } };
+      },
+    },
     from: () => new Query(dev),
+    rpc: (name, args) => new Rpc(dev, name, args),
     channel: (topic) => bus.open(dev, topic),
     removeChannel: async (channel) => {
       bus.close(channel);
@@ -306,7 +464,11 @@ function skewedDate(offset) {
 }
 
 function device(name, version = 'actual', { clockOffset = 0 } = {}) {
-  const dev = { name, version, offline: false, asleep: false };
+  // Cada equipo entra con su propia sesión (Dispositivos, 1.9.2); `jwt: false`, su llave ya no vale.
+  const dev = { name, version, offline: false, asleep: false, session: crypto.randomUUID(), jwt: true, sessionDown: false, authListeners: new Set() };
+  /** Un aviso de supabase-js sobre la sesión (TOKEN_REFRESHED, SIGNED_IN…). */
+  dev.authEvent = (event) => dev.authListeners.forEach((listener) => listener(event, null));
+  cloud.sessions.add(dev.session);
   const sandbox = {
     ...(clockOffset ? { Date: skewedDate(clockOffset) } : {}),
     console,
@@ -323,6 +485,8 @@ function device(name, version = 'actual', { clockOffset = 0 } = {}) {
     Event,
     EventTarget,
     CustomEvent,
+    AbortController,
+    AbortSignal,
     structuredClone,
     URL,
     performance,
@@ -345,6 +509,7 @@ function shutdown() {
 function resetWorld() {
   shutdown();
   Object.assign(cloud, { row: null, reads: 0, probes: 0, writes: 0, lost: 0, down: 0, up: 0, writers: [] });
+  Object.assign(cloud, { devices: new Map(), sessions: new Set(), calls: [], delayRpc: null, seq: 0, failing: null, failed: 0 });
   bus.sent = { changed: 0, delta: 0 };
   bus.bytes = 0;
 }
@@ -389,9 +554,10 @@ function wakeUp(dev) {
 const RECORD_KEYS = new Set([
   'courses', 'tasks', 'notes', 'archivedTasks', 'incompleteTasks', 'archivedNotes', 'localEvents', 'dayColors', 'habits',
   'studySessions', 'dailyPerformances', 'playlists', 'spaces', 'syncedImages', 'looseNotes', 'studyVideos', 'imageRefs',
-  'schedules', 'classSessions',
+  'schedules', 'classSessions', 'songFavorites', 'timetables', 'loreFavorites',
 ]);
-const RETIRED = new Set(['classSessions', 'schedules', 'playHistory', 'headerQuote', 'school']);
+// Igual que RETIRED_KEYS de src/lib/sync-merge.ts (competencyCourseIds, desde la 1.9.0).
+const RETIRED = new Set(['classSessions', 'schedules', 'playHistory', 'headerQuote', 'school', 'competencyCourseIds']);
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -743,6 +909,21 @@ async function twoDevices() {
   timing('ajustes → laptop', await until(() => laptop.frame.get('appSettings')?.lang === 'en'));
   check(await settle(), 'se calma');
   traffic('tráfico', since(before));
+  check(differences(laptop, tablet).length === 0, `los dos tienen lo mismo${differences(laptop, tablet).length ? ` (difieren: ${differences(laptop, tablet).join(', ')})` : ''}`);
+
+  // --- 9b. Favoritos de la Biblioteca (1.9.2) ---
+  console.log('\n 9b. Favoritos de la Biblioteca: marcar en la laptop, quitar en la tablet');
+  before = counters();
+  const starred = (dev) => (dev.frame.get('loreFavorites') ?? []).map((entry) => entry.id).sort().join(',');
+  laptop.frame.put('loreFavorites', [{ id: 'ib-0a1b2c3d4e5f' }, { id: 'ib-112233445566' }]);
+  timing('favoritos → tablet', await until(() => starred(tablet) === 'ib-0a1b2c3d4e5f,ib-112233445566'));
+  check(await settle(), 'se calma');
+  tablet.frame.put('loreFavorites', [{ id: 'ib-112233445566' }]);
+  timing('favorito quitado → laptop', await until(() => starred(laptop) === 'ib-112233445566'));
+  check(await settle(), 'se calma');
+  traffic('tráfico', since(before));
+  check(starred(laptop) === 'ib-112233445566' && starred(tablet) === 'ib-112233445566', 'los dos acaban con el mismo favorito');
+  check(cloud.row?.data?.meta?.collections?.loreFavorites?.['ib-0a1b2c3d4e5f']?.d !== undefined, 'y la nube guarda la lápida del que se quitó');
   check(differences(laptop, tablet).length === 0, `los dos tienen lo mismo${differences(laptop, tablet).length ? ` (difieren: ${differences(laptop, tablet).join(', ')})` : ''}`);
 
   // --- 10. Mensaje ajeno en el canal ---
@@ -1415,10 +1596,343 @@ async function playlistsAcross() {
   shutdown();
 }
 
+// ------------------------------------------------------------
+// Fallos que pasan solos (1.9.2): la sincronización no espera a la sonda
+// ------------------------------------------------------------
+async function recovery() {
+  console.log('\n▶ La nube falla un rato, o la sesión no se puede renovar: la sincronización se recupera sola');
+  resetWorld();
+  const laptop = device('laptop');
+  const tablet = device('tablet');
+  load(laptop, fixture());
+  laptop.frame.start();
+  await sleep(120);
+  tablet.frame.start();
+  check(await settle(), 'se calma');
+  const inCloud = (id) => (cloud.row?.data?.data?.tasks ?? []).some((task) => task.id === id);
+
+  console.log('\n 1. El servicio responde con errores a la laptop durante 8 s, justo cuando cambia algo');
+  cloud.failing = (dev) => dev === laptop;
+  add(laptop, 'tasks', { id: 'r1', title: 'Durante la caída', courseId: 'c1' });
+  timing('el cambio llega igual a la tablet, por el canal', await until(() => !!find(tablet, 'tasks', 'r1'), 5_000));
+  await sleep(8_000);
+  check(!inCloud('r1') && laptop.frame.status()?.phase === 'error', 'la nube aún no lo tiene, y el verificador lo sabe');
+  const tries = cloud.failed;
+  cloud.failing = null;
+  const back = await until(() => inCloud('r1'), 40_000);
+  timing('vuelve el servicio → el cambio sube solo', back);
+  check(back !== null && back <= 12_000, `sin esperar a la sonda del minuto (${back} ms)`);
+  check(tries <= 3, `y sin insistir durante la caída (${tries} peticiones en 8 s)`);
+  check(await settle(), 'se calma');
+  check(laptop.frame.status()?.phase === 'idle' && differences(laptop, tablet).length === 0, 'todo en orden otra vez, los dos con lo mismo');
+
+  console.log('\n 2. La laptop vuelve de un rato sin red con la llave vencida: no se puede renovar todavía');
+  laptop.sessionDown = true;
+  add(laptop, 'tasks', { id: 'r2', title: 'Con la llave vencida', courseId: 'c1' });
+  await sleep(2_000);
+  const status = laptop.frame.status();
+  check(status?.phase === 'error' && /fetch/i.test(status?.lastError ?? ''), `cuenta como fallo de red, no como «sesión inválida» (${status?.lastError})`);
+  await sleep(38_000); // pasan los tres reintentos cortos (5, 10 y 20 s)
+  check(!inCloud('r2'), 'mientras no hay llave, no sube');
+  laptop.sessionDown = false;
+  laptop.authEvent('TOKEN_REFRESHED');
+  const renewed = await until(() => inCloud('r2'), 20_000);
+  timing('la llave se renueva → sube al momento', renewed);
+  check(renewed !== null && renewed <= 2_000, `sin esperar a la sonda, que ya iba espaciada a minutos (${renewed} ms)`);
+  check(await settle(), 'se calma');
+  check(differences(laptop, tablet).length === 0, 'los dos tienen lo mismo');
+  check(laptop.frame.reported().length === 0, 'y unos fallos de red seguidos no se anotan como error de Frame (solo si duran un cuarto de hora)');
+  shutdown();
+}
+
+// ------------------------------------------------------------
+// Ajustes → Dispositivos (1.9.2): lo que ve la tarjeta y lo que cuesta
+// ------------------------------------------------------------
+async function devicesAcross() {
+  console.log('\n▶ Dispositivos de la cuenta: laptop, tablet (reloj dos horas adelantado) y celular');
+  resetWorld();
+  const laptop = device('laptop');
+  const tablet = device('tablet', 'actual', { clockOffset: 2 * 3_600_000 });
+  const phone = device('celular');
+  const all = [laptop, tablet, phone];
+  laptop.frame.identify('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36');
+  tablet.frame.identify('Mozilla/5.0 (Linux; Android 14; SM-X210) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', [800, 1280]);
+  phone.frame.identify('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36', [412, 915]);
+  load(laptop, { ...fixture(), imageRefs: [] });
+
+  /** Como layout.tsx: la sincronización, el verificador y los latidos arrancan juntos. */
+  const startAll = (dev) => {
+    dev.frame.start();
+    dev.frame.devices.start();
+  };
+  const idOf = (dev) => dev.frame.devices.id();
+  const rowIn = (viewer, dev) => viewer.frame.devices.view().rows?.find((row) => row.device_id === idOf(dev));
+  const stateIn = (viewer, dev) => rowIn(viewer, dev)?.state;
+  const inCloud = (dev) => cloud.devices.get(idOf(dev));
+  const beats = (from) => all.map((dev) => callsOf(dev, 'device_heartbeat', from));
+  const told = () => bus.sent.devices ?? 0;
+  /** La tarjeta de `viewer` enseña a estos equipos vinculados y al día. */
+  const allSynced = (viewer, devs) => devs.every((dev) => rowIn(viewer, dev)?.linked === true && stateIn(viewer, dev) === 'synced');
+  /** Vuelve a mirar ya (lo que hace la tarjeta al abrirse). */
+  const look = (dev) => {
+    dev.frame.devices.open(false);
+    dev.frame.devices.open(true);
+  };
+
+  // --- 0. Arranque, sin nadie mirando ---
+  console.log('\n 0. Arrancan los tres; nadie tiene la tarjeta abierta');
+  startAll(laptop);
+  await sleep(120);
+  startAll(tablet);
+  startAll(phone);
+  check(await settle(), 'se calma');
+  await sleep(7_000);
+  let n = beats(0);
+  check(n.every((count) => count >= 1 && count <= 4), `cada equipo se presenta con pocos latidos (${n.join(', ')})`);
+  check(cloud.devices.size === 3 && [...cloud.devices.values()].every((row) => row.linked), 'la nube tiene los tres, vinculados');
+  let mark = cloud.calls.length;
+  await sleep(13_000);
+  check(cloud.calls.length === mark, `después, sin cambios, nadie late (${cloud.calls.length - mark} llamadas en 13 s)`);
+
+  console.log('\n 0b. Un cambio sin nadie mirando: se cuenta sin prisa');
+  mark = cloud.calls.length;
+  add(laptop, 'tasks', { id: 'd0', title: 'Sin nadie mirando', courseId: 'c1' });
+  await until(() => !!find(phone, 'tasks', 'd0') && !!find(tablet, 'tasks', 'd0'));
+  await sleep(10_000);
+  check(cloud.calls.length === mark, `a los 10 s nadie ha latido por ello (${cloud.calls.length - mark})`);
+  timing('cambio → los tres lo cuentan a la nube', await until(() => beats(mark).every((count) => count >= 1), 30_000));
+  await sleep(1_500);
+  n = beats(mark);
+  check(n.every((count) => count === 1), `un solo latido por equipo, al medio minuto (${n.join(', ')})`);
+
+  // --- 1. La tarjeta ---
+  console.log('\n 1. La laptop abre Ajustes → Dispositivos');
+  laptop.frame.devices.open(true);
+  timing('abrir la tarjeta → los tres, vinculados y al día', await until(() => allSynced(laptop, all), 8_000));
+  let rows = laptop.frame.devices.view().rows ?? [];
+  const shape = (dev) => `${rowIn(laptop, dev)?.kind}/${rowIn(laptop, dev)?.platform}`;
+  check(rows.length === 3, `ve tres equipos (${rows.length})`);
+  check(shape(laptop) === 'laptop/windows' && shape(tablet) === 'tablet/android' && shape(phone) === 'phone/android', `sabe qué es cada uno (${all.map(shape).join(', ')})`);
+  check(rows.filter((row) => row.self).length === 1 && rowIn(laptop, laptop)?.self === true, 'y cuál es este');
+  check(rows.every((row) => row.seenAgo < 20_000), `«visto hace» sale del reloj del servidor (${rows.map((row) => Math.round(row.seenAgo / 1000)).join(' s, ')} s)`);
+  const tabletView = tablet.frame.devices.view();
+  check(Math.abs(tabletView.skew - 2 * 3_600_000) < 5_000, `la tablet sabe que su reloj va dos horas adelantado (${Math.round(tabletView.skew / 60_000)} min)`);
+  check((tabletView.rows ?? []).every((row) => row.seenAgo < 60_000), 'y aun así no ve a nadie «hace dos horas»');
+
+  // --- 2. Un cambio con la tarjeta abierta ---
+  console.log('\n 2. Un cambio en la laptop con la tarjeta abierta');
+  const seen = new Set();
+  const watcher = setInterval(() => {
+    for (const row of laptop.frame.devices.view().rows ?? []) seen.add(row.state);
+  }, 20);
+  let version = laptop.frame.devices.view().cloudAt;
+  add(laptop, 'tasks', { id: 'd1', title: 'Con la tarjeta abierta', courseId: 'c1' });
+  await until(() => laptop.frame.devices.view().cloudAt !== version, 5_000);
+  timing('la copia de la nube cambia → otra vez los tres al día', await until(() => allSynced(laptop, all), 10_000));
+
+  // --- 3. Versiones selladas por relojes distintos ---
+  console.log('\n 3. La tablet (reloj adelantado) cambia algo, y luego la laptop');
+  version = laptop.frame.devices.view().cloudAt;
+  edit(tablet, 'tasks', 't1', { title: 'Desde la tablet' });
+  await until(() => laptop.frame.devices.view().cloudAt !== version, 8_000);
+  timing('cambio de la tablet → los tres al día', await until(() => allSynced(laptop, all), 10_000));
+  version = laptop.frame.devices.view().cloudAt;
+  edit(laptop, 'tasks', 't2', { title: 'Y después desde la laptop' });
+  await until(() => laptop.frame.devices.view().cloudAt !== version, 8_000);
+  timing('cambio de la laptop (su versión es «anterior» a la de la tablet) → los tres al día', await until(() => allSynced(laptop, all), 10_000));
+  clearInterval(watcher);
+  check(!seen.has('behind') && !seen.has('unlinked') && !seen.has('inactive'), `en todo ese rato nadie apareció con problemas (${[...seen].join(', ')})`);
+
+  // --- 4. Sin conexión ---
+  console.log('\n 4. El celular se queda sin conexión y la laptop cambia algo');
+  setOffline(phone, true);
+  await sleep(200);
+  version = laptop.frame.devices.view().cloudAt;
+  add(laptop, 'tasks', { id: 'd2', title: 'Mientras el celular no tiene red', courseId: 'c2' });
+  await until(() => laptop.frame.devices.view().cloudAt !== version, 5_000);
+  await until(() => allSynced(laptop, [laptop, tablet]), 10_000);
+  check(allSynced(laptop, [laptop, tablet]), 'la laptop y la tablet, al día');
+  check(stateIn(laptop, phone) === 'waiting', `el celular queda «por ponerse al día», no «con problemas» (${stateIn(laptop, phone)})`);
+  setOffline(phone, false);
+  timing('vuelve la red → el celular al día en la tarjeta', await until(() => allSynced(laptop, all), 15_000));
+
+  // --- 5. Lo que a un equipo le falta ---
+  console.log('\n 5. Una playlist con canciones que la tablet no tiene');
+  const songs = [
+    { id: 'L1', title: 'Alpha', artist: 'Ana', fileName: 'alpha.mp3' },
+    { id: 'L2', title: 'Beta', artist: 'Bruno', fileName: 'beta.mp3' },
+    { id: 'L3', title: 'Gamma', artist: 'Gala', fileName: 'gamma.mp3' },
+  ];
+  setLibrary(laptop, songs);
+  laptop.frame.devices.library(songs.map((song) => song.id));
+  const phoneSongs = songs.map((song, index) => ({ ...song, id: `P${index + 1}` }));
+  setLibrary(phone, phoneSongs);
+  phone.frame.devices.library(phoneSongs.map((song) => song.id));
+  tablet.frame.devices.library([]);
+  add(laptop, 'playlists', { id: 'pd', name: 'Para estudiar', songIds: ['L1', 'L2', 'L3'], order: 0 });
+  timing('playlist nueva → la tablet aparece con lo que le falta', await until(() => stateIn(laptop, tablet) === 'behind', 15_000));
+  check(rowIn(laptop, tablet)?.sync?.issues?.song === 3, `le faltan 3 canciones (${JSON.stringify(rowIn(laptop, tablet)?.sync?.issues)})`);
+  await until(() => allSynced(laptop, [laptop, phone]), 10_000);
+  check(allSynced(laptop, [laptop, phone]), 'los que sí las tienen, al día');
+  // Llegan a la tablet (por Wire, o importándolas): deja de faltarle nada, sin esperar a la ronda de 2 min.
+  const tabletSongs = songs.map((song, index) => ({ ...song, id: `T${index + 1}` }));
+  setLibrary(tablet, tabletSongs);
+  tablet.frame.devices.library(tabletSongs.map((song) => song.id));
+  timing('las canciones llegan a la tablet → al día', await until(() => allSynced(laptop, all), 15_000));
+  // Y una que solo tiene la laptop, para lo que sigue.
+  setLibrary(laptop, [...songs, { id: 'L4', title: 'Delta', artist: 'Dora', fileName: 'delta.mp3' }]);
+  laptop.frame.devices.library(['L1', 'L2', 'L3', 'L4']);
+  edit(laptop, 'playlists', 'pd', { songIds: ['L1', 'L2', 'L3', 'L4'] });
+  await until(() => stateIn(laptop, tablet) === 'behind' && stateIn(laptop, phone) === 'behind', 15_000);
+  check(stateIn(laptop, tablet) === 'behind' && stateIn(laptop, phone) === 'behind', 'una canción que solo tiene la laptop: a los otros dos les falta');
+  await sleep(3_000);
+
+  // --- 6. Lo que cuesta mirar ---
+  console.log('\n 6. Treinta y cinco segundos con la tarjeta de la laptop abierta, sin tocar nada');
+  mark = cloud.calls.length;
+  let messages = told();
+  await sleep(35_000);
+  n = beats(mark);
+  check(n.every((count) => count <= 2), `como mucho un latido por equipo cada 30 s (${n.join(', ')})`);
+  check(told() - messages <= 2, `y un aviso por ronda (${told() - messages})`);
+
+  console.log('\n 6b. Otros treinta y cinco con la tarjeta abierta también en la tablet');
+  tablet.frame.devices.open(true);
+  await sleep(3_000);
+  mark = cloud.calls.length;
+  messages = told();
+  await sleep(35_000);
+  n = beats(mark);
+  check(n.every((count) => count <= 4), `los latidos no se multiplican (${n.join(', ')})`);
+  check(told() - messages <= 6, `ni los avisos: nadie contesta a un aviso con otro (${told() - messages})`);
+  tablet.frame.devices.open(false);
+
+  // --- 7. «Corregir» ---
+  console.log('\n 7. «Corregir» desde la laptop');
+  let nows = all.map((dev) => dev.frame.devices.syncNows());
+  check((await laptop.frame.devices.repair()) === true, 'el pedido queda guardado en la nube');
+  timing('«Corregir» → la tablet y el celular sincronizan todo', await until(() => tablet.frame.devices.syncNows() > nows[1] && phone.frame.devices.syncNows() > nows[2], 10_000));
+  await sleep(7_000);
+  let after = all.map((dev) => dev.frame.devices.syncNows());
+  check(after.every((count, index) => count === nows[index] + 1), `cada equipo lo hace UNA vez, aunque siga latiendo (${after.map((count, index) => count - nows[index]).join(', ')})`);
+  mark = cloud.calls.length;
+  tablet.frame.devices.stop();
+  tablet.frame.devices.start();
+  tablet.frame.devices.library(tabletSongs.map((song) => song.id));
+  await until(() => callsOf(tablet, 'device_heartbeat', mark) >= 1, 12_000);
+  await sleep(500);
+  check(tablet.frame.devices.syncNows() === after[1], 'al reabrir Frame no repite un pedido que ya atendió');
+  nows = all.map((dev) => dev.frame.devices.syncNows());
+  check((await laptop.frame.devices.repair()) === true, 'un segundo pedido');
+  timing('segundo «Corregir» → los otros dos, otra vez', await until(() => tablet.frame.devices.syncNows() > nows[1] && phone.frame.devices.syncNows() > nows[2], 10_000));
+  await sleep(6_000);
+
+  // --- 8. Cerrar sesión ---
+  console.log('\n 8. El celular cierra sesión');
+  await phone.frame.devices.unlink();
+  cloud.sessions.delete(phone.session);
+  phone.frame.stop();
+  timing('cerrar sesión → la laptop lo ve desvinculado', await until(() => stateIn(laptop, phone) === 'unlinked', 8_000));
+  check(!!rowIn(laptop, phone)?.unlinked_at, 'con la hora en que cerró');
+
+  console.log('\n 8b. Vuelve a entrar (sesión nueva)');
+  phone.session = crypto.randomUUID();
+  cloud.sessions.add(phone.session);
+  startAll(phone);
+  phone.frame.devices.library(phoneSongs.map((song) => song.id));
+  timing('entrar de nuevo → vinculado otra vez', await until(() => rowIn(laptop, phone)?.linked === true, 15_000));
+  check(rowIn(laptop, phone)?.unlinked_at === null, 'sin esperar a que pase el margen de la despedida (es otra sesión)');
+
+  console.log('\n 8c. Un latido que salió antes de «Cerrar sesión» llega después');
+  await sleep(2_500);
+  cloud.delayRpc = (dev, name) => (dev === phone && name === 'device_heartbeat' ? 1_500 : 0);
+  mark = cloud.calls.length;
+  look(phone);
+  await until(() => callsOf(phone, 'device_heartbeat', mark, true) >= 1, 5_000);
+  check(callsOf(phone, 'device_heartbeat', mark, true) === 1 && callsOf(phone, 'device_heartbeat', mark) === 0, 'hay un latido en camino');
+  await phone.frame.devices.unlink();
+  phone.frame.devices.open(false);
+  await until(() => callsOf(phone, 'device_heartbeat', mark) >= 1, 5_000);
+  cloud.delayRpc = null;
+  check(inCloud(phone)?.linked === false && inCloud(phone)?.unlinked_at !== null, 'llegó después y no lo revivió: la despedida manda');
+  await until(() => stateIn(laptop, phone) === 'unlinked', 8_000);
+  check(stateIn(laptop, phone) === 'unlinked' && !!rowIn(laptop, phone)?.unlinked_at, 'la laptop lo ve desvinculado, con su hora');
+
+  console.log('\n 8d. Frame se cerró a media salida: la sesión siguió viva y el equipo vuelve a abrirse');
+  laptop.frame.devices.open(false);
+  await sleep(1_000);
+  // Como si la despedida fuera de hace 108 s: a su margen le quedan 12.
+  inCloud(phone).unlinked_at = Date.now() - 108_000;
+  mark = cloud.calls.length;
+  phone.frame.devices.stop();
+  phone.frame.devices.start();
+  phone.frame.devices.library(phoneSongs.map((song) => song.id));
+  await until(() => callsOf(phone, 'device_heartbeat', mark) >= 1, 10_000);
+  await sleep(300);
+  check(inCloud(phone)?.linked === false, 'dentro del margen, la nube aún lo da por despedido');
+  check(rowIn(phone, phone)?.linked === true, 'pero el propio equipo, que tiene sesión, no se ve «desvinculado»');
+  timing('pasa el margen → se vincula solo, sin que nadie pregunte', await until(() => inCloud(phone)?.linked === true, 25_000));
+  check(inCloud(phone)?.linked === true && inCloud(phone)?.unlinked_at === null, 'vinculado otra vez');
+  n = callsOf(phone, 'device_heartbeat', mark);
+  check(n <= 3, `con un par de latidos, no insistiendo (${n})`);
+
+  // --- 9. Una sesión cerrada desde fuera ---
+  console.log('\n 9. La sesión de la tablet se cierra desde fuera; la tablet sigue abierta');
+  laptop.frame.devices.open(true);
+  await until(() => allSynced(laptop, [laptop]) && rowIn(laptop, tablet)?.linked === true, 8_000);
+  cloud.sessions.delete(tablet.session);
+  look(laptop);
+  timing('→ la laptop la ve desvinculada', await until(() => stateIn(laptop, tablet) === 'unlinked', 8_000));
+  check(rowIn(laptop, tablet)?.unlinked_at === null, 'sin hora de despedida: no llegó a avisar');
+  const flicker = new Set();
+  const flickerWatch = setInterval(() => flicker.add(stateIn(laptop, tablet)), 20);
+  mark = cloud.calls.length;
+  look(laptop);
+  await until(() => callsOf(tablet, 'device_heartbeat', mark) >= 1, 8_000);
+  await sleep(6_000);
+  look(laptop);
+  await sleep(3_000);
+  clearInterval(flickerWatch);
+  check(callsOf(tablet, 'device_heartbeat', mark) >= 2, `la tablet siguió latiendo con su llave aún válida (${callsOf(tablet, 'device_heartbeat', mark)})`);
+  check(flicker.size === 1 && flicker.has('unlinked'), `y no parpadea entre vinculada y desvinculada (${[...flicker].join(', ')})`);
+  check(stateIn(tablet, tablet) === 'unlinked', 'ella misma se ve desvinculada');
+
+  console.log('\n 9b. La laptop la quita de la lista');
+  check((await laptop.frame.devices.forget(idOf(tablet))) === true, 'se quita');
+  check(!rowIn(laptop, tablet) && !inCloud(tablet), 'desaparece de la tarjeta y de la nube');
+  mark = cloud.calls.length;
+  look(laptop);
+  await until(() => callsOf(tablet, 'device_heartbeat', mark) >= 1, 8_000);
+  await sleep(1_500);
+  check(!inCloud(tablet) && !rowIn(laptop, tablet), 'y no reaparece aunque siga latiendo con la sesión cerrada');
+  laptop.frame.devices.open(false);
+
+  // --- 10. La llave caduca: los latidos fallan ---
+  console.log('\n10. La llave de la tablet caduca (sesión perdida): sus latidos fallan');
+  tablet.jwt = false;
+  mark = cloud.calls.length;
+  look(tablet);
+  tablet.frame.devices.open(false);
+  await until(() => tablet.frame.devices.view().failed === true, 8_000);
+  check(tablet.frame.devices.view().failed === true, 'la tarjeta lo dice');
+  await sleep(20_000);
+  n = callsOf(tablet, 'device_heartbeat', mark, true);
+  check(n === 2, `reintenta sola y espaciado: 2 intentos en 20 s, no uno tras otro (${n})`);
+  // Vuelve a entrar: el siguiente reintento ya llega.
+  tablet.session = crypto.randomUUID();
+  cloud.sessions.add(tablet.session);
+  tablet.jwt = true;
+  timing('con la sesión de vuelta → el reintento llega solo', await until(() => tablet.frame.devices.view().failed === false && rowIn(tablet, tablet)?.linked === true, 35_000));
+  check(inCloud(tablet)?.linked === true, 'y vuelve a estar en la lista, vinculada');
+
+  check(all.every((dev) => dev.frame.reported().length === 0), 'ningún fallo anotado en el registro de errores');
+  shutdown();
+}
+
 const started = Date.now();
-// --solo=dos|tres|playlists|relojes|convivencia|anterior|futuro|imagenes|corazon|referencia corre solo ese grupo.
+// --solo=dos|tres|playlists|relojes|convivencia|anterior|futuro|imagenes|corazon|recuperacion|dispositivos|referencia corre solo ese grupo.
 const only = process.argv.find((arg) => arg.startsWith('--solo='))?.slice('--solo='.length);
-const groups = { dos: twoDevices, tres: threeDevices, playlists: playlistsAcross, relojes: clockSkew, convivencia: withOldVersion, anterior: withPrevious, futuro: futureKeys, imagenes: images, corazon: favorites, referencia: oldPair };
+const groups = { dos: twoDevices, tres: threeDevices, playlists: playlistsAcross, relojes: clockSkew, convivencia: withOldVersion, anterior: withPrevious, futuro: futureKeys, imagenes: images, corazon: favorites, recuperacion: recovery, dispositivos: devicesAcross, referencia: oldPair };
 for (const [name, run] of Object.entries(groups)) {
   if (only ? only === name : name !== 'referencia' || !process.argv.includes('--sin-referencia')) await run();
 }

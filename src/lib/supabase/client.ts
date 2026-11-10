@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { cappedFetch } from '@/lib/capped-fetch';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -20,6 +21,9 @@ export function getSupabase(): SupabaseClient | null {
       flowType: 'pkce',
       storageKey: 'aether-auth',
     },
+    // Cada petición (sesión, datos, imágenes) con su plazo: una colgada dejaba
+    // la sincronización parada hasta reiniciar Frame. Ver lib/capped-fetch.ts.
+    global: { fetch: cappedFetch },
     // Si el canal en vivo no puede conectar (servicio caído, o el tope de
     // conexiones simultáneas del plan lleno), cada equipo reintenta cada vez más
     // espaciado y al azar: 1 s, 2 s, 4 s… hasta 5 min. Por defecto insistía cada
@@ -42,5 +46,6 @@ export function getRecoveryClient(): SupabaseClient | null {
   if (!isSupabaseConfigured) return null;
   return createClient(supabaseUrl!, supabaseAnonKey!, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' },
+    global: { fetch: cappedFetch },
   });
 }

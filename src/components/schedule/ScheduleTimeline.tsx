@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import WaveBackdrop from '@/components/courses/WaveBackdrop';
+import { useCourse } from '@/context/CourseContext';
+import { useStoredImage } from '@/hooks/use-stored-image';
 import {
+  courseForSubject,
   minutesOf,
   minutesOfDay,
   occurrences,
@@ -22,7 +26,10 @@ import { cn } from '@/lib/utils';
 //   ░▒ │ Matemática │ │ Historia │ │ Física │ ▒░   tarjetas
 //                         ┃ la hora, siempre al medio
 //
-// Cada tarjeta mide un poco menos de un tercio del ancho: una al medio, una a
+// Cada tarjeta (1.9.2) lleva la imagen de su asignatura (sin imagen elegida,
+// las olas que tiene en Asignaturas), el profesor y, en una fila, las tareas
+// pendientes y la hora; el día, si no es hoy, va en una etiqueta sobre la
+// imagen. Mide un poco menos de un tercio del ancho: una al medio, una a
 // cada lado y, en los bordes, un trozo de la siguiente con degradado. La pista
 // se mueve con el reloj: una clase de 8 a 12 queda centrada a las 10, y a las
 // 9 la línea cae a un cuarto de su tarjeta. Entre días (y el fin de semana)
@@ -134,7 +141,7 @@ function Track({ list, visible, width, card, step, offset, now, today }: TrackPr
             </div>
 
             {/* Tarjetas */}
-            <div className="relative mt-2 h-[8.5rem]">
+            <div className="relative mt-2 h-[12.5rem]">
               {visible.map(({ occurrence, index }) => (
                 <ClassCard key={occurrence.key} occurrence={occurrence} left={index * step} width={card} now={now} today={today} />
               ))}
@@ -148,39 +155,64 @@ function Track({ list, visible, width, card, step, offset, now, today }: TrackPr
 
 function ClassCard({ occurrence, left, width, now, today }: { occurrence: Occurrence; left: number; width: number; now: number; today: number }) {
   const { item } = occurrence;
-  const color = subjectColor(item.subject);
+  const { courses, tasks } = useCourse();
+  // La misma asignatura de Frame: su imagen, su profesor y sus tareas.
+  const course = useMemo(() => courseForSubject(courses ?? [], item.subject), [courses, item.subject]);
+  const [image, , imageRead] = useStoredImage(course ? `courseImage_${course.id}` : null);
+  // Una imagen guardada que ya no se puede pintar (dañada): como si no la tuviera.
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [image]);
+  const pending = useMemo(() => (course ? (tasks ?? []).filter((task) => task.courseId === course.id && task.progress < 100).length : 0), [course, tasks]);
   const current = now >= occurrence.start && now < occurrence.end;
   const past = now >= occurrence.end;
   const progress = current ? (now - occurrence.start) / (occurrence.end - occurrence.start) : 0;
-  const minutes = Math.round((occurrence.end - occurrence.start) / 60_000);
-  const detail = [item.room, item.teacher].filter(Boolean).join(' · ') || (minutes >= 60 && minutes % 60 === 0 ? tr('{h} h', { h: minutes / 60 }) : tr('{m} min', { m: minutes }));
+  // El profesor que el usuario puso en la asignatura manda sobre el leído de la foto, que suele venir en siglas.
+  const teacher = course?.teacherName?.trim() || item.teacher || '';
+  const day = startOfDay(occurrence.start) === today ? null : dayLabel(occurrence, today);
+  const hours = `${timeOf(minutesOf(item.start)!)}–${timeOf(minutesOf(item.end)!)}`;
 
   return (
     <div className="absolute inset-y-0" style={{ left, width }}>
       <div
-        className={cn(
-          'flex h-full flex-col gap-1 overflow-hidden rounded-xl border bg-card p-3 shadow-sm transition-opacity',
-          current && 'ring-2 ring-primary/60',
-          past && 'opacity-55'
-        )}
-        style={{ borderColor: `${color}55`, backgroundImage: `linear-gradient(135deg, ${color}2e, transparent 72%)` }}
-        title={`${item.subject} · ${item.start}–${item.end}`}
+        className={cn('flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-opacity', current && 'ring-2 ring-primary/60', past && 'opacity-55')}
+        title={`${item.subject} · ${item.start}–${item.end}${item.room ? ` · ${item.room}` : ''}`}
       >
-        <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-          <span className="truncate">
-            {dayLabel(occurrence, today)} · {timeOf(minutesOf(item.start)!)}–{timeOf(minutesOf(item.end)!)}
-          </span>
-          {current && <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{tr('Ahora')}</span>}
+        <div className={cn('relative min-h-0 flex-1 overflow-hidden', course ? 'bg-transparent' : 'bg-muted')}>
+          {image && !broken ? (
+            <img src={image} alt="" draggable={false} onError={() => setBroken(true)} className="h-full w-full object-cover" />
+          ) : !course ? (
+            // Ninguna asignatura de Frame se llama así: sus iniciales.
+            <div className="flex h-full w-full items-center justify-center font-headline text-3xl font-bold" style={{ color: subjectColor(item.subject) }}>
+              {initials(item.subject)}
+            </div>
+          ) : imageRead || broken ? (
+            // La asignatura no tiene imagen elegida: lo mismo que enseña en Asignaturas.
+            <WaveBackdrop />
+          ) : null /* aún leyendo su imagen: nada, para que no parpadee otra cosa antes */}
+          {day && <span className="absolute left-2 top-2 max-w-[70%] truncate rounded-full bg-background/85 px-1.5 text-[10px] font-semibold text-foreground shadow-sm">{day}</span>}
+          {current && <span className="absolute right-2 top-2 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground shadow-sm">{tr('Ahora')}</span>}
+          {current && (
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-black/20">
+              <div className="h-full bg-primary" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+          )}
         </div>
-        <p className="line-clamp-2 font-headline text-lg font-bold leading-tight text-foreground">{item.subject}</p>
-        <p className="mt-auto truncate text-xs text-muted-foreground">{detail}</p>
-        {current && (
-          <div className="h-1 w-full shrink-0 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.round(progress * 100)}%` }} />
+        <div className="shrink-0 space-y-0.5 px-3 pb-2 pt-1.5">
+          <p className="truncate font-headline text-sm font-bold leading-tight text-foreground">{item.subject}</p>
+          <p className="min-h-[1rem] truncate text-xs text-muted-foreground">{teacher}</p>
+          {/* Las tareas y la hora, en una misma fila: el número siempre entero (la hora cede si no cabe). */}
+          <div className="flex items-center justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
+            <span className="shrink-0">{course ? (pending === 1 ? `1 ${tr('tarea')}` : `${pending} ${tr('tareas')}`) : ''}</span>
+            <span className="min-w-0 truncate font-medium text-foreground/80">{hours}</span>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
+}
+
+/** Dos letras para la tarjeta sin imagen («Lengua y Literatura» → «LL»). */
+function initials(subject: string): string {
+  const words = subject.split(/\s+/).filter((word) => word.length > 2 || /^[A-ZÁÉÍÓÚÑ]/.test(word));
+  return (words.slice(0, 2).map((word) => word[0]).join('') || subject.slice(0, 2)).toUpperCase();
 }

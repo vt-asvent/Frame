@@ -41,6 +41,7 @@ import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, 
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
+import { DevicesCard } from '@/components/settings/DevicesCard';
 import { useContributions, useExtensionOn, useInstalledExtensions } from '@/lib/extensions/store';
 import { ANIMACIONES, effectiveLook, useLook } from '@/lib/extensions/animaciones';
 import ProfileStats from '@/components/settings/ProfileStats';
@@ -602,13 +603,16 @@ export default function SettingsPage() {
             (xl) los dos grupos se disuelven (`contents`) y todo va en una fila.
             ------------------------------------------------------------------ */}
         <div className="rounded-xl border border-border/70 bg-card/40 p-5">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-           <div className="flex flex-wrap items-center justify-between gap-4 xl:contents">
+          {/* En una fila solo si cabe (1.9.2): con la barra lateral, el perfil, el idioma, el tema,
+              el color y la cuenta piden unos 1340 px de ventana. Entre 1280 y eso se desbordaban a
+              lo ancho y «Cuenta» quedaba fuera de la pantalla (pantallas de 1280 px, o Windows al 150 %). */}
+          <div className="flex flex-col gap-5 min-[1400px]:flex-row min-[1400px]:items-center">
+           <div className="flex flex-wrap items-center justify-between gap-4 min-[1400px]:contents">
             {/* --- Identidad --- */}
-            <div className="flex min-w-0 items-center gap-4 xl:shrink-0 2xl:gap-5">
+            <div className="flex min-w-0 items-center gap-4 min-[1400px]:shrink-0 2xl:gap-5">
               <div
                 className={cn(
-                  'flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-secondary xl:h-24 xl:w-24 2xl:h-28 2xl:w-28',
+                  'flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-secondary min-[1400px]:h-24 min-[1400px]:w-24 2xl:h-28 2xl:w-28',
                   isEditingProfile && 'cursor-pointer animate-pulse-border-infinite border-2 border-primary'
                 )}
                 onClick={() => {
@@ -688,7 +692,7 @@ export default function SettingsPage() {
             </div>
 
             {/* --- Antigüedad de la cuenta --- */}
-            <div className="flex shrink-0 items-center xl:flex-1">
+            <div className="flex shrink-0 items-center min-[1400px]:flex-1">
               <div className="flex flex-col justify-center gap-1 rounded-lg border border-border/60 bg-gradient-to-b from-primary/[0.07] to-transparent px-4 py-3">
                 <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
                   <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -712,7 +716,7 @@ export default function SettingsPage() {
 
            </div>
 
-           <div className="flex flex-wrap items-start justify-center gap-5 xl:contents">
+           <div className="flex flex-wrap items-start justify-center gap-5 min-[1400px]:contents">
             {/* --- Idioma, a la izquierda de la divisoria (1.6.7). --- */}
             <div className="flex shrink-0 items-start">
               <LanguageSelector />
@@ -750,6 +754,11 @@ export default function SettingsPage() {
             </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </button>
+        </div>
+
+        {/* Dispositivos de la cuenta y su sincronización (1.9.2). */}
+        <div className="pt-6">
+          <DevicesCard userProfile={userProfile} />
         </div>
 
         {/* Metas diarias (minutos) y escala AD/A/B/C: modo Avanzado. Las

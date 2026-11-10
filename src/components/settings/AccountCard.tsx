@@ -24,7 +24,7 @@ import { IA } from '@/lib/extensions/ia/tools';
 import { revokeCloud } from '@/lib/extensions/ia/cloud';
 import { disconnectGoogle } from '@/lib/google/auth';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { deleteRemoteAccount, signOut, type DeleteAccountMode } from '@/lib/supabase/auth';
+import { deleteRemoteAccount, signOut, within, type DeleteAccountMode } from '@/lib/supabase/auth';
 import { pushToCloud } from '@/lib/supabase/sync';
 import { cn } from '@/lib/utils';
 import type { UserProfile } from '@/types';
@@ -114,7 +114,8 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
     // esto, se perdería hasta un minuto de trabajo.
     if (isCloud) {
       try {
-        await pushToCloud(userProfile.id);
+        // Con tope: en una red colgada, salir no puede quedarse esperando.
+        await within(pushToCloud(userProfile.id), 8000);
       } catch {
         /* respaldo de cortesía: no debe impedir cerrar sesión */
       }
@@ -325,7 +326,9 @@ export default function AccountMenu({ userProfile }: { userProfile: UserProfile 
                     event.preventDefault();
                     setIsWiping(true);
                     try {
-                      await signOut();
+                      // Cuenta borrada: fuera la sesión de TODOS los equipos (si solo
+                      // se purgaron los datos, otro equipo los volvería a subir).
+                      await signOut({ everywhere: true });
                     } catch {
                       /* la sesión ya puede estar invalidada en el servidor */
                     }

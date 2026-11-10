@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { parseISO, startOfToday, subDays } from 'date-fns';
-import { ArrowUpRight, CheckCircle2, Flame, ListMusic, Pause, Play, Square, Timer } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Flame, Hourglass, ListMusic, Pause, Play, Square, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EchoTileHeader } from '@/components/shared/EchoWord';
@@ -53,7 +53,7 @@ export function QuickStudyCard({ className }: { className?: string }) {
   const inProgress = sessionStartTime > 0;
   const focus = timerMode === 'focus';
 
-  // Lo estudiado hoy y ayer (con lo de ayer, lo que enseñaba la casilla «Ayer»).
+  // Lo estudiado hoy y ayer.
   const studied = useMemo(() => {
     const yesterdayKey = localDayKey(subDays(new Date(), 1));
     let today = 0;
@@ -66,12 +66,14 @@ export function QuickStudyCard({ className }: { className?: string }) {
     return { today, yesterday };
   }, [studySessions, todayKey]);
 
-  const start = () => {
+  /** El temporizador de 25 minutos o el cronómetro, con el mismo motor de Estudio. */
+  const start = (mode: 'focus' | 'stopwatch') => {
     if (!userProfile || inProgress) return;
-    const seconds = POMODORO_MINUTES * 60;
-    setTimerMode('focus');
+    const seconds = mode === 'focus' ? POMODORO_MINUTES * 60 : 0;
+    setTimerMode(mode);
     setTimerTime(seconds);
-    setSessionStartTime(seconds);
+    // El cronómetro marca su comienzo con 1 (como en Estudio).
+    setSessionStartTime(mode === 'focus' ? seconds : 1);
     setIsTimerActive(true);
   };
 
@@ -83,31 +85,72 @@ export function QuickStudyCard({ className }: { className?: string }) {
 
   const openStudy = () => router.push('/temporizador');
 
-  const clock = autoFinishPending ? formatHMS(0) : inProgress ? formatHMS(time) : formatHMS(POMODORO_MINUTES * 60);
-  const progress = inProgress && focus && sessionStartTime > 0 ? Math.min(1, Math.max(0, (sessionStartTime - time) / sessionStartTime)) : autoFinishPending ? 1 : 0;
+  const focusRunning = (inProgress && focus) || autoFinishPending;
+  const watchRunning = inProgress && !focus;
+  const focusClock = autoFinishPending ? formatHMS(0) : focusRunning ? formatHMS(time) : formatHMS(POMODORO_MINUTES * 60);
+  const watchClock = watchRunning ? formatHMS(time) : formatHMS(0);
+  // Lo que falta del pomodoro; el cronómetro da una vuelta por minuto.
+  const focusRing = focusRunning && !autoFinishPending && sessionStartTime > 0 ? Math.min(1, Math.max(0, time / sessionStartTime)) : 0;
+  const watchRing = watchRunning ? (time % 60) / 60 : 0;
 
-  const caption = autoFinishPending
-    ? tr('¡Sesión terminada! Regístrala en Estudio.')
-    : inProgress
-      ? isTimerActive
-        ? focus
-          ? tr('Enfoque en marcha')
-          : tr('Cronómetro en marcha')
-        : tr('En pausa')
-      : tr('{n} min de enfoque. Al terminar, la registras en Estudio.', { n: POMODORO_MINUTES });
+  const controls = (mode: 'focus' | 'stopwatch') => {
+    const running = mode === 'focus' ? focusRunning : watchRunning;
+    // Los botones no pasan de su mitad: el texto se recorta antes de pisar la línea o la otra mitad.
+    if (mode === 'focus' && autoFinishPending) {
+      return (
+        <Button size="sm" onClick={openStudy} className="h-8 max-w-full shrink-0 rounded-full px-3" title={tr('Registrar la sesión')}>
+          <CheckCircle2 className="mr-1.5 h-4 w-4 shrink-0" />
+          <span className="truncate">{tr('Registrar la sesión')}</span>
+        </Button>
+      );
+    }
+    if (running) {
+      // Un pomodoro que ya llegó a 00:00 (su registro se dejó para luego): reanudarlo lo daría por terminado otra vez.
+      const spent = mode === 'focus' && time === 0;
+      return (
+        <div className="flex max-w-full shrink-0 items-center gap-2">
+          <Button
+            variant="fantasma"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full"
+            onClick={() => setIsTimerActive(!isTimerActive)}
+            disabled={spent}
+            aria-label={isTimerActive ? tr('Pausar') : tr('Reanudar')}
+            title={isTimerActive ? tr('Pausar') : tr('Reanudar')}
+          >
+            {isTimerActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 min-w-0 rounded-full px-3" onClick={finish} title={tr('Terminar y registrar la sesión en Estudio')}>
+            <Square className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{tr('Terminar')}</span>
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <Button size="sm" onClick={() => start(mode)} disabled={!userProfile || inProgress || autoFinishPending} className="h-8 max-w-full shrink-0 rounded-full px-4">
+        <Play className="mr-1.5 h-4 w-4 shrink-0" />
+        <span className="truncate">{tr('Empezar')}</span>
+      </Button>
+    );
+  };
 
   return (
-    <Card className={cn('relative flex min-h-0 flex-col overflow-hidden bg-gradient-to-br from-primary/[0.08] via-card to-card p-4 [background-color:hsl(var(--card))]', className)}>
+    <Card className={cn('relative flex min-h-0 flex-col overflow-hidden p-4', className)}>
       <EchoTileHeader word={tr('Pomodoro')}>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-            <Timer className="h-4 w-4 text-primary" />
-            {tr('Pomodoro')}
+          <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <Timer className="h-4 w-4 shrink-0 text-primary" />
+            <span className="shrink-0">{tr('Pomodoro')}</span>
+            {/* Lo estudiado hoy y ayer, en la cabecera: abajo le quitaba alto a las circunferencias. */}
+            <span className="truncate text-[11px] font-normal tabular-nums">
+              {tr('Hoy {today} · ayer {yesterday}', { today: formatMinutes(studied.today), yesterday: formatMinutes(studied.yesterday) })}
+            </span>
           </div>
           <button
             type="button"
             onClick={openStudy}
-            className="inline-flex items-center gap-0.5 rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {tr('Abrir Estudio')}
             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -115,52 +158,58 @@ export function QuickStudyCard({ className }: { className?: string }) {
         </div>
       </EchoTileHeader>
 
-      <div className="flex min-h-0 flex-1 items-center justify-between gap-4 pt-3">
-        <div className="min-w-0 flex-1">
-          <p className={cn('font-headline text-4xl font-bold leading-none tabular-nums xl:text-5xl', inProgress || autoFinishPending ? 'text-primary' : 'text-foreground')}>{clock}</p>
-          {(inProgress || autoFinishPending) && focus && (
-            <div className="mt-2 h-1.5 w-full max-w-[14rem] overflow-hidden rounded-full bg-secondary">
-              <div className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out" style={{ width: `${progress * 100}%` }} />
-            </div>
-          )}
-          <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{caption}</p>
+      {/* Dos mitades con una línea fina entre ellas: el temporizador y el cronómetro,
+          cada uno con su circunferencia (del alto que quede) y, debajo, su botón. */}
+      <div className="grid min-h-0 flex-1 grid-cols-2 pt-2">
+        <div className="flex min-h-0 min-w-0 flex-col items-center gap-2 pr-3">
+          <ClockRing value={focusRing} clock={focusClock} label={tr('Temporizador')} icon={Hourglass} active={focusRunning} />
+          {controls('focus')}
         </div>
-
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          {autoFinishPending ? (
-            <Button onClick={openStudy} className="rounded-full">
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              {tr('Registrar la sesión')}
-            </Button>
-          ) : inProgress ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="fantasma"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={() => setIsTimerActive(!isTimerActive)}
-                aria-label={isTimerActive ? tr('Pausar') : tr('Reanudar')}
-                title={isTimerActive ? tr('Pausar') : tr('Reanudar')}
-              >
-                {isTimerActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </Button>
-              <Button variant="outline" className="rounded-full" onClick={finish} title={tr('Terminar y registrar la sesión en Estudio')}>
-                <Square className="mr-2 h-3.5 w-3.5" />
-                {tr('Terminar')}
-              </Button>
-            </div>
-          ) : (
-            <Button onClick={start} disabled={!userProfile} className="rounded-full px-5">
-              <Play className="mr-2 h-4 w-4" />
-              {tr('Empezar')}
-            </Button>
-          )}
-          <p className="text-right text-[11px] tabular-nums text-muted-foreground">
-            {tr('Hoy {today} · ayer {yesterday}', { today: formatMinutes(studied.today), yesterday: formatMinutes(studied.yesterday) })}
-          </p>
+        <div className="flex min-h-0 min-w-0 flex-col items-center gap-2 border-l border-muted-foreground/20 pl-3">
+          <ClockRing value={watchRing} clock={watchClock} label={tr('Cronómetro')} icon={Timer} active={watchRunning} />
+          {controls('stopwatch')}
         </div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Una circunferencia con la hora dentro; `value` (0–1) es el arco lleno. Ocupa
+ * el alto que le deja la tarjeta y el círculo es lo que quepa (el SVG se
+ * ajusta solo); el reloj se escala con él, y con horas («01:00:00») va más
+ * pequeño para no tocar el trazo. Qué es cada una lo dice su icono: el nombre
+ * escrito no cabía dentro en todos los idiomas.
+ */
+function ClockRing({ value, clock, label, icon: Icon, active }: { value: number; clock: string; label: string; icon: typeof Timer; active: boolean }) {
+  const R = 46;
+  const length = 2 * Math.PI * R;
+  const share = clock.length > 5 ? 15 : 22;
+  return (
+    <div className="relative min-h-[4.25rem] w-full flex-1" style={{ containerType: 'size' }} role="img" aria-label={`${label}: ${clock}`} title={label}>
+      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden>
+        <circle cx="50" cy="50" r={R} fill="none" strokeWidth="3" className="stroke-muted-foreground/25" />
+        {active && value > 0 && (
+          <circle
+            cx="50"
+            cy="50"
+            r={R}
+            fill="none"
+            strokeWidth="3"
+            strokeLinecap="round"
+            className="stroke-primary transition-[stroke-dashoffset] duration-700 ease-out"
+            strokeDasharray={length}
+            strokeDashoffset={length * (1 - value)}
+          />
+        )}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[3cqmin]" aria-hidden>
+        <Icon className="text-muted-foreground" style={{ width: 'max(11px, 11cqmin)', height: 'max(11px, 11cqmin)' }} />
+        <span className={cn('font-headline text-xl font-bold leading-none tabular-nums', active ? 'text-primary' : 'text-foreground')} style={{ fontSize: `${share}cqmin` }}>
+          {clock}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -278,8 +327,8 @@ export function StreakCard({ streak, className }: { streak: number; className?: 
   const label = streak === 0 ? tr('empieza hoy') : streak === 1 ? tr('día seguido') : tr('días seguidos');
   const hint = streak > 0 ? (left === 7 ? tr('¡semana completa!') : tr('{p} para la semana', { p: left })) : undefined;
   return (
-    <Card className={cn('flex min-h-0 flex-col items-center justify-center gap-1.5 overflow-hidden bg-gradient-to-t from-orange-500/[0.09] to-card p-3 text-center [background-color:hsl(var(--card))]', className)} title={hint}>
-      <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
+    <Card className={cn('flex min-h-0 flex-col items-center justify-center gap-1 overflow-hidden bg-gradient-to-t from-orange-500/[0.09] to-card p-3 text-center [background-color:hsl(var(--card))]', className)} title={hint}>
+      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center">
         <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden>
           <circle cx="18" cy="18" r="15.5" fill="none" strokeWidth="3" className="stroke-secondary" />
           <circle

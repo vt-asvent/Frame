@@ -1,18 +1,22 @@
 import type { EngineClient, EngineVideo } from '@/lib/extensions/yt-mp3';
-import { tidyArtist } from '@/lib/extensions/yt-mp3-lyrics';
+import { artistMatches, cleanTitle, firstArtist, tidyArtist, titleMatches } from '@/lib/extensions/yt-mp3-lyrics';
 
 // ============================================================
 // Qué vídeo de YouTube es la canción, cómo se llama y cuál es su portada
 // oficial (1.8.1). Todo sale por el programa de descargas (/search, /fetch).
 // ============================================================
 
+/**
+ * Para comparar: minúsculas, sin tildes ni signos, en cualquier alfabeto (un
+ * título en japonés, coreano o cirílico se compara igual que uno latino).
+ */
 export function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize('NFD')
+  return (s ?? '')
+    .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .replace(/['’‘`´]/g, '')
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ')
     .trim();
 }
 
@@ -32,50 +36,109 @@ export interface SongWanted {
   duration: number;
 }
 
-const BAD_WORDS = [
-  'live', 'en vivo', 'cover', 'remix', 'sped up', 'slowed', 'reverb', '8d',
-  'karaoke', 'instrumental', 'acoustic', 'acustic', 'reaction', 'loop',
-  '1 hour', 'hora', 'mashup', 'nightcore', 'tutorial', 'lesson',
-];
+/** Otra versión de la canción (o algo que no es la canción): solo vale si es la que se pide. */
+const OTHER_VERSION =
+  /(?:^| )(live|en vivo|ao vivo|en directo|cover|remix|sped up|speed up|slowed|reverb|8d|karaoke|instrumental|acoustic|acustico|acustica|reaction|reaccion|loop|1 hour|1 hora|10 hours|mashup|nightcore|tutorial|lesson|歌ってみた|カバー|ライブ|カラオケ|커버|라이브|кавер|караоке)(?= |$)/g;
+
+/** Escrituras sin espacios entre palabras (tras NFKD, el coreano va en jamo). */
+const UNSPACED = /[ᄀ-ᇿ぀-ヿ㐀-鿿가-힯]/;
+
+/** ¿Está `phrase` en `text` como palabras enteras? («hello» no está en «othello».) */
+function hasPhrase(text: string, phrase: string): boolean {
+  if (!phrase) return false;
+  if (` ${text} `.includes(` ${phrase} `)) return true;
+  return UNSPACED.test(phrase) && text.includes(phrase);
+}
+
+/** ¿Están en `text` todas las palabras de `phrase`, en cualquier orden? (Dos o más.) */
+function hasWords(text: string, phrase: string): boolean {
+  const words = phrase.split(' ').filter(Boolean);
+  if (words.length < 2) return false;
+  const pool = new Set(text.split(' '));
+  return words.every((word) => pool.has(word));
+}
+
+/** Cómo puede aparecer el artista: entero, sin paréntesis («BTS (방탄소년단)») y cada uno de varios («KAROL G, Shakira»). */
+function artistForms(artist: string): string[] {
+  const each = artist
+    .split(/\s*(?:,|;|\/|&|\s(?:feat\.?|ft\.?|featuring|with|con|x|y|and)\s)\s*/i)
+    .map(normalize)
+    .filter((name) => name.length >= 3);
+  const forms = [normalize(artist), coreName(artist), normalize(firstArtist(artist))].filter((form) => form.length >= 2);
+  return [...new Set([...forms, ...each])];
+}
+
+const flat = (text: string) => text.replace(/ /g, '');
 
 /**
- * Puntuación de un resultado: cercanía de duración, canal «- Topic» o audio
- * oficial, título y artista presentes, y castigo a live/cover/remix/sped up…
- * que no estén en el título original.
+ * Puntuación de un resultado, o null si no es la canción.
+ *
+ * El título tiene que estar: sin él, que dure lo mismo no dice nada (cualquier
+ * vídeo «Topic» de tres minutos y medio valdría). Otra versión que no se pidió
+ * (directo, cover, remezcla, acelerada…) no vale, y tampoco un audio cuya
+ * duración se aleja más de 45 s. Con eso, suman la cercanía de duración, el
+ * canal «- Topic» o el audio oficial y que aparezca el artista; resta, y
+ * mucho, que el artista no aparezca por ningún lado.
  */
-function scoreCandidate(entry: EngineVideo, song: SongWanted): number | null {
+export function scoreCandidate(entry: EngineVideo, song: SongWanted): number | null {
   const title = entry.title ?? '';
   if (!title || !entry.url) return null;
   const nTitle = normalize(title);
   const nChannel = normalize(entry.channel ?? '');
-  const nTrack = coreName(song.title);
   const nTrackFull = normalize(song.title);
-  const nArtist = normalize(song.artist);
+  const nTrack = normalize(cleanTitle(song.title)) || nTrackFull;
+  const artists = artistForms(song.artist);
   const duration = typeof entry.duration === 'number' && entry.duration > 0 ? entry.duration : null;
+  const diff = duration != null && song.duration > 0 ? Math.abs(duration - song.duration) : null;
+
+  // El artista, en el título o en el canal («ShakiraVEVO», «Bad Bunny - Topic»).
+  const inTitle = artists.some((form) => hasPhrase(nTitle, form));
+  const inChannel = artists.some((form) => hasPhrase(nChannel, form) || (form.length >= 4 && flat(nChannel).includes(flat(form))));
+  const topic = nChannel.endsWith(' topic');
 
   let score = 0;
-  if (duration != null && song.duration > 0) {
-    const diff = Math.abs(duration - song.duration);
+  if (diff != null) {
     if (diff <= 3) score += 45;
     else if (diff <= 10) score += 30;
     else if (diff <= 20) score += 10;
     else if (diff <= 45) score -= 15;
-    else score -= 50;
+    else return null;
   }
-  if (nChannel.endsWith(' topic')) score += 35;
-  if (nArtist && nChannel.includes(nArtist)) score += 12;
-  if (nTitle.includes('official audio') || nTitle.includes('audio oficial')) score += 15;
-  else if (nTitle.includes('official video') || nTitle.includes('video oficial')) score += 6;
-  if (nTrack && nTitle.includes(nTrack)) score += 22;
-  else if (nTrackFull && nTitle.includes(nTrackFull)) score += 18;
-  else score -= 25;
-  if (nArtist && (nTitle.includes(nArtist) || nChannel.includes(nArtist))) score += 10;
-  for (const bad of BAD_WORDS) {
-    if (nTitle.includes(bad) && !nTrackFull.includes(bad)) {
-      score -= 35;
-      break;
-    }
+
+  /** Sin el nombre del artista («Cover Drive» no es un cover; «A» no es «Artista - A Sky…»). */
+  const withoutArtist = (text: string) => artists.reduce((rest, form) => ` ${rest} `.split(` ${form} `).join(' ').trim(), text);
+
+  if (nTrack) {
+    if (hasPhrase(nTitle, nTrackFull) || hasPhrase(nTitle, nTrack)) score += 22;
+    else if (hasWords(nTitle, nTrack)) score += 12;
+    else return null;
+    // Un título de una palabra muy corta («A», «Go», «7») está en medio mundo: hace falta que dure lo mismo.
+    if (nTrack.length <= 3 && !UNSPACED.test(nTrack) && !(diff != null && diff <= 10)) return null;
+    // El título del vídeo ES el de la canción (sin su artista, sus paréntesis ni
+    // su «ft. …»), no solo lo contiene: «Stay», no «Stay With Me Tonight».
+    const bare = title.replace(/\s*[([{【［][^)\]}】］]*[)\]}】］]/g, ' ').replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.*$/i, '');
+    if (withoutArtist(normalize(bare)) === nTrack) score += 8;
+  } else if (!(diff != null && diff <= 3 && (inTitle || inChannel))) {
+    // Un título sin letras («÷», «…»): solo con su artista y su duración exacta.
+    return null;
   }
+
+  // Otra versión: lo que diga el título del vídeo, fuera del nombre del artista,
+  // que no esté en el título pedido.
+  const asked = new Set(nTrackFull.match(OTHER_VERSION)?.map((word) => word.trim()) ?? []);
+  if ((withoutArtist(nTitle).match(OTHER_VERSION) ?? []).some((word) => !asked.has(word.trim()))) return null;
+
+  if (artists.length > 0) {
+    if (inTitle || inChannel) score += 10 + (inChannel ? 12 : 0);
+    // Un canal «Artista - Topic» de otro artista es otra canción con el mismo título.
+    else if (topic) return null;
+    else score -= 45;
+  }
+
+  // «Topic» es el audio del disco: si no dura lo mismo, es otra grabación.
+  if (topic) score += diff != null && diff > 10 ? -20 : 35;
+  if (hasPhrase(nTitle, 'official audio') || hasPhrase(nTitle, 'audio oficial')) score += 15;
+  else if (hasPhrase(nTitle, 'official video') || hasPhrase(nTitle, 'video oficial') || hasPhrase(nTitle, 'official music video')) score += 6;
   return score;
 }
 
@@ -156,16 +219,13 @@ const validYear = (value: unknown): number | undefined => {
   return year > 1900 && year < 2100 ? year : undefined;
 };
 
-/** ¿El resultado es la misma canción del mismo artista? */
+/**
+ * ¿El resultado es la misma canción del mismo artista? Con las mismas reglas
+ * que las letras (yt-mp3-lyrics.ts): el título entero o casi («Help!» no es
+ * «With a Little Help from My Friends»), en cualquier alfabeto.
+ */
 function matches(song: { title: string; artist: string }, candTitle: string, candArtist: string): boolean {
-  const wantTitle = coreName(song.title);
-  const gotTitle = coreName(candTitle);
-  if (!wantTitle || !gotTitle) return false;
-  if (!(gotTitle.includes(wantTitle) || wantTitle.includes(gotTitle))) return false;
-  const wantArtist = normalize(song.artist);
-  if (!wantArtist) return true;
-  const gotArtist = normalize(candArtist);
-  return !!gotArtist && (gotArtist.includes(wantArtist) || wantArtist.includes(gotArtist));
+  return titleMatches(song.title, candTitle) && artistMatches(song.artist, candArtist);
 }
 
 /** Palabras que distinguen otra versión de la misma canción: directo, remezcla, acústica… */

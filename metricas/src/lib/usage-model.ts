@@ -48,6 +48,8 @@ export interface SnapUser {
   d: DayRow[];
   e: Record<string, number>;
   sc: Record<string, number>;
+  /** Dispositivos vinculados de la cuenta (1.9.2; los invitados, 0). */
+  nd?: number;
 }
 
 /** Por evento (o interfaz): [día, veces, estudiantes]. */
@@ -66,6 +68,8 @@ export interface UsageSnapshot {
   reports: Record<string, number>;
   /** Aperturas de Frame por día de la semana × hora local de cada estudiante (168). */
   mx_open: number[];
+  /** Dispositivos vinculados y abiertos en 30 días, por tipo (1.9.2). */
+  devices?: { laptop: number; phone: number; tablet: number; accounts: number };
   errors: {
     open: number;
     fixed: number;

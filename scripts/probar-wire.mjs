@@ -12,7 +12,9 @@
 //   5. un equipo apagado más de una semana deja de esperarse y lo que solo
 //      él esperaba sale de Drive; al volver, recibe lo nuevo;
 //   6. dos equipos suben lo mismo a la vez: queda una sola copia;
-//   7. un archivo fijado a mano se queda en Drive.
+//   7. un archivo fijado a mano se queda en Drive;
+//   8. (1.9.2) lo que sale de Drive se borra del todo si sus bytes siguen en
+//      algún equipo, y va a la papelera solo si ya nadie lo tiene.
 //
 // Uso: node scripts/probar-wire.mjs   (sale con 1 si algo falla)
 import path from 'node:path';
@@ -39,7 +41,8 @@ const check = (ok, text) => {
 };
 
 function world() {
-  const drive = { items: [], records: new Map(), seq: 0, clock: Date.UTC(2026, 10, 5) };
+  // `purged`: borrado del todo; `trash`: a la papelera de Drive (sigue ocupando espacio 30 días).
+  const drive = { items: [], records: new Map(), seq: 0, clock: Date.UTC(2026, 10, 5), purged: [], trash: [] };
   const devices = new Map();
   const add = (id, library = [], extra = {}) =>
     devices.set(id, { id, have: new Set(library), known: new Set(), declined: new Set(), keep: new Set(extra.keep ?? []), online: true });
@@ -55,6 +58,8 @@ function world() {
     for (const gone of plan.dropDevices) drive.records.delete(gone.id);
     for (const { item, permanent } of plan.setPermanent) item.permanent = permanent;
     const removed = new Set(plan.remove.map((i) => i.id));
+    const forGood = new Set(plan.purge.map((i) => i.id));
+    for (const item of plan.remove) (forGood.has(item.id) ? drive.purged : drive.trash).push(item.key);
     drive.items = drive.items.filter((i) => !removed.has(i.id));
     for (const item of plan.download) d.have.add(item.key);
     for (const job of plan.upload) {
@@ -83,12 +88,14 @@ console.log('1. Dos equipos con bibliotecas distintas');
   check(sorted(w.devices.get('A').have) === 's:1,s:2,s:3', 'A tiene las tres');
   check(sorted(w.devices.get('B').have) === 's:1,s:2,s:3', 'B tiene las tres');
   check(w.keys().length === 0, 'Drive quedó vacío');
+  check(w.drive.trash.length === 0 && w.drive.purged.length === 2, `y su papelera también: lo que pasó por Drive se borró del todo (${w.drive.purged.join(', ')})`);
 
   console.log('2. Llega un tercer equipo vacío');
   w.add('C', []);
   w.settle(['C', 'A', 'B']);
   check(sorted(w.devices.get('C').have) === 's:1,s:2,s:3', 'C recibió todo');
   check(w.keys().length === 0, 'Drive volvió a vaciarse');
+  check(w.drive.trash.length === 0, 'sin dejar nada en la papelera');
 }
 
 console.log('3. Corazón: para siempre');
@@ -103,6 +110,7 @@ console.log('3. Corazón: para siempre');
   w.devices.get('A').keep.delete('s:1');
   w.settle(['A', 'B']);
   check(w.keys().length === 0, 'sin corazón, sale de Drive');
+  check(w.drive.purged.includes('s:1') && w.drive.trash.length === 0, 'del todo: los dos equipos la tienen');
 }
 
 console.log('4. Lo borrado en un equipo no vuelve');
@@ -160,6 +168,7 @@ console.log('6. Dos equipos suben lo mismo a la vez');
   w.settle(['A', 'B', 'C']);
   check(w.devices.get('C').have.has('s:5'), 'C la recibió');
   check(w.keys().length === 0, 'no quedó ninguna copia de más');
+  check(w.drive.trash.length === 0 && w.drive.purged.filter((key) => key === 's:5').length === 2, 'las dos copias se borraron del todo');
 }
 
 console.log('7. Un adjunto fijado a mano');
@@ -170,6 +179,33 @@ console.log('7. Un adjunto fijado a mano');
   w.settle(['A', 'B']);
   check(w.devices.get('B').have.has('a:x'), 'B lo recibió');
   check(w.keys().join() === 'a:x' && w.drive.items[0].permanent, 'sigue en Drive, permanente');
+}
+
+console.log('8. Lo que ya nadie tiene no se borra del todo');
+{
+  // Un solo equipo con una canción con corazón: su copia en Drive es «para siempre».
+  const w = world();
+  w.add('A', ['s:9', 's:8'], { keep: ['s:9'] });
+  w.settle(['A']);
+  check(w.keys().join() === 's:9', 'la canción con corazón está en Drive');
+  // El equipo pierde su música (se borró, o se dañó su base): para Wire, «la rechazó».
+  w.devices.get('A').have.clear();
+  w.devices.get('A').keep.clear();
+  w.settle(['A']);
+  check(w.keys().length === 0, 'sale de Drive (nadie la quiere ya)');
+  check(w.drive.trash.join() === 's:9' && !w.drive.purged.includes('s:9'), 'pero a la papelera: era la última copia y Drive la guarda 30 días');
+
+  // Dos equipos: uno la borra, el otro la conserva. La copia de paso se borra del todo.
+  const v = world();
+  v.add('A', ['s:7']);
+  v.add('B', []);
+  v.turn('B');
+  v.turn('A');
+  check(v.keys().join() === 's:7', 'A la sube para B');
+  v.turn('B');
+  v.devices.get('B').have.delete('s:7');
+  v.settle(['B', 'A']);
+  check(v.keys().length === 0 && v.drive.purged.includes('s:7') && v.drive.trash.length === 0, 'B la recibió y luego la borró; A la conserva: de Drive sale del todo');
 }
 
 console.log(failures === 0 ? '\nTodo bien.' : `\n${failures} comprobación(es) fallaron.`);

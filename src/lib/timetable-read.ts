@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getImage } from '@/lib/music-db';
-import { NUBE } from '@/lib/nube';
+import { NUBE, nubeFetch } from '@/lib/nube';
 import { getSupabase } from '@/lib/supabase/client';
 import { localImageKey, readTimetables, tidyClasses, updateTimetable } from '@/lib/timetable';
 import { tr } from '@/lib/i18n';
@@ -74,7 +74,7 @@ export async function readTimetable(uid: string, id: string): Promise<void> {
     if (!session.session) throw new Error(ERRORS.account());
     const photo = await getImage(localImageKey(uid, timetable));
     if (!photo) throw new Error(tr('La foto de este horario aún no llega a este dispositivo.'));
-    const response = await fetch(`${NUBE}/app/horario`, {
+    const response = await nubeFetch(`${NUBE}/app/horario`, {
       method: 'POST',
       headers: { authorization: `Bearer ${session.session.access_token}`, 'content-type': 'application/json' },
       body: JSON.stringify(await shrink(photo)),

@@ -15,6 +15,7 @@ import {
   type DeltaChange,
 } from '@/lib/sync-delta';
 import { noteLocalEdits } from '@/lib/sync-merge';
+import { deliverPeerMessage, setPeerSender } from '@/lib/sync-peers';
 import { markLiveChange } from '@/lib/sync-status';
 import { SYNC_NOW_EVENT } from '@/lib/sync-check';
 
@@ -48,6 +49,15 @@ import { SYNC_NOW_EVENT } from '@/lib/sync-check';
 // caído; si el caído es el del que recibe, Realtime lo reconecta en ~30 s y
 // la sonda del minuto lo cubre.
 //
+// 1.9.2: una sincronización que falla ya no espera a la sonda. Se reintenta a
+// los 5, 10 y 20 s, en cuanto la sesión se renueva, y la cuenta de fallos
+// empieza de cero al volver la red, la ventana o el equipo. Lo que pasaba: al
+// abrir la laptop con la llave vencida y el wifi aún conectando, el primer
+// intento fallaba y el siguiente era la sonda, espaciada ya a varios minutos
+// por los fallos de mientras no había red. Y ninguna petición espera para
+// siempre (capped-fetch.ts): una colgada dejaba esto «sincronizando» hasta
+// reiniciar Frame.
+//
 // Todo esto lo ejercita scripts/probar-sincronizacion.mjs con dos y tres
 // dispositivos simulados (y uno con la 1.6.7).
 // ============================================================
@@ -78,6 +88,11 @@ const RECONNECT_GAP_MS = 5_000;
 const HIDDEN_STALE_MS = 15_000;
 /** Si el temporizador de la sonda llega con este retraso, el equipo durmió. */
 const SLEEP_GAP_MS = 2 * PROBE_MS;
+/** Tras un fallo, tres reintentos cortos; si siguen fallando, queda la sonda
+ *  (que con fallos seguidos se espacia hasta 10 min). Hasta la 1.9.1 un solo
+ *  fallo (la red parpadeó, la sesión se estaba renovando) dejaba lo pendiente
+ *  esperando a la sonda: un minuto, o diez si venía de un rato sin conexión. */
+const RETRY_MS = [5_000, 10_000, 20_000];
 
 export function startLiveSync(uid: string): () => void {
   let stopped = false;
@@ -131,9 +146,9 @@ export function startLiveSync(uid: string): () => void {
       if (result.ok && result.wrote && channel) {
         void broadcast('changed', { at: Date.now(), from: me, u: result.remoteAt, p: result.print }, true);
       }
-      if (!result.ok) failures += 1;
+      if (!result.ok) failed();
     } catch {
-      failures += 1; // el siguiente disparo lo reintenta
+      failed();
     } finally {
       running = false;
       if (again && !stopped) {
@@ -165,6 +180,13 @@ export function startLiveSync(uid: string): () => void {
     schedule(delay);
   };
 
+  /** Una sincronización que no salió: se cuenta y, las tres primeras veces, se reintenta pronto. */
+  const failed = () => {
+    failures += 1;
+    const retry = RETRY_MS[failures - 1];
+    if (retry !== undefined) scheduleBy(retry);
+  };
+
   /**
    * Un aviso de fuera («hay cambios», o un cambio que no se pudo leer). El
    * canal de la cuenta es público para quien sepa su nombre: alguien podría
@@ -188,7 +210,7 @@ export function startLiveSync(uid: string): () => void {
    * no (o si se pide `viaHttp`), por la difusión HTTP de Realtime, que no
    * depende del estado del canal de este dispositivo.
    */
-  const broadcast = async (event: 'changed' | 'delta', payload: object, viaHttp = false) => {
+  const broadcast = async (event: 'changed' | 'delta' | 'devices', payload: object, viaHttp = false) => {
     if (!channel || stopped) return;
     try {
       if (!viaHttp && channelReady) await channel.send({ type: 'broadcast', event, payload });
@@ -198,6 +220,10 @@ export function startLiveSync(uid: string): () => void {
       /* sin red o difusión caída: la sonda y el siguiente aviso lo cubren */
     }
   };
+
+  // Los avisos entre equipos de Dispositivos (sync-peers.ts) viajan por este
+  // mismo canal, con su propio nombre: las versiones anteriores no lo escuchan.
+  const releasePeers = setPeerSender((message) => void broadcast('devices', { ...message, from: me }));
 
   // --- 1. Al instante: los cambios, cifrados, por el canal ---
   const sendDelta = async (changes: DeltaChange[]) => {
@@ -287,11 +313,20 @@ export function startLiveSync(uid: string): () => void {
       next.on('broadcast', { event: 'changed' }, (message) => {
         const payload = message.payload as { from?: string; u?: unknown; p?: unknown } | undefined;
         if (payload?.from === me) return;
-        // Lo que escribió ya llegó entero por el canal: nada que bajar.
-        if (!running && typeof payload?.u === 'string' && typeof payload.p === 'string' && adoptRemoteWrite(uid, payload.u, payload.p)) return;
+        // Lo que escribió ya llegó entero por el canal: nada que bajar. El
+        // cursor avanzó sin pasar por una sincronización: que lo vea quien
+        // enseña el estado (Dispositivos).
+        if (!running && typeof payload?.u === 'string' && typeof payload.p === 'string' && adoptRemoteWrite(uid, payload.u, payload.p)) {
+          markLiveChange();
+          return;
+        }
         remoteNudge();
       });
       next.on('broadcast', { event: 'delta' }, (message) => void receiveDelta(message.payload));
+      next.on('broadcast', { event: 'devices' }, (message) => {
+        const payload = message.payload as { from?: unknown } | null | undefined;
+        if (payload && typeof payload === 'object' && payload.from !== me) deliverPeerMessage(payload as Record<string, unknown>);
+      });
       next.subscribe((status) => {
         channelReady = status === 'SUBSCRIBED';
         // Al (re)conectar se pone al día: pudo perderse un aviso mientras tanto.
@@ -347,6 +382,9 @@ export function startLiveSync(uid: string): () => void {
     const hiddenFor = hiddenAt === null ? 0 : Date.now() - hiddenAt;
     hiddenAt = null;
     if (!channelReady || hiddenFor >= HIDDEN_STALE_MS) reconnect();
+    // De vuelta: cuenta nueva. Los fallos de antes (sin red, dormido) no deben
+    // espaciar los reintentos de ahora.
+    failures = 0;
     schedule(200);
   };
   // En Windows la ventana recibe el foco a cada rato (al cambiar de ventana):
@@ -357,10 +395,22 @@ export function startLiveSync(uid: string): () => void {
   };
   const onOnline = () => {
     if (!channelReady) reconnect();
+    failures = 0;
     schedule(200);
   };
   // «Sincronizar ahora» del verificador de sincronización.
   const onNow = () => schedule(0);
+  // La sesión se renovó (o volvió) después de un fallo: lo que esperaba sale
+  // ya. Al volver de un rato sin red con la llave vencida, el primer intento
+  // falla (supabase-js no reintenta renovarla hasta pasado un minuto) y, sin
+  // esto, lo siguiente era la sonda.
+  let stopAuth: (() => void) | null = null;
+  if (supabase && typeof supabase.auth.onAuthStateChange === 'function') {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && failures > 0 && !stopped) scheduleBy(300);
+    });
+    stopAuth = () => data.subscription.unsubscribe();
+  }
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('focus', onFocus);
   window.addEventListener('online', onOnline);
@@ -383,6 +433,7 @@ export function startLiveSync(uid: string): () => void {
     lastTickAt = now;
     if (slept) {
       reconnect();
+      failures = 0;
       schedule(0);
       return;
     }
@@ -402,6 +453,8 @@ export function startLiveSync(uid: string): () => void {
     window.removeEventListener('focus', onFocus);
     window.removeEventListener('online', onOnline);
     window.removeEventListener(SYNC_NOW_EVENT, onNow);
+    stopAuth?.();
+    releasePeers();
     if (proto.setItem === patchedSet) proto.setItem = originalSet;
     if (proto.removeItem === patchedRemove) proto.removeItem = originalRemove;
     if (channel && supabase) void supabase.removeChannel(channel).catch(() => undefined);

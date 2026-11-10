@@ -129,6 +129,21 @@ export function youtubeId(text: string): string | null {
   return id && YT_ID.test(id) ? id : null;
 }
 
+/**
+ * Nombre válido para un archivo o una carpeta de Windows ('' si no queda
+ * nada): sin barras ni signos reservados, sin puntos ni espacios en los
+ * extremos (un «..» no sube de carpeta) y de 80 caracteres como mucho.
+ */
+export function safeFileName(name: string): string {
+  const clean = name
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+    .replace(/^[. ]+|[. ]+$/g, '');
+  return /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(clean) ? `_${clean}` : clean;
+}
+
 export const watchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 /** Miniatura 16:9 de 320 px (la de las tarjetas). */
 export const thumbnailUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
@@ -137,6 +152,17 @@ export const thumbnailUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefa
 // Cliente
 // ------------------------------------------------------------
 
+/**
+ * El programa está, pero no contestó en su plazo (una búsqueda lenta, YouTube
+ * que no responde). No es lo mismo que no estar: eso es un `TypeError` de `fetch`.
+ */
+export class EngineTimeout extends Error {
+  constructor() {
+    super('timeout');
+    this.name = 'EngineTimeout';
+  }
+}
+
 export class EngineClient {
   constructor(private readonly page: string) {}
 
@@ -144,27 +170,43 @@ export class EngineClient {
     return new URL(path, this.page).toString();
   }
 
-  private async post(path: string, body: unknown, timeoutMs: number): Promise<Response> {
+  /**
+   * Pide algo al programa y lee la respuesta ENTERA dentro del plazo: si se
+   * queda a medias (el programa se colgó mientras contestaba), también corta.
+   */
+  private async post<T>(path: string, body: unknown, timeoutMs: number, read: (response: Response) => Promise<T>): Promise<T> {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(this.url(path), {
+      const response = await fetch(this.url(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         cache: 'no-store',
         signal: controller.signal,
       });
+      return await read(response);
+    } catch (error) {
+      if (controller.signal.aborted) throw new EngineTimeout();
+      throw error;
     } finally {
       window.clearTimeout(timer);
     }
   }
 
-  private async call<T>(path: string, body: unknown = {}, timeoutMs = 60_000): Promise<T> {
-    const response = await this.post(path, body, timeoutMs);
-    const data = (await response.json().catch(() => ({}))) as T & { error?: string };
-    if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-    return data;
+  private call<T>(path: string, body: unknown = {}, timeoutMs = 60_000): Promise<T> {
+    return this.post(path, body, timeoutMs, async (response) => {
+      // (Si el cuerpo no es JSON, vale el estado; si se cortó a medias, lo dice `post`.)
+      const text = await response.text();
+      let data = {} as T & { error?: string };
+      try {
+        data = JSON.parse(text) as T & { error?: string };
+      } catch {
+        /* sin JSON */
+      }
+      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+      return data;
+    });
   }
 
   /** ¿Está abierto y deja hablar a Frame? */
@@ -223,13 +265,17 @@ export class EngineClient {
   cancel = (id: number) => this.call('/cancel', { id }, 8000);
 
   /** El archivo terminado de un trabajo, tal cual. */
-  async file(id: number): Promise<ArrayBuffer> {
-    const response = await this.post('/file', { id }, 120_000);
-    if (!response.ok) {
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data?.error || `HTTP ${response.status}`);
-    }
-    return response.arrayBuffer();
+  file(id: number): Promise<ArrayBuffer> {
+    return this.post('/file', { id }, 120_000, async (response) => {
+      if (response.ok) return response.arrayBuffer();
+      let message = '';
+      try {
+        message = (JSON.parse(await response.text()) as { error?: string })?.error ?? '';
+      } catch {
+        /* sin JSON */
+      }
+      throw new Error(message || `HTTP ${response.status}`);
+    });
   }
 
   /** Texto de un servicio de letras o portadas, a través del programa (sin CORS). */
@@ -269,84 +315,186 @@ export interface CsvSong {
   cover?: string;
   /** Id de la canción en Spotify (el «Track URI» de Exportify). */
   spotifyId?: string;
+  /**
+   * De una lista de YouTube (1.9.2): `title` y `artist` son el título del
+   * vídeo y su canal; la canción la dice YouTube Music al empezar, como con
+   * un vídeo añadido a mano.
+   */
+  fromYouTube?: boolean;
 }
 
-/** Filas de un CSV (comillas, comas y saltos dentro de comillas; ; o , como separador). */
+/** Filas de un CSV (comillas, y comas o saltos dentro de comillas; separa con «,», «;» o tabulador). */
 function rows(text: string): string[][] {
   const head = text.slice(0, text.indexOf('\n') + 1 || text.length);
-  const sep = (head.match(/;/g)?.length ?? 0) > (head.match(/,/g)?.length ?? 0) ? ';' : ',';
+  const count = (ch: string) => head.split(ch).length - 1;
+  const sep = [';', '\t'].reduce((best, ch) => (count(ch) > count(best) ? ch : best), ',');
+  /**
+   * Dónde cierra la celda entre comillas que se abre en `from`, o -1. Unas
+   * comillas solo abren celda al principio de ella y si después cierran justo
+   * antes de un separador, un salto o el final. Si no, son texto: «Song (12"
+   * Mix)» o «"Heroes" (Single Version)» en una exportación de iTunes, que no
+   * entrecomilla, no se tragan las filas siguientes.
+   */
+  const closing = (from: number): number => {
+    const until = Math.min(text.length, from + 20_000);
+    for (let i = from + 1; i < until; i++) {
+      if (text[i] !== '"') continue;
+      if (text[i + 1] === '"') {
+        i++;
+        continue;
+      }
+      let after = i + 1;
+      while (text[after] === ' ') after++;
+      const next = text[after];
+      return next === undefined || next === sep || next === '\n' || next === '\r' ? i : -1;
+    }
+    return -1;
+  };
   const out: string[][] = [];
   let row: string[] = [];
   let cell = '';
-  let quoted = false;
+  const endRow = () => {
+    row.push(cell);
+    if (row.some((c) => c.trim())) out.push(row);
+    row = [];
+    cell = '';
+  };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        cell += '"';
-        i++;
-      } else if (ch === '"') quoted = false;
-      else cell += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === sep) {
+    if (ch === '"' && cell.trim() === '') {
+      const end = closing(i);
+      if (end > 0) {
+        cell = text.slice(i + 1, end).replace(/""/g, '"');
+        i = end;
+        while (text[i + 1] === ' ') i++;
+        continue;
+      }
+    }
+    if (ch === sep) {
       row.push(cell);
       cell = '';
     } else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && text[i + 1] === '\n') i++;
-      row.push(cell);
-      if (row.some((c) => c.trim())) out.push(row);
-      row = [];
-      cell = '';
+      endRow();
     } else cell += ch;
   }
-  row.push(cell);
-  if (row.some((c) => c.trim())) out.push(row);
+  endRow();
   return out;
 }
 
+/** Para comparar cabeceras: sin mayúsculas, tildes ni signos, en cualquier alfabeto. */
 const norm = (s: string) =>
   s
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 
-/** Canciones de un CSV. Reconoce las columnas de Exportify y nombres comunes en varios idiomas. */
+/** Artistas con coma en el nombre: no son una lista de artistas. */
+const COMMA_NAMES = [
+  'tyler, the creator',
+  'earth, wind & fire',
+  'earth, wind and fire',
+  'crosby, stills, nash & young',
+  'crosby, stills & nash',
+  'emerson, lake & palmer',
+  'blood, sweat & tears',
+  'peter, paul and mary',
+  'peter, paul & mary',
+  'dave dee, dozy, beaky, mick & tich',
+  'now, now',
+  'hey, violet',
+];
+
+/**
+ * El primer artista de «A;B» o «A, B» (como los juntan Exportify y los demás),
+ * sin partir un nombre que lleva coma («Tyler, The Creator»).
+ */
+export function primaryArtist(text: string): string {
+  const first = text.split(';')[0].trim();
+  const low = first.toLowerCase();
+  const whole = COMMA_NAMES.find((name) => low.startsWith(name));
+  return (whole ? first.slice(0, whole.length) : first.split(',')[0]).trim();
+}
+
+/**
+ * Canciones de un CSV. Reconoce las columnas de Exportify (Spotify),
+ * TuneMyMusic y Soundiiz (Spotify, Deezer, Apple Music, TIDAL, Amazon…),
+ * la exportación de YouTube Music en Google Takeout (también la que solo
+ * trae el «Video ID»), la lista exportada de Apple Music / iTunes (texto con
+ * tabuladores) y nombres comunes en varios idiomas.
+ */
 export function parseSongsCsv(text: string, limit = 500): CsvSong[] {
-  const table = rows(text.replace(/^﻿/, ''));
+  let table = rows(text.replace(/^﻿/, ''));
+  // El Takeout antiguo de YouTube trae, antes de la tabla de vídeos, un bloque
+  // con los datos de la playlist (con su propia columna «Title»): la tabla es
+  // la que empieza en «Video Id».
+  const videoTable = table.findIndex((r, i) => i > 0 && i < 12 && r.some((c) => ['video id', 'youtube id'].includes(norm(c))));
+  if (videoTable > 0) table = table.slice(videoTable);
   if (table.length < 2) return [];
   const header = table[0].map(norm);
-  const col = (...names: string[]) => header.findIndex((h) => names.includes(h));
-  const iTitle = col('track name', 'title', 'titulo', 'name', 'nombre', 'cancion', 'song', 'track');
-  const iArtist = col('artist name s', 'artist names', 'artist name', 'artist', 'artists', 'artista', 'artistas');
-  const iAlbum = col('album name', 'album');
-  const iAlbumArtist = col('album artist name s', 'album artist names', 'album artist', 'artista del album');
-  const iNumber = col('track number', 'numero', 'pista', 'n');
-  const iMs = col('duration ms', 'track duration ms', 'duracion ms');
-  const iSeconds = col('duration', 'duracion', 'seconds', 'segundos');
-  const iDate = col('album release date', 'release date', 'fecha de lanzamiento', 'year', 'ano');
-  const iUrl = col('url', 'youtube', 'link', 'enlace');
+  const col = (...names: string[]) => {
+    const wanted = new Set(names.map(norm));
+    return header.findIndex((h) => wanted.has(h));
+  };
+  // Los nombres de Exportify, TuneMyMusic, Soundiiz y Takeout, los de la lista
+  // exportada de Apple Music / iTunes en cada idioma, y los más comunes.
+  const iTitle = col(
+    ...['track name', 'song title', 'song name', 'track title', 'title', 'name', 'song', 'track'],
+    ...['título', 'nombre', 'canción', 'tema', 'música', 'faixa', 'nome', 'titre', 'nom', 'morceau', 'chanson'],
+    ...['titel', 'lied', 'songtitel', 'titolo', 'brano', 'canzone', 'название', 'трек', 'песня', 'композиция', 'タイトル', '曲名', '名前', 'トラック名']
+  );
+  const iArtist = col(
+    ...['artist name(s)', 'artist names', 'artist name', 'artist name 1', 'artist', 'artists', 'artist 1', 'performer'],
+    ...['artista', 'artistas', 'intérprete', 'artiste', 'artistes', 'künstler', 'interpret', 'исполнитель', 'артист', 'アーティスト', 'アーティスト名']
+  );
+  const iAlbum = col('album name', 'album title', 'album', 'álbum', 'disco', 'альбом', 'アルバム', 'アルバム名');
+  const iAlbumArtist = col(
+    ...['album artist name(s)', 'album artist names', 'album artist', 'artista del álbum', 'artista do álbum', 'artista dell’album', "artista dell'album"],
+    ...['artiste de l’album', "artiste de l'album", 'albumkünstler', 'album-interpret', 'исполнитель альбома', 'артист альбома', 'アルバムアーティスト']
+  );
+  const iNumber = col(
+    ...['track number', 'número', 'pista', 'n', 'nº', 'número de pista', 'número da faixa', 'numéro de piste', 'titelnummer', 'numero traccia'],
+    ...['номер трека', 'トラック番号']
+  );
+  const iMs = col('duration (ms)', 'track duration (ms)', 'duración (ms)');
+  const iSeconds = col(
+    ...['duration', 'seconds', 'time', 'length', 'duración', 'segundos', 'tiempo', 'duração', 'durée', 'dauer', 'durata', 'длительность', '時間']
+  );
+  const iDate = col('album release date', 'release date', 'fecha de lanzamiento', 'year', 'año', 'ano', 'année', 'jahr', 'anno', 'год', '年');
+  const iUrl = col('url', 'youtube', 'youtube url', 'video url', 'link', 'enlace', 'video id', 'youtube id');
   const iCover = col('album image url', 'cover', 'portada', 'image');
-  const iUri = col('track uri', 'spotify uri', 'uri');
+  const iUri = col('track uri', 'spotify uri', 'uri', 'spotify id', 'spotify track id', 'spotify - id');
+  // Las de «Guardar CSV» de Frame (playlist-link.ts): con ellas, el CSV es el
+  // suyo, y su columna de artista trae ya uno solo, entero.
+  const iVideoTitle = col('video title');
+  const iChannel = col('channel');
+  const own = iVideoTitle >= 0 && iChannel >= 0;
   if (iTitle < 0 && iUrl < 0) return [];
   const songs: CsvSong[] = [];
   for (const r of table.slice(1)) {
-    const cell = (i: number) => (i >= 0 ? (r[i] ?? '').trim() : '');
-    const title = cell(iTitle);
+    // (Sin el apóstrofo con que «Guardar CSV» protege lo que una hoja de cálculo tomaría por fórmula.)
+    const cell = (i: number) => (i >= 0 ? (r[i] ?? '').trim().replace(/^'(?=[=+\-@])/, '') : '');
     const url = cell(iUrl);
+    // Sin título, pero con el del vídeo: como en la lista de YouTube de la que salió.
+    const fromYouTube = !cell(iTitle) && !!cell(iVideoTitle) && !!youtubeId(url);
+    const title = fromYouTube ? cell(iVideoTitle) : cell(iTitle);
     if (!title && !youtubeId(url)) continue;
     const ms = Number(cell(iMs));
-    const clock = cell(iSeconds).match(/^(\d{1,2}):(\d{2})$/);
-    const seconds = ms > 0 ? ms / 1000 : clock ? Number(clock[1]) * 60 + Number(clock[2]) : Number(cell(iSeconds)) || 0;
+    const clock = cell(iSeconds).match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})$/);
+    const seconds =
+      ms > 0 ? ms / 1000 : clock ? Number(clock[1] ?? 0) * 3600 + Number(clock[2]) * 60 + Number(clock[3]) : Number(cell(iSeconds)) || 0;
     const track = Number(cell(iNumber));
     const year = Number(cell(iDate).slice(0, 4));
     const cover = cell(iCover);
-    const spotify = cell(iUri).match(/^spotify:track:([A-Za-z0-9]{22})$/)?.[1];
-    const albumArtist = cell(iAlbumArtist).split(/[,;]/)[0].trim();
+    // «spotify:track:…», el enlace de la canción o el id solo.
+    const spotify = cell(iUri).match(/(?:^|track[:/])([A-Za-z0-9]{22})(?:$|[?#])/)?.[1];
+    const artistOf = (value: string) => (own ? value : primaryArtist(value));
+    const albumArtist = artistOf(cell(iAlbumArtist));
     songs.push({
       title,
-      artist: cell(iArtist).split(/[,;]/)[0].trim(),
+      artist: fromYouTube ? cell(iChannel) : artistOf(cell(iArtist)),
       ...(cell(iAlbum) ? { album: cell(iAlbum) } : {}),
       ...(albumArtist ? { albumArtist } : {}),
       ...(track > 0 ? { track } : {}),
@@ -355,6 +503,7 @@ export function parseSongsCsv(text: string, limit = 500): CsvSong[] {
       ...(youtubeId(url) ? { url } : {}),
       ...(/^https:\/\//.test(cover) ? { cover } : {}),
       ...(spotify ? { spotifyId: spotify } : {}),
+      ...(fromYouTube ? { fromYouTube } : {}),
     });
     if (songs.length >= limit) break;
   }

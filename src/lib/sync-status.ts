@@ -11,9 +11,17 @@ import { reportError } from '@/lib/error-report';
 //     lo cuenta y lo explica;
 //   · si falla tres veces seguidas con el mismo motivo, se anota una vez por
 //     sesión en el registro de errores (sin datos del usuario: solo el motivo).
+//     Los fallos de red (el wifi del colegio que va y viene, un portal que aún
+//     no dejó pasar) solo si duran un cuarto de hora: desde la 1.9.2 un fallo
+//     se reintenta a los pocos segundos, y tres seguidos ya no son noticia.
 // ============================================================
 
 export type SyncPhase = 'idle' | 'syncing' | 'offline' | 'error';
+
+/** «Sincronizar ahora» (verificador, «Corregir» de Dispositivos): una vuelta completa ya. */
+export const SYNC_NOW_EVENT = 'frame:sync-now';
+/** Cambió algo que el verificador cuenta y que no pasa por la sincronización (un adjunto que llegó por Wire). */
+export const SYNC_RECHECK_EVENT = 'frame:sync-recheck';
 
 export interface SyncStatus {
   phase: SyncPhase;
@@ -30,6 +38,11 @@ export interface SyncStatus {
 let status: SyncStatus = { phase: 'idle', lastOkAt: null, lastError: null, failures: 0, lastLiveAt: null };
 const listeners = new Set<() => void>();
 const reported = new Set<string>();
+/** Motivos que son la red (los mismos que el verificador traduce a «no se pudo conectar»). */
+const NETWORK_ERROR = /fetch|network|timed? ?out|abort|ECONN|ENOTFOUND|load failed/i;
+const NETWORK_LASTING_MS = 15 * 60_000;
+/** Desde cuándo falla sin un éxito de por medio (ms). */
+let failingSince: number | null = null;
 
 const emit = () => listeners.forEach((listener) => listener());
 
@@ -58,6 +71,7 @@ export function markSyncStarted() {
 /** Resultado de un ciclo de sincronización (sync.ts). */
 export function markSyncResult(ok: boolean, error: string | null) {
   if (ok) {
+    failingSince = null;
     update({ phase: 'idle', lastOkAt: Date.now(), lastError: null, failures: 0 });
     return;
   }
@@ -67,9 +81,11 @@ export function markSyncResult(ok: boolean, error: string | null) {
     update({ phase: 'idle' });
     return;
   }
+  failingSince ??= Date.now();
   const failures = status.failures + 1;
   update({ phase: offline ? 'offline' : 'error', lastError: error, failures });
-  if (!offline && error && failures >= 3 && !reported.has(error)) {
+  const lasting = !!error && (!NETWORK_ERROR.test(error) || Date.now() - failingSince >= NETWORK_LASTING_MS);
+  if (!offline && error && failures >= 3 && lasting && !reported.has(error)) {
     reported.add(error);
     reportError({ scope: 'sync', name: 'SyncError', message: error });
   }
@@ -81,5 +97,6 @@ export function markLiveChange() {
 
 export function resetSyncStatus() {
   status = { phase: 'idle', lastOkAt: null, lastError: null, failures: 0, lastLiveAt: null };
+  failingSince = null;
   emit();
 }

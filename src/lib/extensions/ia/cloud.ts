@@ -10,7 +10,7 @@
 // sesión de Supabase.
 // ============================================================
 
-import { NUBE as IA_CLOUD } from '@/lib/nube';
+import { NUBE as IA_CLOUD, nubeFetch } from '@/lib/nube';
 import { getActiveSession } from '@/lib/supabase/auth';
 import { extRead, extWrite } from '@/lib/extensions/store';
 import { deviceId } from '@/lib/sync-delta';
@@ -52,7 +52,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!session) throw new CloudError('session');
   let response: Response;
   try {
-    response = await fetch(`${IA_CLOUD}${path}`, { ...init, headers: { authorization: `Bearer ${session.access_token}` } });
+    response = await nubeFetch(`${IA_CLOUD}${path}`, { ...init, headers: { authorization: `Bearer ${session.access_token}` } });
   } catch {
     throw new CloudError('network');
   }

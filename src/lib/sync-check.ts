@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react';
 import { format, parseISO } from 'date-fns';
 import { collectLocalData } from '@/lib/storage-snapshot';
 import { pendingChanges } from '@/lib/sync-merge';
-import { getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
+import { SYNC_RECHECK_EVENT, getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
 import { IMAGE_REFS_EVENT, entityOfImage, imageRefsReport } from '@/lib/image-refs';
-import { describeSongKey, isSongKey, libraryIds } from '@/lib/song-keys';
+import { describeSongKey, isSongKey, libraryIds, subscribeLibrary } from '@/lib/song-keys';
 import { hasAttachment } from '@/lib/file-handles';
 import { listImageKeys } from '@/lib/music-db';
 import { richNoteToLine } from '@/lib/rich-note';
@@ -63,6 +63,7 @@ const WHERE: Record<string, { where: () => string; route: string; label: (row: R
   dailyPerformances: { where: () => tr('Estudio'), route: '/temporizador', label: (row) => tr('Nota del {day}', { day: dayLabel(String(row.date ?? row.id ?? '')) }) },
   playlists: { where: () => tr('Música'), route: '/music', label: (row) => String(row.name ?? '') },
   studyVideos: { where: () => tr('Estudio'), route: '/temporizador', label: (row) => String(row.title ?? '') },
+  loreFavorites: { where: () => tr('Biblioteca'), route: '/biblioteca', label: () => tr('Favoritos') },
   songFavorites: {
     where: () => tr('Música'),
     route: '/music',
@@ -98,7 +99,7 @@ const short = (text: string) => (text.length > 60 ? `${text.slice(0, 59).trimEnd
 
 /** El motivo de un fallo en palabras del usuario: los de la red llegan en inglés y en jerga. */
 function humanError(message: string): string {
-  if (/fetch|network|timed? ?out|ECONN|ENOTFOUND|load failed/i.test(message)) return tr('No se pudo conectar con la nube');
+  if (/fetch|network|timed? ?out|abort|ECONN|ENOTFOUND|load failed/i.test(message)) return tr('No se pudo conectar con la nube');
   if (/JWT|token|refresh/i.test(message)) return tr('La sesión caducó: vuelve a iniciar sesión');
   return message.replace(/\.$/, '');
 }
@@ -155,7 +156,7 @@ export async function computeSyncIssues(uid: string): Promise<SyncIssue[]> {
       kind: 'image',
       where: entity.where,
       what: tr('Imagen de «{name}»', { name: entity.name }),
-      why: tr('Es una imagen propia elegida en otro dispositivo: las imágenes que subes no se sincronizan. Elige una de la galería de Frame para verla en todos tus dispositivos.'),
+      why: tr('Es una imagen propia elegida en otro dispositivo: viaja con la extensión Wire. Sin Wire, elige una de la galería de Frame para verla en todos tus dispositivos.'),
       route: entity.route,
     });
   }
@@ -201,7 +202,7 @@ export async function computeSyncIssues(uid: string): Promise<SyncIssue[]> {
           kind: 'song',
           where,
           what: artist ? `${title} — ${artist}` : title,
-          why: tr('La música no viaja entre dispositivos: importa esta canción aquí para que aparezca en la playlist.'),
+          why: tr('La música viaja entre dispositivos con la extensión Wire. Sin Wire, importa esta canción aquí para que aparezca en la playlist.'),
           route,
         });
       }
@@ -233,7 +234,7 @@ export async function computeSyncIssues(uid: string): Promise<SyncIssue[]> {
           kind: 'attachment',
           where: group.where(row),
           what: attachment.label || tr('Archivo adjunto'),
-          why: tr('Los archivos adjuntos se quedan en el dispositivo donde se añadieron.'),
+          why: tr('Los archivos adjuntos viajan con la extensión Wire; sin ella, se quedan en el dispositivo donde se añadieron.'),
           route: group.route,
         });
       }
@@ -249,7 +250,7 @@ export async function computeSyncIssues(uid: string): Promise<SyncIssue[]> {
       kind: 'attachment',
       where: tr('Asignaturas · {name}', { name: course?.name ?? '' }),
       what: short(String(note.fileName ?? richNoteToLine(String(note.content ?? '')))),
-      why: tr('Los archivos adjuntos se quedan en el dispositivo donde se añadieron.'),
+      why: tr('Los archivos adjuntos viajan con la extensión Wire; sin ella, se quedan en el dispositivo donde se añadieron.'),
       route: '/knowledge',
     });
   }
@@ -269,6 +270,10 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 const getIssues = () => issues;
+
+/** Para quien no es un componente (Dispositivos). */
+export const currentSyncIssues = getIssues;
+export const subscribeSyncIssues = subscribe;
 
 export function useSyncIssues(): SyncIssue[] {
   return useSyncExternalStore(subscribe, getIssues, getIssues);
@@ -315,8 +320,11 @@ export function startSyncCheck(uid: string): () => void {
   const onEvent = () => schedule();
   window.addEventListener(CLOUD_APPLIED_EVENT, onEvent);
   window.addEventListener(IMAGE_REFS_EVENT, onEvent);
+  window.addEventListener(SYNC_RECHECK_EVENT, onEvent);
   const stopStatus = subscribeSyncStatus(onEvent);
   const stopLang = subscribeLang(onEvent);
+  // Una canción que llega (Wire, una importación) deja de faltar en sus playlists.
+  const stopLibrary = subscribeLibrary(onEvent);
   const interval = window.setInterval(onEvent, 120_000);
   schedule(4000);
   return () => {
@@ -324,12 +332,14 @@ export function startSyncCheck(uid: string): () => void {
     window.clearInterval(interval);
     window.removeEventListener(CLOUD_APPLIED_EVENT, onEvent);
     window.removeEventListener(IMAGE_REFS_EVENT, onEvent);
+    window.removeEventListener(SYNC_RECHECK_EVENT, onEvent);
     stopStatus();
     stopLang();
+    stopLibrary();
     issues = [];
     emit();
   };
 }
 
 /** Vuelve a calcular ya (tras «Sincronizar ahora» o una imagen nueva). */
-export const SYNC_NOW_EVENT = 'frame:sync-now';
+export { SYNC_NOW_EVENT } from '@/lib/sync-status';

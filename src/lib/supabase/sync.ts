@@ -103,7 +103,7 @@ export function writeCursor(uid: string, cursor: SyncCursor): void {
   }
 }
 
-const sameInstant = (a: string | null, b: string | null): boolean => {
+export const sameInstant = (a: string | null, b: string | null): boolean => {
   if (a === null || b === null) return a === b;
   const ta = Date.parse(a);
   const tb = Date.parse(b);
@@ -123,8 +123,15 @@ async function syncOnce(uid: string): Promise<SyncResult> {
   // `getSession` lee la sesión guardada en el equipo; `getUser` hacía una
   // petición al servidor en CADA ciclo solo para confirmar lo que ya se sabía.
   // La autoridad real es la RLS de la tabla: con un token ajeno no escribe.
-  const { data: sessionData } = await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionData.session?.user?.id !== uid) {
+    // Sin sesión porque no se pudo RENOVAR (la red no contestó): la sesión
+    // sigue guardada y volverá con la red. Decir «sesión inválida» mandaba a
+    // volver a entrar sin motivo, y contaba como un fallo que no era.
+    const status = (sessionError as { status?: number } | null | undefined)?.status;
+    if (!sessionData.session && sessionError && (sessionError.name === 'AuthRetryableFetchError' || status === 0)) {
+      return { ok: false, applied: false, error: sessionError.message || 'Failed to fetch' };
+    }
     return { ok: false, applied: false, error: tr('Sesión inválida.') };
   }
 

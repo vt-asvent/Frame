@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import type { UserProfile } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import {
+  SESSION_OPEN_FAILED_EVENT,
   describeAuthError,
   requestPasswordReset,
   signInWithEmail,
@@ -112,6 +113,18 @@ export default function AuthForm({ linkGuest }: AuthFormProps) {
     linkGuest?.username && linkGuest.username !== GUEST_NAME ? linkGuest.username.slice(0, 12) : ''
   );
   const { toast } = useToast();
+
+  // Tras entrar, este recuadro sigue girando hasta que la app abre la sesión
+  // (AppController). Si no pudo abrirla, deja de girar y lo dice: antes se
+  // quedaba así para siempre.
+  useEffect(() => {
+    const onFailed = () => {
+      setIsLoading(false);
+      toast({ variant: 'destructive', title: tr('No se pudo iniciar sesión'), description: describeAuthError(null) });
+    };
+    window.addEventListener(SESSION_OPEN_FAILED_EVENT, onFailed);
+    return () => window.removeEventListener(SESSION_OPEN_FAILED_EVENT, onFailed);
+  }, [toast]);
 
   // El invitado se convierte en cuenta desde dentro («Vincular con Google»,
   // guest-link.ts): sus datos pasan solos, sin archivos de por medio.
