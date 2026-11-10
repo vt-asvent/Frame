@@ -17,7 +17,10 @@
 -- volver a escanear nada.
 --   · `metrics_totp_state()`: 'ready' (hay autenticador), 'none' o 'not-owner'.
 --   · `metrics_totp_begin()`: si no hay ninguno confirmado, crea una clave y la
---     devuelve para escribirla en la app de autenticación.
+--     devuelve para escribirla en la app de autenticación. Una clave a medio
+--     confirmar es de la sesión que la creó: a otra sesión no se le enseña (se
+--     le da una nueva y la anterior deja de valer) y solo esa sesión puede
+--     confirmarla, en un cuarto de hora.
 --   · `metrics_unlock(code)`: como en la 0021, con la clave de aquí; el primer
 --     código bueno de una clave nueva la confirma.
 --   · `is_frame_owner()`: el responsable con su sesión del panel abierta con el
@@ -34,7 +37,9 @@ create table if not exists private.metrics_totp (
   user_id    uuid primary key references auth.users (id) on delete cascade,
   secret     text not null check (length(secret) >= 16),
   confirmed  boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- La sesión del panel que creó una clave aún sin confirmar (nulo en la que vino de Auth).
+  session_id uuid
 );
 alter table private.metrics_totp enable row level security;
 revoke all on table private.metrics_totp from public, anon, authenticated;
@@ -119,6 +124,7 @@ $$;
 
 -- Devuelve { ok: true, secret } o { ok: false, reason }:
 --   not-owner  no es la cuenta del responsable
+--   session    la sesión ya no existe (hay que volver a entrar al panel)
 --   exists     ya hay un autenticador confirmado (se cambia borrando la fila a mano)
 create or replace function public.metrics_totp_begin()
 returns jsonb
@@ -128,6 +134,7 @@ set search_path to ''
 as $$
 declare
   me uuid := auth.uid();
+  sid uuid := private.jwt_session_id();
   current_row private.metrics_totp%rowtype;
   fresh text;
 begin
@@ -137,18 +144,23 @@ begin
   if not public.metrics_owner_account() then
     return jsonb_build_object('ok', false, 'reason', 'not-owner');
   end if;
+  if sid is null or not exists (select 1 from auth.sessions s where s.id = sid and s.user_id = me) then
+    return jsonb_build_object('ok', false, 'reason', 'session');
+  end if;
   select * into current_row from private.metrics_totp t where t.user_id = me for update;
   if found and current_row.confirmed then
     return jsonb_build_object('ok', false, 'reason', 'exists');
   end if;
-  -- Una clave a medio confirmar vale un cuarto de hora: recargar la página no la cambia.
-  if found and current_row.created_at > now() - interval '15 minutes' then
+  -- Una clave a medio confirmar se le repite solo a la sesión que la creó, y un
+  -- cuarto de hora (recargar la página no la cambia). A cualquier otra sesión se
+  -- le da una nueva: nunca se enseña una clave que otro pudo dejar a medias.
+  if found and current_row.session_id = sid and current_row.created_at > now() - interval '15 minutes' then
     return jsonb_build_object('ok', true, 'secret', current_row.secret);
   end if;
   fresh := private.base32_encode(extensions.gen_random_bytes(20));
-  insert into private.metrics_totp (user_id, secret, confirmed, created_at)
-  values (me, fresh, false, now())
-  on conflict (user_id) do update set secret = excluded.secret, confirmed = false, created_at = now();
+  insert into private.metrics_totp (user_id, secret, confirmed, created_at, session_id)
+  values (me, fresh, false, now(), sid)
+  on conflict (user_id) do update set secret = excluded.secret, confirmed = false, created_at = now(), session_id = excluded.session_id;
   -- Clave nueva: los pasos de tiempo ya usados eran de la anterior.
   update private.metrics_unlock_state s set last_step = 0 where s.user_id = me;
   return jsonb_build_object('ok', true, 'secret', fresh);
@@ -194,7 +206,9 @@ begin
   end if;
 
   select * into totp from private.metrics_totp t where t.user_id = me;
-  if not found then
+  -- Una clave sin confirmar solo la confirma la sesión que la creó, y a tiempo.
+  if not found
+     or (not totp.confirmed and (totp.session_id is distinct from sid or totp.created_at < now() - interval '15 minutes')) then
     return jsonb_build_object('ok', false, 'reason', 'no-factor');
   end if;
   begin
@@ -243,7 +257,7 @@ begin
    where s.user_id = me;
   -- El primer código bueno de una clave recién creada la da por buena.
   if not totp.confirmed then
-    update private.metrics_totp t set confirmed = true where t.user_id = me;
+    update private.metrics_totp t set confirmed = true, session_id = null where t.user_id = me;
   end if;
 
   -- Las sesiones anteriores del propio panel se cierran (las de sus pestañas ya
