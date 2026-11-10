@@ -10,6 +10,13 @@
 // { classes: [{ day, start, end, subject, room?, teacher? }] }, que la app
 // limpia y une por bloques antes de guardarlo.
 //
+// Con la foto pueden llegar los NOMBRES de las asignaturas que el estudiante
+// tiene en Frame (1.9.4). Entonces, tras leer la tabla, Gemma 4 (ya sin la
+// foto: solo texto, unas 6 neuronas; Qwen de respaldo) dice a cuál corresponde cada
+// nombre del horario («Mat. AyE» → «Matemática», «TOK» → «Teoría del
+// Conocimiento»), y vuelve además { links: { "<como en el horario>": "<asignatura>" } }.
+// Si ese paso falla, las clases vuelven igual, sin vínculos.
+//
 // La foto no se guarda en ninguna parte. De cada cuenta solo se cuenta cuántas
 // lee al día (D1, `lecturas`), para que nadie agote la cuota de los demás, y
 // de todo Frame, cuántas neuronas se gastan al día (`neuronas`).
@@ -25,6 +32,8 @@ export const QWEN_UNTIL = 8_000;
 const QWEN_RESERVE = 1_000;
 /** Lo que se anota si la respuesta no dice cuántas neuronas gastó. */
 const COST: Record<string, number> = { [MODEL]: 450, [FALLBACK]: 40 };
+/** Lo mismo para el paso que vincula los nombres (solo texto). */
+const LINK_COST = 10;
 const MAX_IMAGE = 4_000_000;
 
 /** Los primeros bytes de la foto dicen si de verdad es del tipo que declara. */
@@ -119,8 +128,108 @@ export function classesOf(out: unknown): Obj[] | null {
   return classes.slice(0, 200);
 }
 
+export const LINK_SCHEMA = {
+  type: 'object',
+  properties: {
+    links: {
+      type: 'array',
+      items: { type: 'object', properties: { a: { type: 'integer' }, b: { type: 'integer' } }, required: ['a', 'b'] },
+    },
+  },
+  required: ['links'],
+};
+
+const numbered = (names: string[]) => names.map((name, i) => `${i}. ${JSON.stringify(name)}`).join('\n');
+
+export const linkPrompt = (read: string[], own: string[]) => `A student's timetable names its classes as in list A. List B has the subjects the same student keeps in a study app.
+For each name in A, find the subject in B that is the SAME school subject. It counts as the same when it is written differently, abbreviated ("Mat." is "Matemática"), an acronym ("TdC" or "TOK" is "Teoría del Conocimiento"), has a level, group, room or teacher added ("Física NM", "Historia 5B"), or is in another language ("English" is "Inglés").
+A different subject is NOT the same, even if it shares a word ("Educación Física" is not "Física"; "Historia del Arte" is not "Historia") or is related to it (a research-skills class is not the extended essay; a homeroom or tutoring hour is no subject). Match only when it is the very same class under another spelling. When no subject in B is clearly the same, answer -1: a wrong match is worse than none.
+Several names in A may share one subject in B.
+A:
+${numbered(read)}
+B:
+${numbered(own)}
+Answer only with JSON, one entry per name in A: {"links":[{"a":0,"b":2},{"a":1,"b":-1}]}`;
+
+const flat = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/** Los nombres de asignaturas que mandó la app: texto corto, sin repetidos, como mucho 60. */
+export function subjectsOf(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Map<string, string>();
+  for (const value of raw.slice(0, 200)) {
+    if (typeof value !== 'string') continue;
+    const name = value.replace(/\s+/g, ' ').trim().slice(0, 80);
+    const key = flat(name);
+    if (key && !seen.has(key)) seen.set(key, name);
+    if (seen.size >= 60) break;
+  }
+  return [...seen.values()];
+}
+
+/** Respuesta del modelo → { nombre del horario: asignatura }, solo con índices que existen. */
+export function linksOf(out: unknown, read: string[], own: string[]): Record<string, string> {
+  let value = answerOf(out);
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value.slice(value.indexOf('{'), value.lastIndexOf('}') + 1));
+    } catch {
+      return {};
+    }
+  }
+  const list = isObj(value) ? value.links : null;
+  const links: Record<string, string> = {};
+  if (!Array.isArray(list)) return links;
+  for (const entry of list) {
+    if (!isObj(entry)) continue;
+    const a = Number(entry.a);
+    const b = Number(entry.b);
+    const from = Number.isInteger(a) ? read[a] : undefined;
+    const to = Number.isInteger(b) ? own[b] : undefined;
+    if (from !== undefined && to !== undefined) links[from] = to;
+  }
+  return links;
+}
+
+/**
+ * A qué asignatura de Frame corresponde cada nombre leído. Los que se llaman
+ * igual no pasan por el modelo. Nunca falla: sin respuesta, sin vínculos.
+ */
+async function linkSubjects(env: Env, day: string, models: string[], classes: Obj[], own: string[]): Promise<Record<string, string>> {
+  const byName = new Map(own.map((name) => [flat(name), name] as const));
+  const links: Record<string, string> = {};
+  const read: string[] = [];
+  for (const item of classes) {
+    const subject = typeof item.subject === 'string' ? item.subject.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    if (!subject || subject in links || read.includes(subject)) continue;
+    const same = byName.get(flat(subject));
+    if (same) links[subject] = same;
+    else if (read.length < 40) read.push(subject);
+  }
+  if (read.length === 0 || own.length === 0) return links;
+  for (const model of models) {
+    try {
+      const out = await env.AI.run(model, {
+        messages: [{ role: 'user', content: linkPrompt(read, own) }],
+        response_format: { type: 'json_schema', json_schema: { name: 'links', schema: LINK_SCHEMA } },
+        chat_template_kwargs: { enable_thinking: false },
+        temperature: 0,
+        max_completion_tokens: 900,
+      });
+      const neurons = Number((out as { usage?: { neurons?: unknown } } | null)?.usage?.neurons);
+      await env.DB.prepare('INSERT INTO neuronas (day, n) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET n = n + excluded.n')
+        .bind(day, Number.isFinite(neurons) && neurons > 0 ? neurons : LINK_COST)
+        .run();
+      return { ...links, ...linksOf(out, read, own) };
+    } catch (e) {
+      console.error('horario vínculos', model, String(e).slice(0, 200));
+    }
+  }
+  return links;
+}
+
 export async function readTimetable(req: Request, env: Env, owner: string): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { image?: unknown; mime?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { image?: unknown; mime?: unknown; subjects?: unknown } | null;
   const image = typeof body?.image === 'string' ? body.image : '';
   const mime = typeof body?.mime === 'string' ? body.mime : '';
   // Solo el comienzo: revisar 1 MB de base64 gastaría el CPU del plan gratis.
@@ -172,7 +281,12 @@ export async function readTimetable(req: Request, env: Env, owner: string): Prom
     // Lo demás cuenta aunque no salga nada legible: si no, cualquiera usaría el
     // modelo sin límite enviando fotos que no son horarios.
     const classes = classesOf(out);
-    if (classes) return json({ classes });
+    if (classes) {
+      const own = subjectsOf(body?.subjects);
+      // El vínculo es solo texto: Gemma acierta igual que Qwen en las pruebas (30 de 30) y gasta diez veces menos.
+      const links = own.length > 0 && classes.length > 0 ? await linkSubjects(env, day, [FALLBACK, MODEL], classes, own) : {};
+      return json({ classes, links });
+    }
   }
   return json({ error: 'busy' }, 503);
 }

@@ -25,6 +25,13 @@ const CORREOS: Record<string, { email: string; email_confirmed_at: string | null
   [SIN_COMPROBAR]: { email: `nuevo@${COLEGIO}`, email_confirmed_at: null },
   [LUIS]: { email: 'luis@otro.prueba', email_confirmed_at: '2026-01-01T00:00:00Z' },
 };
+/** Da correo comprobado a una cuenta de prueba (antes de su primera llamada: la sesión se recuerda un minuto). */
+export const conCorreo = (cuenta: string, email: string) => {
+  CORREOS[cuenta] = { email, email_confirmed_at: '2026-01-01T00:00:00Z' };
+  return cuenta;
+};
+/** El remitente de mentira (el Apps Script de Asvent): lo que le pidieron enviar. «rebota@…» simula que no sale. */
+export const ENVIADOS: { to: string; code: string; minutes: number }[] = [];
 /** El Drive de Asvent de mentira: cada archivo es un PDF corto con su id dentro. */
 export const pdfDe = (id: string) => `%PDF-1.7 archivo ${id}`;
 
@@ -135,6 +142,14 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 export class IA extends WorkerEntrypoint {
   async run(model, input) {
     const contenido = input.messages[0].content;
+    if (typeof contenido === 'string' && contenido.includes('study app')) {
+      // Vínculo de asignaturas (horario.ts): el primer nombre del horario es la
+      // primera asignatura; lo demás, índices que no existen. «sin-vinculo»
+      // entre las asignaturas simula un modelo que falla en este paso.
+      if (!input.response_format) throw new Error('pedido mal formado');
+      if (contenido.includes('sin-vinculo')) throw new Error('5000: model unavailable');
+      return { choices: [{ message: { content: JSON.stringify({ links: [{ a: 0, b: 0 }, { a: 7, b: 0 }, { a: 0.5, b: 1 }, { a: 1, b: -1 }] }) } }], usage: { neurons: 3 } };
+    }
     if (typeof contenido === 'string') {
       // Letras (letras.ts): «sin-ia» simula la cuota gratuita agotada, «rota»
       // una respuesta con otro número de líneas y «cortada» una que se queda a
@@ -186,6 +201,8 @@ export async function crearArnes(): Promise<Arnes> {
           LORE_GOOGLE_ID: 'cliente-de-prueba',
           LORE_GOOGLE_SECRET: 'secreto-de-prueba',
           LORE_DOMAIN_HASH: createHash('sha256').update(COLEGIO).digest('hex'),
+          LORE_MAIL_URL: 'https://correo.prueba/exec',
+          LORE_MAIL_KEY: 'clave-del-correo',
         },
         serviceBindings: { AI: { name: 'ia-falsa', entrypoint: 'IA' } },
         outboundService: async (pedido: any) => {
@@ -202,6 +219,13 @@ export async function crearArnes(): Promise<Arnes> {
             if (id === 'falta') return new Response('{}', { status: 404 }) as never;
             const cuerpo = pdfDe(id);
             return new Response(cuerpo, { headers: { 'content-type': 'application/pdf', 'content-length': String(cuerpo.length) } }) as never;
+          }
+          if (url.hostname === 'correo.prueba') {
+            const carta = (await pedido.json().catch(() => null)) as { key?: string; to?: string; code?: string; minutes?: number } | null;
+            if (pedido.method !== 'POST' || carta?.key !== 'clave-del-correo' || !carta.to || !/^\d{6}$/.test(carta.code ?? '')) return new Response(JSON.stringify({ ok: false, error: 'key' })) as never;
+            if (carta.to.startsWith('rebota@')) return new Response(JSON.stringify({ ok: false, error: 'quota' })) as never;
+            ENVIADOS.push({ to: carta.to, code: carta.code!, minutes: carta.minutes ?? 0 });
+            return new Response(JSON.stringify({ ok: true })) as never;
           }
           if (url.hostname !== 'supabase.prueba' || url.pathname !== '/auth/v1/user' || pedido.headers.get('apikey') !== 'anon-de-pruebas' || !auth.startsWith('Bearer sb-')) {
             return new Response(JSON.stringify({ msg: 'invalid' }), { status: 401 }) as never;

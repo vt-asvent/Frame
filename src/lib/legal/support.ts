@@ -36,11 +36,12 @@ Los tiempos que siguen son **objetivos de servicio, no compromisos contractuales
 
 ## 2. Antes de escribir
 
-Tres comprobaciones resuelven una parte considerable de los casos:
+Estas comprobaciones resuelven una parte considerable de los casos:
 
 - Confirma que usas la **última versión** disponible, ya que el fallo puede estar corregido.
 - Comprueba si el problema persiste **tras cerrar y volver a abrir la aplicación**.
 - Si el fallo afecta a Gmail, YouTube o Classroom, comprueba si el mismo servicio funciona en tu navegador: si tampoco funciona allí, el problema es de Google y no de Frame.
+- Si tu **antivirus marca Frame** o su instalador: Frame aún no lleva un certificado comercial de firma de código, y algunos programas de seguridad desconfían de todo instalador nuevo sin él. Comprueba que lo descargaste de la página oficial y escríbenos con el nombre del antivirus y el aviso exacto: lo reportamos a su fabricante como falso positivo. No desactives tu antivirus por Frame.
 
 ## 3. Cómo redactar un reporte que se pueda resolver
 

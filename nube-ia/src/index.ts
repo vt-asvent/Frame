@@ -6,7 +6,8 @@
 import { readTimetable } from './horario';
 import { accessFrom, authorize, metadata, newPairing, ownerStatus, register, revokeOwner, token } from './oauth';
 import { translateLyrics } from './letras';
-import { loreFile, loreIndex } from './lore';
+import { loreFile, loreIndex, loreView } from './lore';
+import { loreAccess, loreAccessCleanup, loreActivate, loreSendCode } from './lore-acceso';
 import { userFromApp } from './supabase';
 import { type Env, json, random, relayOf, signToken, verifyToken } from './util';
 
@@ -50,6 +51,7 @@ async function app(req: Request, env: Env, path: string): Promise<Response> {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const owner = user.owner;
   if (req.method === 'GET' && path.startsWith('/app/lore/archivo/')) return loreFile(env, user, path.slice('/app/lore/archivo/'.length));
+  if (req.method === 'GET' && path.startsWith('/app/lore/vista/')) return loreView(env, user, path.slice('/app/lore/vista/'.length));
   switch (`${req.method} ${path}`) {
     case 'POST /app/pair':
       return json(await newPairing(env, owner));
@@ -66,6 +68,12 @@ async function app(req: Request, env: Env, path: string): Promise<Response> {
       return translateLyrics(req, env, owner);
     case 'GET /app/lore':
       return loreIndex(env, user);
+    case 'GET /app/lore/acceso':
+      return loreAccess(env, user);
+    case 'POST /app/lore/codigo':
+      return loreSendCode(req, env, user);
+    case 'POST /app/lore/activar':
+      return loreActivate(req, env, user);
     default:
       return json({ error: 'not_found' }, 404);
   }
@@ -125,6 +133,7 @@ export default {
         env.DB.prepare('DELETE FROM traducciones WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
         env.DB.prepare('DELETE FROM neuronas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
         env.DB.prepare('DELETE FROM lore_descargas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
+        ...loreAccessCleanup(env, now),
       ]).then(() => undefined),
     );
   },

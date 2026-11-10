@@ -39,5 +39,10 @@ if [ "${NUEVA:-0}" = 1 ] || [ "${SECRETOS:-0}" = 1 ]; then
   valor FRAME_IA_KEY ../keys/frame-ia.env | wrangler secret put FRAME_IA_KEY > /dev/null
   valor VITE_SUPABASE_URL ../.env | wrangler secret put SUPABASE_URL > /dev/null
   valor VITE_SUPABASE_ANON_KEY ../.env | wrangler secret put SUPABASE_ANON_KEY > /dev/null
+  # Biblioteca: el Apps Script de Asvent que envía el código de activación (correo/Codigo.gs) y su clave.
+  if [ -f ../keys/biblioteca-correo.env ]; then
+    valor LORE_MAIL_URL ../keys/biblioteca-correo.env | wrangler secret put LORE_MAIL_URL > /dev/null
+    valor LORE_MAIL_KEY ../keys/biblioteca-correo.env | wrangler secret put LORE_MAIL_KEY > /dev/null
+  fi
   echo "Secretos guardados en el Worker."
 fi

@@ -222,6 +222,8 @@ El Usuario se obliga a utilizar la Aplicación conforme a la ley, la buena fe y 
 
 **15.2.** Esta exclusión **no afecta** a la garantía legal ni a los derechos que el Código de Protección y Defensa del Consumidor, Ley N.º 29571, reconoce de forma imperativa al Usuario que tenga la condición de consumidor, ni a la idoneidad exigible al producto conforme a dicha norma.
 
+**15.3. Programas de seguridad.** Los instaladores de la Aplicación, y los de los programas que esta instala a pedido del Usuario, llevan una firma propia que la Aplicación comprueba antes de instalar o actualizar, pero **no un certificado comercial de firma de código**. Por eso un antivirus u otro programa de seguridad puede tratarlos como desconocidos o sospechosos, ponerlos en cuarentena o entorpecer el equipo mientras los analiza. Ese comportamiento es del programa de seguridad y no de la Aplicación, y el Proveedor no responde por él, sin perjuicio de lo dispuesto en 15.2. La Aplicación debe descargarse solo de las páginas oficiales del Proveedor y puede desinstalarse en cualquier momento desde «Aplicaciones instaladas» de Windows. Si un programa de seguridad la marca, el Usuario puede escribir a vt.asvent@gmail.com con el nombre del programa y el aviso que mostró.
+
 ### Cláusula 16. Régimen de responsabilidad
 
 **16.1.** El Proveedor responde por los daños que cause por dolo o culpa inexcusable. **Toda estipulación que pretendiera excluir o limitar esa responsabilidad sería nula conforme al artículo 1328 del Código Civil, y este contrato no la contiene.**
@@ -375,7 +377,7 @@ Solo si conectas un chat de la web —por ejemplo, claude.ai o ChatGPT— desde 
 
 Solo cuando pides a Frame que lea las clases de la foto de un horario —al añadirlo, con «Leer las clases» o con «Volver a leer la foto»—:
 
-**Lo que pasa sin guardarse.** La foto, reducida, viaja cifrada con tu sesión de Cuenta a un servicio del Proveedor alojado en Cloudflare, que se la entrega a un modelo abierto de **Cloudflare Workers AI** —**Qwen 3.8** o, si ese no responde o se acerca el límite diario gratuito, **Gemma 4**— para extraer las clases —día, hora, asignatura y, si figuran, aula y docente— y te las devuelve. **Ni ese servicio ni Cloudflare guardan la foto ni lo leído**, ni lo usan para entrenar modelos: Cloudflare lo procesa sin retención de datos.
+**Lo que pasa sin guardarse.** La foto, reducida, viaja cifrada con tu sesión de Cuenta a un servicio del Proveedor alojado en Cloudflare, que se la entrega a un modelo abierto de **Cloudflare Workers AI** —**Qwen 3.8** o, si ese no responde o se acerca el límite diario gratuito, **Gemma 4**— para extraer las clases —día, hora, asignatura y, si figuran, aula y docente— y te las devuelve. Con la foto van los nombres de tus asignaturas de Frame —solo los nombres—, para que el mismo modelo diga a cuál corresponde cada clase del horario. **Ni ese servicio ni Cloudflare guardan la foto, esos nombres ni lo leído**, ni lo usan para entrenar modelos: Cloudflare lo procesa sin retención de datos.
 
 **Lo que se guarda.** Para que nadie agote las lecturas de los demás, el servicio anota cuántas fotos lee tu Cuenta cada día, junto con su identificador; esa anotación se borra al día siguiente. Las clases leídas se guardan en tu Frame como parte de tu Estado Académico (apartado 3.2), donde puedes corregirlas o borrarlas.
 
@@ -401,13 +403,15 @@ Solo si enciendes «Traducción» en la letra de una canción, y solo cuando esa
 
 **Es opcional.** Con «Traducción» apagada no se envía nada.
 
-### 3.11 Biblioteca (extensión AK Lore)
+### 3.11 Biblioteca (extensión)
 
-Solo si activas la extensión AK Lore, que es para cuentas del colegio:
+Solo si activas la extensión «Biblioteca», que es para estudiantes del colegio:
 
-**Lo que pasa.** La Aplicación pide el índice del material, y cada archivo que abres o descargas, a un servicio del Proveedor alojado en Cloudflare, con tu sesión de Cuenta. El servicio comprueba que tu correo es del colegio y está verificado —compara un resumen (SHA-256) de su dominio, sin guardarlo— y te entrega el archivo, que trae del almacenamiento del Proveedor en Google Drive. **Nunca recibes acceso a ese Drive, y el servicio no ve tu Google Drive ni nada de tu equipo.**
+**Cómo se activa.** Escribes tu correo institucional y un servicio del Proveedor alojado en Cloudflare comprueba que es del colegio —compara un resumen (SHA-256) de su dominio— y te envía a ese correo un código de un solo uso, desde la cuenta de correo del Proveedor en Google. Con el código, la Biblioteca queda activada durante un año en la Cuenta con la que estás, entres con el correo que entres. Si entras a Frame con el propio correo del colegio, ya verificado, no hace falta código.
 
-**Lo que se guarda.** Cuántos archivos y cuántos bytes descarga tu Cuenta cada día, junto con su identificador, para aplicar un tope diario; esa anotación se borra al día siguiente. No se guarda qué archivos abres ni cuáles descargas. Los que marcas como favoritos forman parte de tu Estado Académico (apartado 3.2).
+**Lo que pasa después.** La Aplicación pide el índice del material, la vista previa de los documentos destacados y cada archivo que abres o descargas a ese servicio, con tu sesión de Cuenta. El servicio comprueba que tu Cuenta la tiene activada y te entrega el archivo, que trae del almacenamiento del Proveedor en Google Drive. **Nunca recibes acceso a ese Drive, y el servicio no ve tu Google Drive ni nada de tu equipo.**
+
+**Lo que se guarda.** De tu correo institucional, el servicio guarda solo una huella con clave —no se puede leer ni reconstruir—, junto al identificador de tu Cuenta y la fecha, para saber que la tienes activada y para que un mismo correo no active más de dos Cuentas; se borra cuando la activación vence. Del código, otra huella, hasta que lo usas o caduca (10 minutos). El mensaje con el código queda, como todo correo enviado, en el buzón del Proveedor en Google, con tu dirección institucional; el Proveedor no lo usa para nada más. Además, cuántos archivos y cuántos bytes descarga tu Cuenta cada día, junto con su identificador, para aplicar un tope diario; esa anotación se borra al día siguiente. No se guarda qué archivos abres ni cuáles descargas. Los que marcas como favoritos forman parte de tu Estado Académico (apartado 3.2).
 
 ## 4. Finalidades y bases legales
 
@@ -540,7 +544,8 @@ Relación vigente a ${effectiveDate}:
 
 - **Supabase** — autenticación, base de datos y almacenamiento de la copia de seguridad — servidores en Estados Unidos de América (región de Amazon Web Services us-west-2, Oregón) — contrato de encargo: por definir; rige entretanto el acuerdo de tratamiento de datos incorporado a las condiciones de servicio de Supabase.
 - **GitHub, Inc.** — alojamiento de los instaladores y del canal de actualizaciones — Estados Unidos.
-- **Cloudflare, Inc.** — relé de los chats de IA en la web, solo si los conectas (apartado 3.7); lectura de horarios y traducción de letras con Workers AI, solo si las pides (apartados 3.8 y 3.10); y servicio de la Biblioteca, solo con la extensión AK Lore (apartado 3.11) — red mundial de centros de datos; base de datos en Norteamérica — rige el acuerdo de tratamiento de datos incorporado a las condiciones de servicio de Cloudflare.
+- **Cloudflare, Inc.** — relé de los chats de IA en la web, solo si los conectas (apartado 3.7); lectura de horarios y traducción de letras con Workers AI, solo si las pides (apartados 3.8 y 3.10); y servicio de la Biblioteca, solo con su extensión (apartado 3.11) — red mundial de centros de datos; base de datos en Norteamérica — rige el acuerdo de tratamiento de datos incorporado a las condiciones de servicio de Cloudflare.
+- **Google LLC** — almacenamiento del material de la Biblioteca (Google Drive) y envío del código que la activa (correo de la cuenta del Proveedor), solo con su extensión (apartado 3.11) — Estados Unidos y otros países donde Google opera — rigen las condiciones de servicio de Google.
 
 Toda incorporación o sustitución de encargado se comunicará conforme al apartado 12 de la Política de Privacidad.
 

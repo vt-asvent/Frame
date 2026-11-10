@@ -10,8 +10,9 @@ import { tr } from '@/lib/i18n';
 // AK Lore → la Biblioteca (1.9.2): el material del Programa del Diploma que
 // Asvent guarda en su Drive. La nube de Frame (nube-ia/src/lore.ts) da el
 // índice y pasa cada archivo: nadie recibe un enlace de Drive ni entra a ese
-// Drive. Solo cuentas del colegio con el correo comprobado (lo decide la
-// nube; aquí solo se muestra). El índice se guarda en este equipo para
+// Drive. Solo cuentas que la activaron con su correo institucional (1.9.4:
+// la nube envía un código a ese correo; ver access.ts) o que entran a Frame
+// con él; lo decide la nube. El índice se guarda en este equipo para
 // buscar sin red; los favoritos son de la cuenta y viajan con ella a sus
 // otros dispositivos (`loreFavorites`, como el corazón de las canciones).
 //
@@ -46,6 +47,8 @@ export interface LoreGuide {
   format: LoreFormat;
   size?: number;
   summary?: string;
+  /** Tiene vista previa (la primera página, en miniatura): los destacados. */
+  preview?: boolean;
 }
 
 export interface LoreSource {
@@ -94,6 +97,7 @@ export function parseLoreIndex(raw: unknown): LoreGuide[] {
       updated: Number.isFinite(Date.parse(String(g.updated))) ? new Date(String(g.updated)).toISOString() : new Date(0).toISOString(),
       format: (LORE_FORMATS as readonly string[]).includes(String(g.format)) ? (g.format as LoreFormat) : 'other',
       ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== '' && v !== undefined)),
+      ...(g.preview === true ? { preview: true } : {}),
     });
   }
   return out;
@@ -118,19 +122,130 @@ async function fromCloud(path: string, signal?: AbortSignal): Promise<Response> 
   const supabase = getSupabase();
   if (!supabase || !navigator.onLine) throw offline();
   const { data } = await supabase.auth.getSession();
-  if (!data.session) throw fail(tr('Entra con tu cuenta del colegio para usar la Biblioteca.'));
+  if (!data.session) throw fail(tr('Entra a Frame con tu cuenta para usar la Biblioteca.'));
   // Con plazo (nube.ts). Un corte de red se dice así, no con el error del navegador.
   const resp = await nubeFetch(`${NUBE}${path}`, { headers: { authorization: `Bearer ${data.session.access_token}` }, signal }).catch((error: unknown) => {
     throw signal?.aborted ? error : offline();
   });
   if (resp.ok) return resp;
   const body = (await resp.json().catch(() => null)) as { error?: string } | null;
-  if (resp.status === 401) throw fail(tr('Tu sesión venció: vuelve a entrar con tu cuenta del colegio.'));
-  if (resp.status === 403) throw fail(tr('La Biblioteca es solo para cuentas del colegio con el correo comprobado.'));
+  if (resp.status === 401) throw fail(tr('Tu sesión venció: vuelve a entrar a Frame.'));
+  if (resp.status === 403) {
+    // La nube dice que esta cuenta ya no la tiene activada (venció o es otra cuenta): access.ts lo anota.
+    window.dispatchEvent(new Event(LORE_LOCKED_EVENT));
+    throw fail(tr('Activa la Biblioteca con tu correo institucional.'));
+  }
   if (resp.status === 404) throw fail(tr('Ese archivo ya no está en la Biblioteca.'), false);
   if (resp.status === 429) throw fail(tr('Llegaste al tope de descargas de hoy. Mañana puedes seguir.'));
   if (body?.error === 'lore-off') throw fail(tr('La Biblioteca aún se está preparando. Vuelve en un rato.'));
   throw fail(tr('La Biblioteca no respondió ({status}). Inténtalo de nuevo.', { status: resp.status }), false);
+}
+
+// ------------------------------------------------------------
+// Acceso: se activa con un código que llega al correo institucional (1.9.4)
+// ------------------------------------------------------------
+
+/** La nube rechazó a esta cuenta: falta activar la Biblioteca. */
+export const LORE_LOCKED_EVENT = 'frame:lore-locked';
+
+export interface LoreAccess {
+  active: boolean;
+  /** Hasta cuándo vale la activación (sin fecha: la cuenta entra con su correo del colegio). */
+  until?: number;
+}
+
+const ACCESS_ERRORS: Record<string, (left?: number) => string> = {
+  account: () => tr('Entra a Frame con tu cuenta de Google para activar la Biblioteca.'),
+  email: () => tr('Escribe tu correo institucional completo, el que te dio tu colegio.'),
+  taken: () => tr('Ese correo ya activó la Biblioteca en otras dos cuentas de Frame.'),
+  wait: () => tr('Ya se enviaron varios códigos. Espera una hora y vuelve a pedirlo.'),
+  daily: () => tr('Hoy ya no se pueden enviar más códigos. Inténtalo mañana.'),
+  'mail-off': () => tr('No se pudo enviar el código ahora. Inténtalo en unos minutos.'),
+  mail: () => tr('No se pudo enviar el código ahora. Inténtalo en unos minutos.'),
+  code: (left) => (left === 1 ? tr('Ese código no es. Te queda 1 intento.') : tr('Ese código no es. Te quedan {left} intentos.', { left: left ?? 0 })),
+  expired: () => tr('El código caducó. Pide uno nuevo.'),
+  attempts: () => tr('Demasiados intentos. Pide un código nuevo.'),
+};
+
+async function accessCall(path: string, body?: unknown): Promise<Record<string, unknown>> {
+  const supabase = getSupabase();
+  if (!supabase || !navigator.onLine) throw offline();
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw fail(ACCESS_ERRORS.account());
+  const resp = await nubeFetch(`${NUBE}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { authorization: `Bearer ${data.session.access_token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }).catch(() => {
+    throw offline();
+  });
+  const out = ((await resp.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+  if (resp.ok) return out;
+  if (resp.status === 401) throw fail(tr('Tu sesión venció: vuelve a entrar a Frame.'));
+  const known = typeof out.error === 'string' ? ACCESS_ERRORS[out.error] : undefined;
+  throw fail(known ? known(typeof out.left === 'number' ? out.left : undefined) : tr('La Biblioteca no respondió ({status}). Inténtalo de nuevo.', { status: resp.status }));
+}
+
+const accessOf = (out: Record<string, unknown>): LoreAccess => ({ active: out.active === true, ...(typeof out.until === 'number' ? { until: out.until } : {}) });
+
+/** ¿Tiene esta cuenta la Biblioteca activada? */
+export const fetchLoreAccess = async (): Promise<LoreAccess> => accessOf(await accessCall('/app/lore/acceso'));
+
+/** Pide que la nube envíe el código al correo institucional. Devuelve cuántos minutos vale. */
+export async function requestLoreCode(email: string): Promise<number> {
+  const out = await accessCall('/app/lore/codigo', { email });
+  return typeof out.minutes === 'number' ? out.minutes : 10;
+}
+
+/** Activa la Biblioteca con el código recibido. */
+export const activateLore = async (code: string): Promise<LoreAccess> => accessOf(await accessCall('/app/lore/activar', { code }));
+
+// ------------------------------------------------------------
+// Vistas previas de los destacados: una imagen pequeña por guía
+// ------------------------------------------------------------
+
+const previews = new Map<string, string>();
+const previewsArriving = new Map<string, Promise<string | null>>();
+
+async function loadPreview(id: string): Promise<string | null> {
+  try {
+    const blob = await (await fromCloud(`/app/lore/vista/${encodeURIComponent(id)}`)).blob();
+    if (!blob.type.startsWith('image/')) return null;
+    const url = URL.createObjectURL(blob);
+    previews.set(id, url);
+    return url;
+  } catch {
+    // Sin conexión o sin vista: la tarjeta enseña su portada de siempre.
+    return null;
+  }
+}
+
+/** La vista previa de una guía (una dirección de imagen), o null mientras llega o si no tiene. */
+export function useLorePreview(guide: LoreGuide, source: LoreSource): string | null {
+  const wanted = guide.preview && source.id === 'nube' ? guide.id : null;
+  const [url, setUrl] = useState<string | null>(() => (wanted ? previews.get(wanted) ?? null : null));
+  useEffect(() => {
+    if (!wanted) {
+      setUrl(null);
+      return;
+    }
+    const ready = previews.get(wanted);
+    if (ready) {
+      setUrl(ready);
+      return;
+    }
+    let alive = true;
+    let pending = previewsArriving.get(wanted);
+    if (!pending) {
+      pending = loadPreview(wanted).finally(() => previewsArriving.delete(wanted));
+      previewsArriving.set(wanted, pending);
+    }
+    void pending.then((made) => alive && setUrl(made));
+    return () => {
+      alive = false;
+    };
+  }, [wanted]);
+  return url;
 }
 
 /** Los últimos archivos abiertos: «Ver» y luego «Descargar» bajan una sola vez. */

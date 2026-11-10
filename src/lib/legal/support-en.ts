@@ -32,11 +32,12 @@ The times below are **service goals, not contractual commitments**: a failure th
 
 ## 2. Before you write
 
-Three checks solve a considerable share of cases:
+These checks solve a considerable share of cases:
 
 - Make sure you’re using the **latest version** available, since the failure may already be fixed.
 - Check whether the problem persists **after closing and reopening the application**.
 - If the failure affects Gmail, YouTube or Classroom, check whether the same service works in your browser: if it doesn’t work there either, the problem is Google’s and not Frame’s.
+- If your **antivirus flags Frame** or its installer: Frame doesn’t carry a commercial code-signing certificate yet, and some security programs distrust every new installer without one. Make sure you downloaded it from the official page and write to us with the antivirus’s name and the exact warning: we report it to its maker as a false positive. Don’t turn your antivirus off for Frame.
 
 ## 3. How to write a report that can be solved
 

@@ -13,11 +13,10 @@ export interface OfficialExtension {
   id: OfficialId;
   manifest: () => ExtensionManifest;
   /**
-   * Solo para cuentas cuyo dominio de correo tiene este SHA-256 (hex). Se
-   * guarda el resumen y no el dominio: el código de Frame es público y no
-   * debe decir de qué colegio es nadie.
+   * Solo la ven las cuentas con correo (no los invitados): para usarla hay que
+   * activarla en la nube de Frame (la Biblioteca, con el correo institucional).
    */
-  domainHash?: string;
+  needsAccount?: boolean;
   /** Sin instalar, solo aparece al buscarla por su nombre (como las del catálogo). */
   searchOnly?: boolean;
 }
@@ -80,22 +79,14 @@ export const OFFICIAL_EXTENSIONS: OfficialExtension[] = [
     id: 'frame.aklore',
     manifest: official(
       'frame.aklore',
-      'AK Lore',
+      () => tr('Biblioteca'),
       () =>
-        tr('Abre la Biblioteca: guías, exámenes pasados, esquemas de calificación y ejemplos del Programa del Diploma, con buscador, filtros, favoritos y descarga por colección.'),
+        tr('Guías, exámenes pasados, esquemas de calificación y ejemplos del Programa del Diploma, con buscador, filtros, favoritos y descarga por colección. Se activa con tu correo institucional.'),
       ['school.account']
     ),
-    domainHash: '0c072257f310f7ab180aa97e5d30aa09faff66bb44510472c3826a59ebc3c8de',
+    needsAccount: true,
     searchOnly: true,
   },
 ];
 
 export const officialById = (id: string): OfficialExtension | undefined => OFFICIAL_EXTENSIONS.find((e) => e.id === id);
-
-/** SHA-256 (hex) del dominio de un correo, en minúsculas. */
-export async function domainHashOf(email: string | null | undefined): Promise<string | null> {
-  const domain = email?.split('@')[1]?.trim().toLowerCase();
-  if (!domain || !crypto?.subtle) return null;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(domain));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}

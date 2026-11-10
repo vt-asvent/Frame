@@ -2,7 +2,7 @@
 // Frame abiertas (respaldo entre equipos, cortes, permisos retirados, frenos).
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ALUMNA, type Arnes, CLAUDE, crearArnes, esperar, LUIS, ORIGEN, pdfDe, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
+import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
 
 let a: Arnes;
 beforeAll(async () => {
@@ -334,6 +334,28 @@ describe('lector de horarios', () => {
     expect(await a.sql('SELECT owner, day, n FROM lecturas WHERE owner=?', yo)).toEqual([{ owner: yo, day: hoy(), n: 1 }]);
   });
 
+  it('con las asignaturas de Frame, dice a cuál corresponde cada nombre del horario', async () => {
+    const gastado = async () => ((await a.sql('SELECT n FROM neuronas WHERE day=?', hoy())) as { n: number }[])[0]?.n ?? 0;
+    // Sin asignaturas no hay vínculos ni se llama otra vez al modelo.
+    const antes = await gastado();
+    expect((await a.pedir('/app/horario', { token: sesion(cuenta()), json: foto() })).datos.links).toEqual({});
+    expect((await gastado()) - antes).toBe(400);
+    // «Historia» se llama igual: no pasa por el modelo. «Matemática» sí, y los índices que no existen se descartan.
+    const r = await a.pedir('/app/horario', { token: sesion(cuenta()), json: { ...foto(), subjects: ['Matemáticas NS', '  historia ', 'Física', 'HISTORIA', 7, ''] } });
+    expect(r.datos.classes).toHaveLength(2);
+    expect(r.datos.links).toEqual({ Matemática: 'Matemáticas NS', Historia: 'historia' });
+    expect((await gastado()) - antes).toBe(803);
+    // Si el paso del vínculo falla, las clases vuelven igual, con lo que se llama igual.
+    const sin = await a.pedir('/app/horario', { token: sesion(cuenta()), json: { ...foto(), subjects: ['Historia', 'sin-vinculo'] } });
+    expect(sin.estado).toBe(200);
+    expect(sin.datos.classes).toHaveLength(2);
+    expect(sin.datos.links).toEqual({ Historia: 'Historia' });
+    // Todas se llaman igual: tampoco se llama al modelo.
+    const medio = await gastado();
+    expect((await a.pedir('/app/horario', { token: sesion(cuenta()), json: { ...foto(), subjects: ['Historia', 'matematica'] } })).datos.links).toEqual({ Matemática: 'matematica', Historia: 'Historia' });
+    expect((await gastado()) - medio).toBe(400);
+  });
+
   it('cada cuenta tiene un cupo diario; solo la cuota agotada de Cloudflare no lo gasta', async () => {
     const yo = cuenta();
     expect((await a.pedir('/app/horario', { token: sesion(yo), json: foto('Y3Vwbw') })).datos).toEqual({ error: 'daily' });
@@ -514,9 +536,131 @@ describe('AK Lore: la Biblioteca', () => {
     expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 300 }]);
   });
 
+  it('los destacados traen su vista previa, que no gasta el tope de descargas', async () => {
+    await fila('guia-con-vista', 'drive-9');
+    await a.sql("INSERT OR REPLACE INTO lore_vistas(id, mime, datos) VALUES('guia-con-vista', 'image/jpeg', X'FFD8FFE000104A464946')");
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    const indice = (await a.pedir('/app/lore', { token: sesion(ALUMNA) })).datos.guides as { id: string; preview?: boolean }[];
+    expect(indice.find((g) => g.id === 'guia-con-vista')?.preview).toBe(true);
+    expect(indice.find((g) => g.id === 'guia-historia')?.preview).toBeUndefined();
+    const r = await a.pedir('/app/lore/vista/guia-con-vista', { token: sesion(ALUMNA) });
+    expect(r.estado).toBe(200);
+    expect(r.r.headers.get('content-type')).toBe('image/jpeg');
+    expect(r.r.headers.get('cache-control')).toContain('private');
+    expect(r.texto.length).toBeGreaterThan(4);
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([]);
+    expect((await a.pedir('/app/lore/vista/guia-historia', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/lore/vista/..%2Fx', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/lore/vista/guia-con-vista', { token: sesion(LUIS) })).estado).toBe(403);
+    expect((await a.pedir('/app/lore/vista/guia-con-vista')).estado).toBe(401);
+  });
+
   it('la limpieza diaria olvida las descargas de días pasados', async () => {
     await a.sql("INSERT INTO lore_descargas(owner, day, n, bytes) VALUES('alguien', '2020-01-01', 3, 10)");
     await a.cron();
     expect(await a.sql("SELECT * FROM lore_descargas WHERE owner='alguien'")).toEqual([]);
+  });
+
+  describe('activarla con el correo del colegio', () => {
+    const otra = () => conCorreo(cuenta(), `persona-${Math.random().toString(36).slice(2, 8)}@gmail.prueba`);
+    const ultimo = (to: string) => [...ENVIADOS].reverse().find((carta) => carta.to === to)!;
+    const pedirCodigo = (yo: string, email: string) => a.pedir('/app/lore/codigo', { token: sesion(yo), json: { email } });
+    const activar = (yo: string, code: unknown) => a.pedir('/app/lore/activar', { token: sesion(yo), json: { code } });
+
+    it('con el código que llega al correo institucional, la cuenta abre la Biblioteca entre con el correo que entre', async () => {
+      const yo = otra();
+      const correo = `alumno-uno@${COLEGIO}`;
+      expect((await a.pedir('/app/lore/acceso', { token: sesion(yo) })).datos).toEqual({ active: false });
+      expect((await a.pedir('/app/lore', { token: sesion(yo) })).estado).toBe(403);
+      // Solo correos del colegio (cuenta el dominio tras la última arroba).
+      for (const malo of ['alguien@gmail.prueba', `x@${COLEGIO}@otro.prueba`, `sin-arroba.${COLEGIO}`, '', 7]) {
+        expect((await a.pedir('/app/lore/codigo', { token: sesion(yo), json: { email: malo } })).datos).toEqual({ error: 'email' });
+      }
+      const pedido = await pedirCodigo(yo, `  Alumno-Uno@${COLEGIO.toUpperCase()} `);
+      expect(pedido.datos).toEqual({ ok: true, minutes: 10 });
+      const carta = ultimo(correo);
+      expect(carta.code).toMatch(/^\d{6}$/);
+      expect(carta.minutes).toBe(10);
+      // Ni el correo ni el código quedan legibles en la base.
+      const guardado = JSON.stringify(await a.sql('SELECT * FROM lore_codigos WHERE owner=?', yo));
+      expect(guardado).not.toContain(carta.code);
+      expect(guardado).not.toContain('alumno-uno');
+      const errado = carta.code === '000000' ? '000001' : '000000';
+      expect((await activar(yo, errado)).datos).toEqual({ error: 'code', left: 4 });
+      const hecho = await activar(yo, ` ${carta.code.slice(0, 3)} ${carta.code.slice(3)} `);
+      expect(hecho.estado).toBe(200);
+      expect(hecho.datos.active).toBe(true);
+      expect(hecho.datos.until).toBeGreaterThan(Date.now() + 364 * 86_400_000);
+      expect((await a.pedir('/app/lore/acceso', { token: sesion(yo) })).datos).toEqual({ active: true, until: hecho.datos.until });
+      expect((await a.pedir('/app/lore', { token: sesion(yo) })).estado).toBe(200);
+      expect((await a.pedir('/app/lore/archivo/guia-historia', { token: sesion(yo) })).estado).toBe(200);
+      expect(JSON.stringify(await a.sql('SELECT * FROM lore_accesos WHERE owner=?', yo))).not.toContain('alumno-uno');
+      // El código vale una vez.
+      expect((await activar(yo, carta.code)).datos).toEqual({ error: 'expired' });
+      // La cuenta que entra con su correo del colegio no necesita código.
+      expect((await a.pedir('/app/lore/acceso', { token: sesion(ALUMNA) })).datos).toEqual({ active: true });
+    });
+
+    it('un invitado no puede pedirla, y sin remitente lo dice', async () => {
+      const invitado = cuenta();
+      expect((await pedirCodigo(invitado, `alumno@${COLEGIO}`)).datos).toEqual({ error: 'account' });
+      expect((await activar(invitado, '123456')).estado).toBe(403);
+      expect((await pedirCodigo(SIN_COMPROBAR, `alumno@${COLEGIO}`)).estado).toBe(403);
+    });
+
+    it('cinco códigos errados lo anulan, y uno caducado no vale', async () => {
+      const yo = otra();
+      const correo = `alumno-dos@${COLEGIO}`;
+      await pedirCodigo(yo, correo);
+      const bueno = ultimo(correo).code;
+      const errado = bueno === '111111' ? '222222' : '111111';
+      for (let i = 0; i < 4; i++) expect((await activar(yo, errado)).datos).toEqual({ error: 'code', left: 4 - i });
+      expect((await activar(yo, errado)).datos).toEqual({ error: 'attempts' });
+      expect((await activar(yo, bueno)).estado).toBe(429);
+      // Pedir otro lo reemplaza y devuelve los intentos.
+      await pedirCodigo(yo, correo);
+      const nuevo = ultimo(correo).code;
+      await a.sql('UPDATE lore_codigos SET expires=? WHERE owner=?', Date.now() - 1000, yo);
+      expect((await activar(yo, nuevo)).datos).toEqual({ error: 'expired' });
+      expect(await a.sql('SELECT * FROM lore_codigos WHERE owner=?', yo)).toEqual([]);
+    });
+
+    it('frena los envíos por cuenta y por correo, y cada correo activa dos cuentas como mucho', async () => {
+      const yo = otra();
+      const correo = `alumno-tres@${COLEGIO}`;
+      for (let i = 0; i < 3; i++) expect((await pedirCodigo(yo, correo)).estado).toBe(200);
+      expect((await pedirCodigo(yo, correo)).datos).toEqual({ error: 'wait' });
+      // Otra cuenta, mismo correo: el freno del correo también cuenta.
+      const segunda = otra();
+      expect((await pedirCodigo(segunda, correo)).datos).toEqual({ error: 'wait' });
+      // Un envío que no sale no deja código ni gasta el freno.
+      const tercera = otra();
+      expect((await pedirCodigo(tercera, `rebota@${COLEGIO}`)).datos).toEqual({ error: 'mail' });
+      expect(await a.sql('SELECT * FROM lore_codigos WHERE owner=?', tercera)).toEqual([]);
+      expect(await a.sql("SELECT * FROM lore_envios WHERE clave=?", `o:${tercera}`)).toEqual([]);
+      // Tope de todo Frame en el día.
+      await a.sql("INSERT OR REPLACE INTO lore_envios(clave, tramo, n) VALUES('todos', ?, 90)", hoy());
+      expect((await pedirCodigo(tercera, `alumno-cuatro@${COLEGIO}`)).datos).toEqual({ error: 'daily' });
+      await a.sql("DELETE FROM lore_envios WHERE clave='todos'");
+      // Dos cuentas activadas con un correo: la tercera ya no puede.
+      const compartido = `alumno-cinco@${COLEGIO}`;
+      for (const quien of [otra(), otra()]) {
+        await pedirCodigo(quien, compartido);
+        expect((await activar(quien, ultimo(compartido).code)).estado).toBe(200);
+      }
+      expect((await pedirCodigo(otra(), compartido)).datos).toEqual({ error: 'taken' });
+    });
+
+    it('la limpieza diaria quita códigos y activaciones caducados y los envíos de días pasados', async () => {
+      const viva = otra();
+      await a.sql("INSERT INTO lore_codigos(owner, correo, codigo, expires) VALUES('vieja', 'c', 'k', 1)");
+      await a.sql("INSERT INTO lore_accesos(owner, correo, since, expires) VALUES('vieja', 'c', 1, 2)");
+      await a.sql('INSERT INTO lore_accesos(owner, correo, since, expires) VALUES(?, ?, 1, ?)', viva, 'c', Date.now() + 60_000);
+      await a.sql("INSERT INTO lore_envios(clave, tramo, n) VALUES('o:vieja', '2020-01-01T10', 3)");
+      await a.cron();
+      expect(await a.sql("SELECT * FROM lore_codigos WHERE owner='vieja'")).toEqual([]);
+      expect(await a.sql("SELECT owner FROM lore_accesos WHERE owner IN ('vieja', ?)", viva)).toEqual([{ owner: viva }]);
+      expect(await a.sql("SELECT * FROM lore_envios WHERE clave='o:vieja'")).toEqual([]);
+    });
   });
 });

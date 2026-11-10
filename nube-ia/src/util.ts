@@ -17,6 +17,9 @@ export interface Env {
   LORE_GOOGLE_SECRET?: string;
   /** Solo en las pruebas: otro dominio de colegio (su SHA-256). */
   LORE_DOMAIN_HASH?: string;
+  /** AK Lore (lore-acceso.ts): el Apps Script de Asvent que envía el código de activación, y su clave. */
+  LORE_MAIL_URL?: string;
+  LORE_MAIL_KEY?: string;
 }
 
 const text = new TextEncoder();

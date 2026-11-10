@@ -15,9 +15,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import ExtensionInstallDialog from '@/components/extensions/ExtensionInstallDialog';
+import LibraryActivateDialog from '@/components/extensions/LibraryActivateDialog';
 import { useCourse } from '@/context/CourseContext';
 import { useToast } from '@/hooks/use-toast';
-import { domainHashOf, OFFICIAL_EXTENSIONS, type OfficialId } from '@/lib/extensions/catalog';
+import { AKLORE } from '@/lib/extensions/aklore/source';
+import { OFFICIAL_EXTENSIONS, type OfficialId } from '@/lib/extensions/catalog';
 import { compareVersions, parseManifest, PERMISSIONS, type ExtensionManifest } from '@/lib/extensions/manifest';
 import {
   installExtension,
@@ -61,7 +63,10 @@ const PREVIEWS: Record<string, string> = Object.fromEntries(
 //   debajo, lo suyo (el funcionamiento en vivo de Wire, las opciones de
 //   Animaciones…), sus permisos y desinstalar.
 // - Lo que aporta una extensión activa vive en su sitio natural (Descargar en
-//   Música, AK Lore en la barra lateral), no aquí.
+//   Música, la Biblioteca en la barra lateral), no aquí.
+// - La Biblioteca (1.9.4) no pasa por el recuadro de permisos: al activarla
+//   pide el correo institucional y el código que llega a él
+//   (LibraryActivateDialog), y solo entonces se instala.
 // - `?ext=<id>` abre directamente el panel de esa extensión.
 // ============================================================
 
@@ -98,22 +103,14 @@ export default function ExtensionsCenter() {
   const [query, setQuery] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [removing, setRemoving] = useState<InstalledExtension | null>(null);
-  const [domainHash, setDomainHash] = useState<string | null>(null);
+  const [activating, setActivating] = useState(false);
   const openId = params.get('ext');
+  /** Con correo: una cuenta de Frame, no un invitado. */
+  const hasAccount = !!userProfile?.email && !userProfile.isGuest;
 
-  useEffect(() => {
-    let alive = true;
-    void domainHashOf(userProfile?.email).then((hash) => alive && setDomainHash(hash));
-    return () => {
-      alive = false;
-    };
-  }, [userProfile?.email]);
-
-  /** Oficiales que este usuario puede ver (las de un colegio, solo con su cuenta). */
+  /** Oficiales que este usuario puede ver (la Biblioteca, solo con una cuenta). */
   const rows = useMemo<Row[]>(() => {
-    const officials: Row[] = OFFICIAL_EXTENSIONS.filter(
-      (e) => EXTENSION_PANELS[e.id] && (!e.domainHash || e.domainHash === domainHash)
-    ).map((e) => {
+    const officials: Row[] = OFFICIAL_EXTENSIONS.filter((e) => EXTENSION_PANELS[e.id] && (!e.needsAccount || hasAccount)).map((e) => {
       const entry = installed.find((i) => i.id === e.id) ?? null;
       return { id: e.id, manifest: (entry && manifestOf(entry)) || e.manifest(), official: true, entry, searchOnly: !!e.searchOnly && !entry };
     });
@@ -130,10 +127,10 @@ export default function ExtensionsCenter() {
       .filter((c) => !installed.some((i) => i.id === c.id))
       .map((c) => ({ id: c.id, manifest: c.manifest, official: false, entry: null, preview: c.preview, remote: true }));
     return [...officials, ...thirdParty, ...remote];
-  }, [installed, domainHash, catalog]);
+  }, [installed, hasAccount, catalog]);
 
   const q = normalize(query.trim());
-  /** Sin espacios: «aklore» encuentra «AK Lore». */
+  /** Sin espacios ni tildes: «frame descargas» encuentra «Frame Descargas». */
   const squeezed = (text: string) => normalize(text).replace(/\s+/g, '');
   const visible = q
     ? rows.filter((r) =>
@@ -162,7 +159,10 @@ export default function ExtensionsCenter() {
 
   const toggle = (row: Row, on: boolean) => {
     if (!row.entry) {
-      if (on) setPending({ manifest: row.manifest, official: row.official, previous: null });
+      if (!on) return;
+      // La Biblioteca se instala al activarla con el código del correo institucional.
+      if (row.id === AKLORE) setActivating(true);
+      else setPending({ manifest: row.manifest, official: row.official, previous: null });
       return;
     }
     setExtensionEnabled(row.id, on);
@@ -280,6 +280,7 @@ export default function ExtensionsCenter() {
         onCancel={() => setPending(null)}
         onAccept={accept}
       />
+      <LibraryActivateDialog uid={userProfile?.id} open={activating} onClose={() => setActivating(false)} />
 
       <AlertDialog open={!!removing} onOpenChange={(value) => !value && setRemoving(null)}>
         <AlertDialogContent>

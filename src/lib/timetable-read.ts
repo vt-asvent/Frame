@@ -3,6 +3,7 @@ import { getImage } from '@/lib/music-db';
 import { NUBE, nubeFetch } from '@/lib/nube';
 import { getSupabase } from '@/lib/supabase/client';
 import { localImageKey, readTimetables, tidyClasses, updateTimetable } from '@/lib/timetable';
+import { linkAfterReading } from '@/lib/timetable-links';
 import { tr } from '@/lib/i18n';
 
 // ============================================================
@@ -12,6 +13,10 @@ import { tr } from '@/lib/i18n';
 // Worker de Frame en Cloudflare (nube-ia/src/horario.ts), que la lee con
 // Qwen 3.8 o Gemma 4 en Workers AI —sin guardarla— y con un cupo diario por cuenta. Lo que
 // vuelve se limpia y se une por bloques (timetable.ts) antes de guardarse.
+//
+// Con la foto van los NOMBRES de las asignaturas de Frame (1.9.3): el mismo
+// modelo dice a cuál corresponde cada nombre del horario («Mat. AyE» →
+// «Matemática»), y aquí se guarda ese vínculo (timetable-links.ts).
 //
 // «Leyendo» no se guarda: es de este equipo y de este momento. Si Frame se
 // cierra a mitad, el horario queda «sin leer» y se puede repetir.
@@ -60,11 +65,14 @@ const ERRORS: Record<string, () => string> = {
   daily: () => tr('El lector de horarios ya no tiene lecturas libres hoy. Inténtalo mañana.'),
 };
 
-/** Lee (o vuelve a leer) las clases de un horario y las guarda en su ficha. */
-export async function readTimetable(uid: string, id: string): Promise<void> {
-  if (reading.has(id)) return;
+/**
+ * Lee (o vuelve a leer) las clases de un horario y las guarda en su ficha, con
+ * el vínculo de cada nombre con su asignatura de Frame. True si las leyó.
+ */
+export async function readTimetable(uid: string, id: string, courses: readonly { id: string; name: string }[] = []): Promise<boolean> {
+  if (reading.has(id)) return false;
   const timetable = readTimetables(uid).find((item) => item.id === id);
-  if (!timetable) return;
+  if (!timetable) return false;
   reading.add(id);
   window.dispatchEvent(new Event(READING_CHANGED));
   try {
@@ -77,7 +85,7 @@ export async function readTimetable(uid: string, id: string): Promise<void> {
     const response = await nubeFetch(`${NUBE}/app/horario`, {
       method: 'POST',
       headers: { authorization: `Bearer ${session.session.access_token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(await shrink(photo)),
+      body: JSON.stringify({ ...(await shrink(photo)), subjects: courses.map((course) => course.name.trim().slice(0, 80)).filter(Boolean).slice(0, 60) }),
     }).catch(() => null);
     const data = response ? await response.json().catch(() => null) : null;
     if (!response?.ok) {
@@ -90,9 +98,16 @@ export async function readTimetable(uid: string, id: string): Promise<void> {
       throw new Error(tr('No se encontraron clases en la imagen. Prueba con una foto más nítida o añádelas a mano en «Semanal».'));
     }
     updateTimetable(uid, id, { classes, read: 'done' });
+    const proposed: Record<string, string> = {};
+    if (data?.links && typeof data.links === 'object') {
+      for (const [subject, name] of Object.entries(data.links as Record<string, unknown>)) if (typeof name === 'string') proposed[subject] = name;
+    }
+    linkAfterReading(uid, classes, courses, proposed);
+    return true;
   } catch (error) {
     const message = error instanceof Error && error.message ? error.message : tr('No se pudo leer el horario.');
     updateTimetable(uid, id, { read: 'failed', error: message });
+    return false;
   } finally {
     reading.delete(id);
     window.dispatchEvent(new Event(READING_CHANGED));

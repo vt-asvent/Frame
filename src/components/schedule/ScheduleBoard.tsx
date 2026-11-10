@@ -14,19 +14,23 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import ScheduleLinkDialog from '@/components/schedule/ScheduleLinkDialog';
 import ScheduleTimeline from '@/components/schedule/ScheduleTimeline';
 import ScheduleWeek from '@/components/schedule/ScheduleWeek';
+import { useCourse } from '@/context/CourseContext';
 import { useToast } from '@/hooks/use-toast';
 import { useStoredImage } from '@/hooks/use-stored-image';
 import { IMAGE_UPDATED_EVENT, getImageRecord, type ImageUpdatedDetail } from '@/lib/music-db';
 import { scheduleImageKey } from '@/lib/profile-scope';
 import { readTimetable, useReading } from '@/lib/timetable-read';
+import { readSubjectLinks, unlinkedSubjects } from '@/lib/timetable-links';
 import {
   addTimetable,
   localImageKey,
   migrateLegacySchedule,
   monthKey,
   monthName,
+  readTimetables,
   removeTimetable,
   updateTimetable,
   useTimetables,
@@ -60,6 +64,19 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const reading = useReading(selected?.id);
+  const { courses } = useCourse();
+  // Los nombres del horario recién leído que nadie supo vincular: se preguntan una vez.
+  const [unlinked, setUnlinked] = useState<string[]>([]);
+
+  /** Lee la foto y, si algún nombre quedó sin asignatura, lo pregunta. */
+  const read = (id: string) => {
+    const own = courses ?? [];
+    void readTimetable(uid, id, own).then((done) => {
+      if (!done || own.length === 0) return;
+      const classes = readTimetables(uid).find((item) => item.id === id)?.classes ?? [];
+      setUnlinked(unlinkedSubjects(classes, own, readSubjectLinks(uid)));
+    });
+  };
 
   // La foto única de antes (hasta la 1.8.x) pasa a ser el primer horario,
   // también si llega de otro dispositivo después de abrir Inicio.
@@ -98,7 +115,7 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
       const timetable = await addTimetable(uid, month, picked);
       setPicked(null);
       setView('line');
-      void readTimetable(uid, timetable.id);
+      read(timetable.id);
     } catch (error) {
       const quota = error instanceof Error && error.name === 'QuotaExceededError';
       toast({
@@ -139,7 +156,7 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
                 {tr('Añadir horario…')}
               </DropdownMenuItem>
               {selected && (
-                <DropdownMenuItem disabled={reading} onSelect={() => void readTimetable(uid, selected.id)}>
+                <DropdownMenuItem disabled={reading} onSelect={() => read(selected.id)}>
                   <RotateCw className="mr-2 h-4 w-4" />
                   {tr('Volver a leer la foto')}
                 </DropdownMenuItem>
@@ -175,11 +192,12 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
         ) : view === 'week' ? (
           <ScheduleWeek classes={selected.classes} onChange={(classes) => updateTimetable(uid, selected.id, { classes, read: 'done' })} />
         ) : (
-          <Line uid={uid} timetable={selected} reading={reading} onManual={() => setView('week')} />
+          <Line uid={uid} timetable={selected} reading={reading} onRead={() => read(selected.id)} onManual={() => setView('week')} />
         )}
       </div>
 
       {picked && <AddDialog image={picked} onCancel={() => setPicked(null)} onSave={save} existing={list} />}
+      {unlinked.length > 0 && <ScheduleLinkDialog uid={uid} subjects={unlinked} courses={courses ?? []} onClose={() => setUnlinked([])} />}
 
       <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
         <AlertDialogContent>
@@ -220,7 +238,7 @@ function EmptyState({ onPick }: { onPick: () => void }) {
 }
 
 /** La línea del día, o en qué va la lectura de la foto. */
-function Line({ uid, timetable, reading, onManual }: { uid: string; timetable: Timetable; reading: boolean; onManual: () => void }) {
+function Line({ uid, timetable, reading, onRead, onManual }: { uid: string; timetable: Timetable; reading: boolean; onRead: () => void; onManual: () => void }) {
   if (reading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-10 text-center" role="status">
@@ -233,11 +251,11 @@ function Line({ uid, timetable, reading, onManual }: { uid: string; timetable: T
   if (timetable.classes.length > 0) {
     return (
       <>
-        <ScheduleTimeline classes={timetable.classes} />
+        <ScheduleTimeline uid={uid} classes={timetable.classes} />
         {timetable.read === 'failed' && timetable.error && (
           <p className="mt-3 text-center text-xs text-muted-foreground">
             {timetable.error}{' '}
-            <button type="button" className="font-medium text-primary hover:underline" onClick={() => void readTimetable(uid, timetable.id)}>
+            <button type="button" className="font-medium text-primary hover:underline" onClick={onRead}>
               {tr('Reintentar')}
             </button>
           </p>
@@ -253,7 +271,7 @@ function Line({ uid, timetable, reading, onManual }: { uid: string; timetable: T
         <p className="max-w-lg text-sm text-muted-foreground">{tr('Frame puede leer las clases de esta foto con IA abierta en Cloudflare, que no la guarda.')}</p>
       )}
       <div className="flex flex-wrap justify-center gap-2">
-        <Button size="sm" className="rounded-full" onClick={() => void readTimetable(uid, timetable.id)}>
+        <Button size="sm" className="rounded-full" onClick={onRead}>
           {failed ? <RotateCw /> : <Sparkles />}
           {failed ? tr('Reintentar') : tr('Leer las clases')}
         </Button>

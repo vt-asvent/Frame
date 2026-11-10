@@ -94,12 +94,48 @@ export function cleanClass(raw: unknown): TimetableClass | null {
 
 const sameSubject = (a: string, b: string) => normalize(a) === normalize(b);
 
-const wordsOf = (value: string) => normalize(value).split(' ').filter(Boolean);
-/** La misma palabra, o su plural («matemática» y «matemáticas», «arte» y «artes»). */
-const sameWord = (a: string, b: string) => {
-  if (a === b) return true;
-  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  return short.length >= 4 && long.length - short.length <= 2 && long.startsWith(short);
+interface Word {
+  text: string;
+  /** Venía con punto («Mat.», «Ed.»): una abreviatura. */
+  short: boolean;
+}
+
+/** Las palabras de un nombre, sin tildes ni mayúsculas, y cuáles son abreviaturas. */
+function wordsOf(value: string): Word[] {
+  const flat = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return [...flat.matchAll(/([\p{L}\p{N}]+)(\.?)/gu)].map((match) => ({ text: match[1], short: match[2] === '.' }));
+}
+
+/** Una sola errata de diferencia: una letra cambiada, de más, de menos o dos cruzadas. */
+function oneSlipApart(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length - 1;
+  let endB = b.length - 1;
+  while (endA >= start && endB >= start && a[endA] === b[endB]) {
+    endA--;
+    endB--;
+  }
+  const restA = endA - start + 1;
+  const restB = endB - start + 1;
+  if (restA <= 1 && restB <= 1) return true;
+  return restA === 2 && restB === 2 && a[start] === b[start + 1] && a[start + 1] === b[start];
+}
+
+/**
+ * La misma palabra: igual, su plural («matemática» y «matemáticas», «arte» y
+ * «artes»), su abreviatura con punto («Mat.», «Ed.») o con una errata de las
+ * que deja la lectura de una foto («Historla»). La errata solo cuenta en
+ * palabras de cinco letras o más: en las cortas, una letra cambia de palabra.
+ */
+const sameWord = (a: Word, b: Word) => {
+  if (a.text === b.text) return true;
+  if (a.short && a.text.length >= 2 && b.text.startsWith(a.text)) return true;
+  if (b.short && b.text.length >= 2 && a.text.startsWith(b.text)) return true;
+  const [short, long] = a.text.length <= b.text.length ? [a.text, b.text] : [b.text, a.text];
+  if (short.length >= 4 && long.length - short.length <= 2 && long.startsWith(short)) return true;
+  return short.length >= 5 && oneSlipApart(short, long);
 };
 
 /**
@@ -107,7 +143,8 @@ const sameWord = (a: string, b: string) => {
  * (1.9.2). De más a menos seguro:
  *   · el mismo nombre al normalizar;
  *   · una dentro de la otra por PALABRAS enteras y empezando igual («Física» y
- *     «Física NM», «Historia» e «Historia del Perú»);
+ *     «Física NM», «Historia» e «Historia del Perú»), donde una palabra vale
+ *     también por su plural, su abreviatura con punto o con una errata;
  *   · una abreviatura de una palabra («Mat», «Comu») o unas siglas («TdC»,
  *     «CAS»), si solo una asignatura empieza así o tiene esas iniciales.
  * Si dos encajan igual, ninguna: la tarjeta lleva la imagen, el profesor y
@@ -119,8 +156,9 @@ export function courseForSubject<T extends { name: string }>(courses: readonly T
   const wanted = wordsOf(subject);
   if (wanted.length === 0) return null;
   const named = courses.map((course) => ({ course, words: wordsOf(course.name) })).filter((c) => c.words.length > 0);
-  const key = wanted.join(' ');
-  const exact = named.find((c) => c.words.join(' ') === key);
+  const joined = (words: Word[]) => words.map((word) => word.text).join(' ');
+  const key = joined(wanted);
+  const exact = named.find((c) => joined(c.words) === key);
   if (exact) return exact.course;
   const within = named.filter((c) => {
     if (!sameWord(c.words[0], wanted[0])) return false;
@@ -129,12 +167,12 @@ export function courseForSubject<T extends { name: string }>(courses: readonly T
   });
   if (within.length > 0) return within.length === 1 ? within[0].course : null;
   if (wanted.length > 1) return null;
-  const short = wanted[0];
+  const short = wanted[0].text;
   // Una abreviatura («Mat», «Comu»): el comienzo del nombre de una sola asignatura.
-  const starting = short.length >= 3 ? named.filter((c) => c.words[0].startsWith(short)) : [];
+  const starting = short.length >= 3 ? named.filter((c) => c.words[0].text.startsWith(short)) : [];
   // Unas siglas («TdC», «CAS», «DPCC»): las iniciales de una sola asignatura, con o sin sus «de», «del» e «y».
-  const initials = (words: string[]) => words.map((word) => word[0]).join('');
-  const spelled = short.length >= 2 ? named.filter((c) => c.words.length >= 2 && (initials(c.words) === short || initials(c.words.filter((word) => word.length > 3)) === short)) : [];
+  const initials = (words: Word[]) => words.map((word) => word.text[0]).join('');
+  const spelled = short.length >= 2 ? named.filter((c) => c.words.length >= 2 && (initials(c.words) === short || initials(c.words.filter((word) => word.text.length > 3)) === short)) : [];
   const candidates = new Set([...starting, ...spelled]);
   return candidates.size === 1 ? [...candidates][0].course : null;
 }

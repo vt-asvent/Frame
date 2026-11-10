@@ -73,7 +73,7 @@ const navItems: NavItem[] = [
   { href: '/music', get label() { return tr('Música'); }, icon: Music, ghostFor: ['/playlists'], group: 3 },
 ];
 
-/** Extensión AK Lore → «Biblioteca» (1.9.2): tras Calendario, solo para cuentas del colegio. */
+/** Extensión «Biblioteca» (1.9.2): tras Calendario, para las cuentas que la activaron (1.9.4). */
 const akLoreItem: NavItem = { href: '/biblioteca', get label() { return tr('Biblioteca'); }, icon: Library, group: 1 };
 
 /** Extensión Wire (1.8.0): Drive, con la cuenta conectada en Wire, bajo Classroom. */
@@ -124,7 +124,7 @@ export function SidebarContent({
   hostDialogs?: boolean;
 }) {
   const pathname = usePathname();
-  const akLore = useAkLoreAccess(userProfile?.email) === 'allowed';
+  const akLore = useAkLoreAccess(userProfile?.id) === 'allowed';
   const drive = useExtensionOn('frame.wire');
   const items = React.useMemo(() => menuItems(akLore, drive), [akLore, drive]);
   const {

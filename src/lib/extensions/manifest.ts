@@ -109,8 +109,8 @@ export const PERMISSIONS: Record<PermissionId, { title: () => string; detail: ()
     detail: () => tr('Añade colores, fondos o animaciones que tú eliges en Ajustes. No toca tus datos.'),
   },
   'school.account': {
-    title: () => tr('Tu cuenta del colegio'),
-    detail: () => tr('Solo funciona con la cuenta de tu colegio.'),
+    title: () => tr('Tu correo institucional'),
+    detail: () => tr('Para activarla, Asvent envía un código a tu correo institucional. En la nube de Frame solo queda una huella de ese correo, que no se puede leer.'),
   },
 };
 

@@ -208,6 +208,8 @@ The User undertakes to use the Application in accordance with the law, good fait
 
 **15.2.** This disclaimer **doesn’t affect** the legal warranty or the rights that the Consumer Protection and Defense Code, Law No. 29571, mandatorily recognizes to the User who has the status of consumer, nor the suitability required of the product under that law.
 
+**15.3. Security software.** The installers of the Application, and those of the programs it installs at the User’s request, carry the Provider’s own signature, which the Application checks before installing or updating, but **not a commercial code-signing certificate**. An antivirus or other security program may therefore treat them as unknown or suspicious, quarantine them or slow the computer down while it analyzes them. That behavior belongs to the security program and not to the Application, and the Provider isn’t responsible for it, without prejudice to 15.2. The Application must be downloaded only from the Provider’s official pages and can be uninstalled at any time from Windows “Installed apps”. If a security program flags it, the User may write to vt.asvent@gmail.com with the program’s name and the warning it showed.
+
 ### Clause 16. Liability regime
 
 **16.1.** The Provider is liable for the damages it causes through willful misconduct or gross negligence. **Any stipulation seeking to exclude or limit that liability would be null under article 1328 of the Civil Code, and this contract doesn’t contain one.**
@@ -361,7 +363,7 @@ Only if you connect a web chat —for example, claude.ai or ChatGPT— from the 
 
 Only when you ask Frame to read the classes in a schedule photo —when adding it, with “Read the classes” or with “Read the photo again”—:
 
-**What passes through without being stored.** The photo, reduced, travels encrypted with your Account session to a Provider service hosted on Cloudflare, which hands it to an open model on **Cloudflare Workers AI** —**Qwen 3.8** or, if it doesn’t respond or the daily free limit is near, **Gemma 4**— to extract the classes —day, time, subject and, if written, room and teacher— and returns them to you. **Neither that service nor Cloudflare stores the photo or what was read**, or uses it to train models: Cloudflare processes it with zero data retention.
+**What passes through without being stored.** The photo, reduced, travels encrypted with your Account session to a Provider service hosted on Cloudflare, which hands it to an open model on **Cloudflare Workers AI** —**Qwen 3.8** or, if it doesn’t respond or the daily free limit is near, **Gemma 4**— to extract the classes —day, time, subject and, if written, room and teacher— and returns them to you. The names of your Frame subjects —only the names— travel with the photo, so the same model can tell which one each class in the schedule belongs to. **Neither that service nor Cloudflare stores the photo, those names or what was read**, or uses it to train models: Cloudflare processes it with zero data retention.
 
 **What is stored.** So that no one uses up everyone else’s readings, the service notes how many photos your Account reads each day, along with its identifier; that note is deleted the next day. The classes read are saved in your Frame as part of your Academic State (section 3.2), where you can correct or delete them.
 
@@ -387,13 +389,15 @@ Only if you turn on “Translation” on a song’s lyrics, and only when those 
 
 **It’s optional.** With “Translation” off, nothing is sent.
 
-### 3.11 Library (AK Lore extension)
+### 3.11 Library (extension)
 
-Only if you turn on the AK Lore extension, which is for school accounts:
+Only if you turn on the “Library” extension, which is for students of the school:
 
-**What happens.** The Application requests the index of the material, and each file you open or download, from a service of the Provider hosted on Cloudflare, with your Account session. The service checks that your email belongs to the school and is verified —it compares a digest (SHA-256) of its domain, without storing it— and hands you the file, which it fetches from the Provider’s storage on Google Drive. **You never get access to that Drive, and the service doesn’t see your Google Drive or anything on your computer.**
+**How it’s activated.** You type your school email and a service of the Provider hosted on Cloudflare checks that it belongs to the school —it compares a digest (SHA-256) of its domain— and sends a single-use code to that address, from the Provider’s email account at Google. With the code, the Library stays activated for one year on the Account you are using, whichever email you sign in with. If you sign in to Frame with the school email itself, already verified, no code is needed.
 
-**What is stored.** How many files and how many bytes your Account downloads each day, along with its identifier, to apply a daily cap; that note is deleted the next day. Which files you open or download isn’t stored. The ones you mark as favorites are part of your Academic State (section 3.2).
+**What happens next.** The Application requests the index of the material, the preview of the featured documents and each file you open or download from that service, with your Account session. The service checks that your Account has it activated and hands you the file, which it fetches from the Provider’s storage on Google Drive. **You never get access to that Drive, and the service doesn’t see your Google Drive or anything on your computer.**
+
+**What is stored.** Of your school email, the service stores only a keyed fingerprint —it can’t be read or reconstructed—, along with your Account identifier and the date, to know you have it activated and so that one email can’t activate more than two Accounts; it’s deleted when the activation expires. Of the code, another fingerprint, until you use it or it expires (10 minutes). The message with the code stays, like any sent email, in the Provider’s mailbox at Google, with your school address; the Provider doesn’t use it for anything else. Also, how many files and how many bytes your Account downloads each day, along with its identifier, to apply a daily cap; that note is deleted the next day. Which files you open or download isn’t stored. The ones you mark as favorites are part of your Academic State (section 3.2).
 
 ## 4. Purposes and legal bases
 
@@ -526,7 +530,8 @@ List in force as of ${effectiveDate}:
 
 - **Supabase** — authentication, database and backup storage — servers in the United States of America (Amazon Web Services region us-west-2, Oregon) — processing contract: to be defined; in the meantime, the data processing agreement incorporated into Supabase’s terms of service applies.
 - **GitHub, Inc.** — hosting of the installers and the update channel — United States.
-- **Cloudflare, Inc.** — relay for web AI chats, only if you connect them (section 3.7); schedule reading and lyrics translation with Workers AI, only if you ask for them (sections 3.8 and 3.10); and the Library service, only with the AK Lore extension (section 3.11) — worldwide network of data centers; database in North America — the data processing agreement incorporated into Cloudflare’s terms of service applies.
+- **Cloudflare, Inc.** — relay for web AI chats, only if you connect them (section 3.7); schedule reading and lyrics translation with Workers AI, only if you ask for them (sections 3.8 and 3.10); and the Library service, only with its extension (section 3.11) — worldwide network of data centers; database in North America — the data processing agreement incorporated into Cloudflare’s terms of service applies.
+- **Google LLC** — storage of the Library’s material (Google Drive) and sending of the code that activates it (email of the Provider’s account), only with its extension (section 3.11) — United States and other countries where Google operates — Google’s terms of service apply.
 
 Every addition or replacement of a processor will be communicated in accordance with section 12 of the Privacy Policy.
 

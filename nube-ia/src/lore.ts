@@ -5,36 +5,26 @@
 // a Drive: la app pide el índice y cada archivo aquí, con su sesión de Frame,
 // y esta nube los trae de Drive y se los pasa tal cual, sin guardarlos.
 //
-// Solo para cuentas del colegio con el correo comprobado: el dominio se compara
-// por su resumen SHA-256 (el código público no lo nombra), como en la app.
+// Solo para cuentas que pueden abrirla (lore-acceso.ts): las que entran con su
+// correo del colegio, comprobado, o las que la activaron con el código que
+// llega a ese correo (1.9.3).
 // Cada cuenta tiene un tope diario de archivos y de bytes (`lore_descargas`).
 //
 // Rutas: GET /app/lore → { format: 1, guides: [...] }
 //        GET /app/lore/archivo/<id> → el archivo (attachment)
-// Errores: 403 `school` (otra cuenta) · 404 · 429 `quota` · 503 `lore-off`
+//        GET /app/lore/vista/<id> → la vista previa de un destacado (1.9.4):
+//        la primera página en una imagen pequeña, guardada en D1 (`lore_vistas`)
+//        al subir el archivo. No cuenta para el tope de descargas.
+// Errores: 403 `school` (sin activar) · 404 · 429 `quota` · 503 `lore-off`
 // (sin Drive conectado) o `drive` (Drive no respondió).
+import { hasLoreAccess } from './lore-acceso';
 import { type AppUser } from './supabase';
 import { type Env, json } from './util';
 
-/** SHA-256 del dominio del colegio: el mismo que lleva la app (catalog.ts). */
-export const SCHOOL_DOMAIN_HASH = '0c072257f310f7ab180aa97e5d30aa09faff66bb44510472c3826a59ebc3c8de';
 export const DAILY_FILES = 300;
 export const DAILY_BYTES = 3_000_000_000;
 
 const ID = /^[a-z0-9][a-z0-9-]{2,79}$/;
-
-export async function isSchoolAccount(env: Env, user: AppUser): Promise<boolean> {
-  // Lo que sigue a la ÚLTIMA arroba: es el dominio que de verdad recibe el correo.
-  const email = user.email ?? '';
-  const domain = email.slice(email.lastIndexOf('@') + 1).trim().toLowerCase();
-  if (!domain || !email.includes('@') || !user.confirmed) return false;
-  return (await sha256Hex(domain)) === (env.LORE_DOMAIN_HASH || SCHOOL_DOMAIN_HASH);
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 interface LoreRow {
   id: string;
@@ -55,10 +45,10 @@ interface LoreRow {
 
 /** Todo el índice (unos cientos de filas: cabe en una respuesta). */
 export async function loreIndex(env: Env, user: AppUser): Promise<Response> {
-  if (!(await isSchoolAccount(env, user))) return json({ error: 'school' }, 403);
+  if (!(await hasLoreAccess(env, user))) return json({ error: 'school' }, 403);
   const { results } = await env.DB.prepare(
-    'SELECT id, title, subject, section, kind, component, lang, year, size, pages, summary, format, updated FROM lore ORDER BY section, subject, kind, title',
-  ).all<Omit<LoreRow, 'drive_id'>>();
+    'SELECT id, title, subject, section, kind, component, lang, year, size, pages, summary, format, updated, EXISTS (SELECT 1 FROM lore_vistas v WHERE v.id = lore.id) AS preview FROM lore ORDER BY section, subject, kind, title',
+  ).all<Omit<LoreRow, 'drive_id'> & { preview: number }>();
   const guides = results.map((r) => ({
     id: r.id,
     title: r.title,
@@ -70,6 +60,7 @@ export async function loreIndex(env: Env, user: AppUser): Promise<Response> {
     ...(r.year ? { year: r.year } : {}),
     ...(r.pages ? { pages: r.pages } : {}),
     ...(r.summary ? { summary: r.summary } : {}),
+    ...(r.preview ? { preview: true } : {}),
     size: r.size,
     format: r.format,
     updated: r.updated,
@@ -122,9 +113,18 @@ const MIME: Record<string, string> = {
   txt: 'text/plain; charset=utf-8',
 };
 
+/** La vista previa de un destacado. La portada de un documento público: el equipo puede guardarla una semana. */
+export async function loreView(env: Env, user: AppUser, id: string): Promise<Response> {
+  if (!(await hasLoreAccess(env, user))) return json({ error: 'school' }, 403);
+  const row = ID.test(id) ? await env.DB.prepare('SELECT mime, datos FROM lore_vistas WHERE id = ?').bind(id).first<{ mime: string; datos: ArrayBuffer | number[] }>() : null;
+  if (!row) return json({ error: 'not_found' }, 404);
+  const bytes = row.datos instanceof ArrayBuffer ? new Uint8Array(row.datos) : Uint8Array.from(row.datos);
+  return new Response(bytes, { status: 200, headers: { 'content-type': /^image\/(jpeg|png|webp)$/.test(row.mime) ? row.mime : 'application/octet-stream', 'cache-control': 'private, max-age=604800' } });
+}
+
 /** Un archivo: se cuenta, se trae de Drive y se pasa sin guardarlo. */
 export async function loreFile(env: Env, user: AppUser, id: string): Promise<Response> {
-  if (!(await isSchoolAccount(env, user))) return json({ error: 'school' }, 403);
+  if (!(await hasLoreAccess(env, user))) return json({ error: 'school' }, 403);
   if (!ID.test(id)) return json({ error: 'not_found' }, 404);
   const row = await env.DB.prepare('SELECT id, drive_id, title, size, format FROM lore WHERE id = ?').bind(id).first<Pick<LoreRow, 'id' | 'drive_id' | 'title' | 'size' | 'format'>>();
   if (!row) return json({ error: 'not_found' }, 404);

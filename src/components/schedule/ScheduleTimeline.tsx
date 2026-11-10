@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check } from 'lucide-react';
 import WaveBackdrop from '@/components/courses/WaveBackdrop';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useCourse } from '@/context/CourseContext';
 import { useStoredImage } from '@/hooks/use-stored-image';
+import { useCardImageRatio } from '@/lib/card-image-height';
+import { linkedCourse, setSubjectLink, useSubjectLinks } from '@/lib/timetable-links';
 import {
-  courseForSubject,
   minutesOf,
   minutesOfDay,
+  normalize,
   occurrences,
   startOfDay,
   subjectColor,
@@ -26,10 +30,12 @@ import { cn } from '@/lib/utils';
 //   ░▒ │ Matemática │ │ Historia │ │ Física │ ▒░   tarjetas
 //                         ┃ la hora, siempre al medio
 //
-// Cada tarjeta (1.9.2) lleva la imagen de su asignatura (sin imagen elegida,
-// las olas que tiene en Asignaturas), el profesor y, en una fila, las tareas
-// pendientes y la hora; el día, si no es hoy, va en una etiqueta sobre la
-// imagen. Mide un poco menos de un tercio del ancho: una al medio, una a
+// Cada tarjeta (1.9.3, Diego) es la de su asignatura: la imagen (sin imagen
+// elegida, las olas que tiene en Asignaturas) con la PROPORCIÓN que el usuario
+// eligió en Asignaturas, una línea y, debajo, solo el nombre, centrado. Sin
+// esquinas redondeadas. El día, si no es hoy, va en una etiqueta sobre la
+// imagen. Al tocarla se elige a qué asignatura de Frame corresponde
+// (timetable-links.ts). Mide un poco menos de un tercio del ancho: una al medio, una a
 // cada lado y, en los bordes, un trozo de la siguiente con degradado. La pista
 // se mueve con el reloj: una clase de 8 a 12 queda centrada a las 10, y a las
 // 9 la línea cae a un cuarto de su tarjeta. Entre días (y el fin de semana)
@@ -39,6 +45,8 @@ import { cn } from '@/lib/utils';
 /** Ancho de la tarjeta y del hueco, en fracción del recuadro. En un teléfono, una tarjeta casi entera. */
 const sizes = (width: number) => (width < 640 ? { card: 0.62, gap: 0.04 } : { card: 0.28, gap: 0.02 });
 const FADE = 'linear-gradient(90deg, transparent 0, #000 7%, #000 93%, transparent 100%)';
+/** Alto de la franja del nombre, bajo la imagen. */
+const NAME_ROW = 30;
 
 function dayLabel(occurrence: Occurrence, today: number): string {
   const days = Math.round((startOfDay(occurrence.start) - today) / 86_400_000);
@@ -48,9 +56,11 @@ function dayLabel(occurrence: Occurrence, today: number): string {
   return dayTitle(occurrence.item.day - 1);
 }
 
-export default function ScheduleTimeline({ classes }: { classes: TimetableClass[] }) {
+export default function ScheduleTimeline({ uid, classes }: { uid: string; classes: TimetableClass[] }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  // La misma proporción de imagen que en Asignaturas: la tarjeta crece o encoge con ella.
+  const ratio = useCardImageRatio();
   useEffect(() => {
     const box = boxRef.current;
     if (!box) return;
@@ -82,24 +92,27 @@ export default function ScheduleTimeline({ classes }: { classes: TimetableClass[
       {classes.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">{tr('Este horario aún no tiene clases. Añádelas en «Semanal».')}</p>
       ) : (
-        <Track list={list} visible={visible} width={width} card={card} step={step} offset={offset} now={now} today={today} />
+        <Track uid={uid} list={list} visible={visible} width={width} card={card} height={Math.round(card * ratio) + NAME_ROW} step={step} offset={offset} now={now} today={today} />
       )}
     </div>
   );
 }
 
 interface TrackProps {
+  uid: string;
   list: Occurrence[];
   visible: { occurrence: Occurrence; index: number }[];
   width: number;
   card: number;
+  /** Alto de la tarjeta: su imagen, con la proporción de Asignaturas, y el nombre. */
+  height: number;
   step: number;
   offset: number;
   now: number;
   today: number;
 }
 
-function Track({ list, visible, width, card, step, offset, now, today }: TrackProps) {
+function Track({ uid, list, visible, width, card, height, step, offset, now, today }: TrackProps) {
   return (
     <>
       {/* La hora de ahora, siempre al medio */}
@@ -141,9 +154,9 @@ function Track({ list, visible, width, card, step, offset, now, today }: TrackPr
             </div>
 
             {/* Tarjetas */}
-            <div className="relative mt-2 h-[12.5rem]">
+            <div className="relative mt-2" style={{ height }}>
               {visible.map(({ occurrence, index }) => (
-                <ClassCard key={occurrence.key} occurrence={occurrence} left={index * step} width={card} now={now} today={today} />
+                <ClassCard key={occurrence.key} uid={uid} occurrence={occurrence} left={index * step} width={card} now={now} today={today} />
               ))}
             </div>
           </div>
@@ -153,60 +166,87 @@ function Track({ list, visible, width, card, step, offset, now, today }: TrackPr
   );
 }
 
-function ClassCard({ occurrence, left, width, now, today }: { occurrence: Occurrence; left: number; width: number; now: number; today: number }) {
+function ClassCard({ uid, occurrence, left, width, now, today }: { uid: string; occurrence: Occurrence; left: number; width: number; now: number; today: number }) {
   const { item } = occurrence;
-  const { courses, tasks } = useCourse();
-  // La misma asignatura de Frame: su imagen, su profesor y sus tareas.
-  const course = useMemo(() => courseForSubject(courses ?? [], item.subject), [courses, item.subject]);
+  const { courses } = useCourse();
+  const links = useSubjectLinks(uid);
+  const own = courses ?? [];
+  // La asignatura de Frame de esta clase: su imagen y su nombre.
+  const course = useMemo(() => linkedCourse(courses ?? [], links, item.subject), [courses, links, item.subject]);
   const [image, , imageRead] = useStoredImage(course ? `courseImage_${course.id}` : null);
   // Una imagen guardada que ya no se puede pintar (dañada): como si no la tuviera.
   const [broken, setBroken] = useState(false);
   useEffect(() => setBroken(false), [image]);
-  const pending = useMemo(() => (course ? (tasks ?? []).filter((task) => task.courseId === course.id && task.progress < 100).length : 0), [course, tasks]);
   const current = now >= occurrence.start && now < occurrence.end;
   const past = now >= occurrence.end;
   const progress = current ? (now - occurrence.start) / (occurrence.end - occurrence.start) : 0;
-  // El profesor que el usuario puso en la asignatura manda sobre el leído de la foto, que suele venir en siglas.
-  const teacher = course?.teacherName?.trim() || item.teacher || '';
   const day = startOfDay(occurrence.start) === today ? null : dayLabel(occurrence, today);
-  const hours = `${timeOf(minutesOf(item.start)!)}–${timeOf(minutesOf(item.end)!)}`;
+  const teacher = course?.teacherName?.trim() || item.teacher || '';
+  const details = [item.subject, `${item.start}–${item.end}`, item.room, teacher].filter(Boolean).join(' · ');
+  // «Ninguna», dicho por el usuario: no se le vuelve a ofrecer en la tarjeta.
+  const undecided = !course && links.get(normalize(item.subject)) !== '' && own.length > 0;
+
+  const face = (
+    <>
+      <span className={cn('relative block min-h-0 flex-1 overflow-hidden', course ? 'bg-transparent' : 'bg-muted')}>
+        {image && !broken ? (
+          <img src={image} alt="" draggable={false} onError={() => setBroken(true)} className="h-full w-full object-cover" />
+        ) : !course ? (
+          // Ninguna asignatura de Frame es esta clase: sus iniciales y cómo elegirla.
+          <span className="flex h-full w-full flex-col items-center justify-center gap-1">
+            <span className="font-headline text-xl font-bold leading-none" style={{ color: subjectColor(item.subject) }}>
+              {initials(item.subject)}
+            </span>
+            {undecided && <span className="rounded-full border border-border/70 bg-background/85 px-2 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">{tr('Elegir asignatura')}</span>}
+          </span>
+        ) : imageRead || broken ? (
+          // La asignatura no tiene imagen elegida: lo mismo que enseña en Asignaturas.
+          <WaveBackdrop />
+        ) : null /* aún leyendo su imagen: nada, para que no parpadee otra cosa antes */}
+        {day && <span className="absolute left-2 top-2 max-w-[70%] truncate rounded-full bg-background/85 px-1.5 text-[10px] font-semibold text-foreground shadow-sm">{day}</span>}
+        {current && <span className="absolute right-2 top-2 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground shadow-sm">{tr('Ahora')}</span>}
+        {current && (
+          <span className="absolute inset-x-0 bottom-0 block h-1 bg-black/20">
+            <span className="block h-full bg-primary" style={{ width: `${Math.round(progress * 100)}%` }} />
+          </span>
+        )}
+      </span>
+      <span className="flex shrink-0 items-center border-t border-border/60 px-3" style={{ height: NAME_ROW }}>
+        <span className="block w-full truncate text-center text-xs font-bold text-primary">{course?.name ?? item.subject}</span>
+      </span>
+    </>
+  );
+  const frame = cn('flex h-full w-full flex-col overflow-hidden border bg-card text-left shadow-sm transition-opacity', current && 'ring-2 ring-primary/60', past && 'opacity-55');
 
   return (
     <div className="absolute inset-y-0" style={{ left, width }}>
-      <div
-        className={cn('flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-opacity', current && 'ring-2 ring-primary/60', past && 'opacity-55')}
-        title={`${item.subject} · ${item.start}–${item.end}${item.room ? ` · ${item.room}` : ''}`}
-      >
-        <div className={cn('relative min-h-0 flex-1 overflow-hidden', course ? 'bg-transparent' : 'bg-muted')}>
-          {image && !broken ? (
-            <img src={image} alt="" draggable={false} onError={() => setBroken(true)} className="h-full w-full object-cover" />
-          ) : !course ? (
-            // Ninguna asignatura de Frame se llama así: sus iniciales.
-            <div className="flex h-full w-full items-center justify-center font-headline text-3xl font-bold" style={{ color: subjectColor(item.subject) }}>
-              {initials(item.subject)}
-            </div>
-          ) : imageRead || broken ? (
-            // La asignatura no tiene imagen elegida: lo mismo que enseña en Asignaturas.
-            <WaveBackdrop />
-          ) : null /* aún leyendo su imagen: nada, para que no parpadee otra cosa antes */}
-          {day && <span className="absolute left-2 top-2 max-w-[70%] truncate rounded-full bg-background/85 px-1.5 text-[10px] font-semibold text-foreground shadow-sm">{day}</span>}
-          {current && <span className="absolute right-2 top-2 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground shadow-sm">{tr('Ahora')}</span>}
-          {current && (
-            <div className="absolute inset-x-0 bottom-0 h-1 bg-black/20">
-              <div className="h-full bg-primary" style={{ width: `${Math.round(progress * 100)}%` }} />
-            </div>
-          )}
+      {own.length === 0 ? (
+        <div className={frame} title={details}>
+          {face}
         </div>
-        <div className="shrink-0 space-y-0.5 px-3 pb-2 pt-1.5">
-          <p className="truncate font-headline text-sm font-bold leading-tight text-foreground">{item.subject}</p>
-          <p className="min-h-[1rem] truncate text-xs text-muted-foreground">{teacher}</p>
-          {/* Las tareas y la hora, en una misma fila: el número siempre entero (la hora cede si no cabe). */}
-          <div className="flex items-center justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
-            <span className="shrink-0">{course ? (pending === 1 ? `1 ${tr('tarea')}` : `${pending} ${tr('tareas')}`) : ''}</span>
-            <span className="min-w-0 truncate font-medium text-foreground/80">{hours}</span>
-          </div>
-        </div>
-      </div>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={cn(frame, 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')} title={details}>
+              {face}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center" className="max-h-72 min-w-[13rem] max-w-[18rem] overflow-y-auto">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{tr('Asignatura de «{name}»', { name: item.subject })}</DropdownMenuLabel>
+            {own.map((option) => (
+              <DropdownMenuItem key={option.id} onSelect={() => setSubjectLink(uid, item.subject, option.id)}>
+                <Check className={cn('mr-2 h-4 w-4 shrink-0', option.id === course?.id ? 'opacity-100' : 'opacity-0')} />
+                <span className="truncate">{option.name}</span>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setSubjectLink(uid, item.subject, null)}>
+              <Check className={cn('mr-2 h-4 w-4 shrink-0', course ? 'opacity-0' : 'opacity-100')} />
+              {tr('Ninguna')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

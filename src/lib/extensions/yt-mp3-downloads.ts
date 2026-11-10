@@ -523,39 +523,6 @@ export function attachDownloads(next: DownloadsHost): () => void {
 // Acciones de la interfaz
 // ------------------------------------------------------------
 
-/** Una tarjeta con el vídeo abierto en YouTube. null si ya estaba en la cola. */
-export function addVideoDownload(sourceId: string, videoId: string): DownloadItem | null {
-  if (state.items.some((item) => item.videoId === videoId && (item.state === 'pending' || isActive(item)))) return null;
-  const item: DownloadItem = {
-    id: crypto.randomUUID(),
-    sourceId,
-    origin: 'video',
-    batch: 0,
-    videoId,
-    image: thumbnailUrl(videoId),
-    title: '',
-    artist: '',
-    state: 'pending',
-    progress: 0,
-    downloaded: 0,
-    speed: 0,
-    addedAt: Date.now(),
-  };
-  set({ items: [...state.items, item] });
-  return item;
-}
-
-/** Lo que se sabe del vídeo al momento (título, canal, duración). */
-export function describeDownload(id: string, info: { videoTitle?: string; channel?: string; duration?: number }) {
-  const item = find(id);
-  if (!item) return;
-  patch(id, {
-    ...(info.videoTitle ? { videoTitle: info.videoTitle } : {}),
-    ...(info.channel ? { channel: info.channel } : {}),
-    ...(info.duration && !item.duration ? { duration: info.duration } : {}),
-  });
-}
-
 /**
  * Las canciones de un CSV (o de una lista leída de su enlace), ya empezadas.
  * No entran las que ya esperan o bajan para esa misma playlist, ni las
@@ -617,21 +584,6 @@ export function addCsvDownloads(sourceId: string, songs: CsvSong[], playlist: st
   return { added: items.length, repeated };
 }
 
-/**
- * Lee el vídeo de una tarjeta en el programa (título y artista de YouTube
- * Music, duración exacta y peso del audio): el peso de la tarjeta deja de
- * ser una estimación por la duración. Si el programa no responde, se lee al
- * empezar la descarga.
- */
-export async function probeDownload(id: string) {
-  const item = find(id);
-  const client = item?.videoId ? host?.clientFor(item.sourceId) : null;
-  if (!item?.videoId || !client || item.probed) return;
-  const info = await client.info(watchUrl(item.videoId)).catch(() => null);
-  if (!info || !find(id)) return;
-  applyInfo(id, info, true);
-}
-
 /** Lo que dice el programa de un vídeo, en su tarjeta. */
 function applyInfo(id: string, info: EngineVideo, renameSong: boolean) {
   const item = find(id);
@@ -650,7 +602,7 @@ function applyInfo(id: string, info: EngineVideo, renameSong: boolean) {
   });
 }
 
-/** «Iniciar descarga»: empieza todo lo que estaba sin empezar. */
+/** Empieza todo lo que estaba sin empezar (lo que dejó así una versión anterior). */
 export function startDownloads() {
   const busy = state.items.some(isActive);
   let batch = state.batch;

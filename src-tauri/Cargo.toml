@@ -1,6 +1,6 @@
 [package]
 name = "frame"
-version = "1.9.3"
+version = "1.9.4"
 description = "Sistema Operativo de Productividad"
 authors = ["Asvent <vt.asvent@gmail.com>"]
 edition = "2021"

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { Check, Download, Eye, FileText, FlaskConical, Library, ListChecks, LoaderCircle, Lock, Search, SlidersHorizontal, Star, TriangleAlert, X } from 'lucide-react';
+import { Check, Download, Eye, FileText, FlaskConical, KeyRound, Library, ListChecks, LoaderCircle, Lock, Search, SlidersHorizontal, Sparkles, Star, TriangleAlert, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ToastAction } from '@/components/ui/toast';
+import LibraryActivateDialog from '@/components/extensions/LibraryActivateDialog';
+import FeaturedCarousel from '@/components/library/FeaturedCarousel';
 import { useCourse } from '@/context/CourseContext';
 import { useSaveCopy } from '@/hooks/use-save-copy';
 import { useToast } from '@/hooks/use-toast';
@@ -30,8 +32,10 @@ import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 // ============================================================
-// Biblioteca (extensión AK Lore, 1.9.2): el material del Programa del
-// Diploma en tarjetas, por secciones (grupos del PD) y asignaturas. Buscador
+// Biblioteca (extensión, 1.9.2): el material del Programa del
+// Diploma en tarjetas, por secciones (grupos del PD) y asignaturas. Arriba,
+// «Destacados» (1.9.4): las guías de cada asignatura en un carrusel, con su
+// vista previa. Buscador
 // con el total dentro, filtros, favoritos arriba (de la cuenta: viajan a sus
 // otros dispositivos) y «Descarga por colección» (varios archivos a una
 // carpeta de Descargas). Los archivos llegan por la nube de Frame; nadie ve
@@ -105,7 +109,8 @@ function Notice({ icon: Icon, title, children }: { icon: typeof Lock; title: str
 export default function BibliotecaPage() {
   const { userProfile } = useCourse();
   const navigate = useNavigate();
-  const access = useAkLoreAccess(userProfile?.email);
+  const access = useAkLoreAccess(userProfile?.id);
+  const [activating, setActivating] = useState(false);
   const source = useLoreSource();
   const index = useLoreIndex(access === 'allowed' ? source : null);
   const favorites = useLoreFavorites();
@@ -160,6 +165,12 @@ export default function BibliotecaPage() {
       .sort((a, b) => sectionRank(a[0]) - sectionRank(b[0]) || a[0].localeCompare(b[0]))
       .map(([section, guides]) => ({ section, count: guides.length, subjects: [...group([...guides].sort(byShelf), (g) => g.subject)] }));
   }, [visible, searching, onlyFavorites]);
+
+  /** Destacados: las guías de cada asignatura, en el orden de las secciones. */
+  const featured = useMemo(
+    () => index.guides.filter((g) => g.kind === 'Guía').sort((a, b) => sectionRank(a.section) - sectionRank(b.section) || byShelf(a, b)),
+    [index.guides]
+  );
 
   const selectedGuides = useMemo(() => index.guides.filter((g) => selected.has(g.id)), [index.guides, selected]);
   const selectedBytes = selectedGuides.reduce((sum, g) => sum + (g.size ?? 0), 0);
@@ -281,15 +292,23 @@ export default function BibliotecaPage() {
   }
   if (access !== 'allowed') {
     return (
-      <Notice icon={Lock} title={tr('La Biblioteca es para cuentas del colegio')}>
+      <Notice icon={Lock} title={tr('Activa la Biblioteca')}>
         <p className="text-sm text-muted-foreground">
-          {access === 'off'
-            ? tr('Activa la extensión AK Lore en Extensiones (búscala por su nombre), con la cuenta del colegio.')
-            : tr('Entra con tu cuenta del colegio para buscar y descargar el material.')}
+          {userProfile?.email && !userProfile.isGuest
+            ? tr('Es para estudiantes del colegio: se activa una vez, con un código que llega a tu correo institucional.')
+            : tr('Entra a Frame con tu cuenta de Google para activar la Biblioteca.')}
         </p>
-        <Button variant="outline" onClick={() => navigate('/extensiones?ext=frame.aklore')}>
-          {tr('Ir a Extensiones')}
-        </Button>
+        {userProfile?.email && !userProfile.isGuest ? (
+          <Button onClick={() => setActivating(true)}>
+            <KeyRound className="mr-2 h-4 w-4" />
+            {tr('Activar con mi correo institucional')}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => navigate('/settings')}>
+            {tr('Ir a Ajustes')}
+          </Button>
+        )}
+        <LibraryActivateDialog uid={userProfile?.id} open={activating} onClose={() => setActivating(false)} />
       </Notice>
     );
   }
@@ -418,6 +437,13 @@ export default function BibliotecaPage() {
         </p>
       ) : (
         <div className="space-y-10">
+          {featured.length > 0 && !searching && !onlyFavorites && activeFilters === 0 && !selecting && (
+            <section aria-labelledby="library-featured">
+              <SectionTitle id="library-featured" icon={<Sparkles className="h-4 w-4 text-primary" />} title={tr('Destacados')} count={featured.length} />
+              <FeaturedCarousel guides={featured} source={source} onOpen={setViewing} />
+            </section>
+          )}
+
           {favoriteGuides.length > 0 && !onlyFavorites && (
             <section aria-labelledby="library-favorites">
               <SectionTitle id="library-favorites" icon={<Star className="h-4 w-4 fill-amber-400 text-amber-400" />} title={tr('Favoritos')} count={favoriteGuides.length} />
