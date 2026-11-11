@@ -2217,7 +2217,6 @@ const DICT: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "Google Drive antwortete {status}: {message}",
   "Sin conexión con Google Drive.": "Keine Verbindung mit Google Drive.",
   "Google no abrió la subida.": "Google hat den Upload nicht geöffnet.",
-  "Conecta tu Google Drive.": "Verbinde dein Google Drive.",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "Google hat die Berechtigung entzogen: Verbinde dein Drive erneut.",
   "No se pudo hablar con Google.": "Keine Verbindung zu Google möglich.",
   "Conectado a Google Drive ({email}).": "Mit Google Drive verbunden ({email}).",
@@ -2755,6 +2754,12 @@ const DICT: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "Die Sitzung wurde beendet: Verbinde dein Konto erneut",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "Deine Sitzung wurde beendet. Verbinde dein Konto über die Glocke erneut.",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "Deine Sitzung konnte gerade nicht geprüft werden. Versuche es gleich noch einmal.",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "Ein anderes deiner Geräte nutzt Wire mit einem anderen Google-Drive-Konto: Verbinde auf allen dasselbe.",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "Der Ordner „Frame · Wire“ war nicht mehr in deinem Drive: Er wurde neu erstellt.",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "Dein Google Drive ist fast voll: Wire wartet auf freien Speicher, um weiter hochzuladen.",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "„{name}“ kam unvollständig an: Es wird erneut versucht.",
+  "«{name}» no subió entero: se vuelve a intentar.": "„{name}“ wurde nicht vollständig hochgeladen: Es wird erneut versucht.",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "Aktualisiere Frame auf „{name}“: Bis dahin erhält es die Musik dieses Geräts nicht.",
 };
 
 export default DICT;

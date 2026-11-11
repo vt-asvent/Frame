@@ -72,6 +72,16 @@ export const closeMusicDB = (): void => {
 /** Nombre de la base de datos, para el borrado total de cuenta. */
 export const MUSIC_DB_NAME = DB_NAME;
 
+/** Ids de las canciones cuyo audio está guardado (sin leer los audios). */
+export const listSongFileIds = async (): Promise<Set<string>> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(FILES_STORE_NAME, 'readonly').objectStore(FILES_STORE_NAME).getAllKeys();
+    request.onsuccess = () => resolve(new Set(request.result.map(String)));
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export const addSongFileToDB = async (id: string, file: File): Promise<void> => {
   const db = await openDB();
   return new Promise((resolve, reject) => {

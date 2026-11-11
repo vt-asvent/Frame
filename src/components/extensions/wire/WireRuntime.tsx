@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useCourse } from '@/context/CourseContext';
 import { useExtensionOn } from '@/lib/extensions/store';
-import { requestWireCycle, runWireCycle, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
+import { noteWirePeer, requestWireCycle, runWireCycle, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
 import { onPeerMessage } from '@/lib/sync-peers';
 import { SYNC_NOW_EVENT } from '@/lib/sync-status';
 
@@ -21,12 +21,15 @@ export const wireLive = { visible: false };
 
 export default function WireRuntime() {
   const on = useExtensionOn(WIRE);
-  const { userProfile, songs, addSongs, tasks, archivedTasks, incompleteTasks, notes, archivedNotes } = useCourse();
+  const { userProfile, songs, addSongs, tasks, archivedTasks, incompleteTasks, notes, archivedNotes, areSongsLoading } = useCourse();
   const ctxRef = useRef<WireContext | null>(null);
 
-  ctxRef.current = userProfile
-    ? { uid: userProfile.id, songs, addSongs, tasks, archivedTasks, incompleteTasks, notes, archivedNotes }
-    : null;
+  // Mientras la biblioteca carga no hay vuelta (1.9.6): una lista de canciones aún vacía diría
+  // a los demás equipos que aquí falta todo, y empezarían a subirlo.
+  ctxRef.current =
+    userProfile && !areSongsLoading
+      ? { uid: userProfile.id, songs, addSongs, tasks, archivedTasks, incompleteTasks, notes, archivedNotes }
+      : null;
 
   // Vuelta periódica.
   useEffect(() => {
@@ -47,7 +50,10 @@ export default function WireRuntime() {
     // Otro equipo subió o bajó algo: esta vuelta no espera al minuto y medio
     // (ni a que la ventana esté a la vista: en la laptop, minimizada también llega).
     const stopPeers = onPeerMessage((message) => {
-      if (message.t === 'wire' && ctxRef.current) requestWireCycle(1500);
+      if (message.t !== 'wire') return;
+      // Si ese equipo tiene Wire en otro Drive, nunca se pasarán nada: que se sepa (1.9.6).
+      noteWirePeer(message);
+      if (ctxRef.current) requestWireCycle(1500);
     });
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener(SYNC_NOW_EVENT, onNow);
@@ -66,7 +72,7 @@ export default function WireRuntime() {
     if (!on || !ctxRef.current) return;
     const timer = window.setTimeout(() => ctxRef.current && void runWireCycle(ctxRef.current), 5000);
     return () => window.clearTimeout(timer);
-  }, [on, fingerprint]);
+  }, [on, fingerprint, areSongsLoading]);
 
   return null;
 }

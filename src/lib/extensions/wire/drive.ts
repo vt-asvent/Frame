@@ -20,7 +20,7 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 // dejaba el relevo «sincronizando» hasta reiniciar Frame.
 const driveFetch = cappedFetchWith(() => ({ answerMs: 30_000, unsizedBodyMs: 300_000, bytesPerMs: 16 }));
 export const FOLDER_MIME = 'application/vnd.google-apps.folder';
-const FIELDS = 'id,name,mimeType,size,appProperties,createdTime,modifiedTime';
+const FIELDS = 'id,name,mimeType,size,sha256Checksum,appProperties,createdTime,modifiedTime';
 
 export type DriveErrorKind = 'auth' | 'rate' | 'quota' | 'notFound' | 'server' | 'network' | 'other';
 
@@ -38,6 +38,8 @@ export interface DriveFile {
   name: string;
   mimeType: string;
   size: number;
+  /** Huella SHA-256 que calcula Drive (vacía en carpetas). */
+  sha256: string;
   appProperties: Record<string, string>;
   created: number;
   modified: number;
@@ -75,6 +77,7 @@ const toFile = (raw: any): DriveFile => ({
   name: raw.name ?? '',
   mimeType: raw.mimeType ?? '',
   size: Number(raw.size ?? 0),
+  sha256: typeof raw.sha256Checksum === 'string' ? raw.sha256Checksum.toLowerCase() : '',
   appProperties: raw.appProperties ?? {},
   created: Date.parse(raw.createdTime ?? '') || 0,
   modified: Date.parse(raw.modifiedTime ?? '') || 0,
@@ -167,6 +170,17 @@ export class Drive {
       body: blob,
     });
     return toFile(json);
+  }
+
+  /** Un archivo por su id; null si ya no está (o está en la papelera). Respuesta al momento, sin esperar al buscador de Drive. */
+  async get(id: string): Promise<DriveFile | null> {
+    try {
+      const json = await this.json(`${API}/files/${id}?fields=${FIELDS},trashed`);
+      return !json || json.trashed ? null : toFile(json);
+    } catch (error) {
+      if (error instanceof DriveError && error.kind === 'notFound') return null;
+      throw error;
+    }
   }
 
   async download(id: string): Promise<Blob> {

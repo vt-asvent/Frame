@@ -2217,7 +2217,6 @@ const DICT: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "Google Диск ответил {status}: {message}",
   "Sin conexión con Google Drive.": "Нет подключения к Google Диску.",
   "Google no abrió la subida.": "Google не начал загрузку.",
-  "Conecta tu Google Drive.": "Подключи свой Google Диск.",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "Google отозвал разрешение: подключи Диск заново.",
   "No se pudo hablar con Google.": "Не удалось связаться с Google.",
   "Conectado a Google Drive ({email}).": "Подключено к Google Диску ({email}).",
@@ -2755,6 +2754,12 @@ const DICT: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "Сеанс закрыт: подключи аккаунт снова",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "Сеанс был закрыт. Подключи аккаунт снова через колокольчик.",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "Сейчас не удалось проверить сеанс. Попробуй ещё раз чуть позже.",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "На другом вашем устройстве Wire подключён к другому аккаунту Google Диска: подключите один и тот же на всех.",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "Папки «Frame · Wire» больше не было на вашем Диске: она создана заново.",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "Ваш Google Диск почти заполнен: Wire ждёт свободного места, чтобы продолжить загрузку.",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "«{name}» пришёл неполным: будет повторная попытка.",
+  "«{name}» no subió entero: se vuelve a intentar.": "«{name}» загрузился не полностью: будет повторная попытка.",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "Обновите Frame на «{name}»: до тех пор оно не будет получать музыку с этого устройства.",
 };
 
 export default DICT;

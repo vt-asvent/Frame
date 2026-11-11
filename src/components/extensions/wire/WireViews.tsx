@@ -119,6 +119,29 @@ export function WirePanel() {
               {tr('Ver en vivo')}
             </button>
           </p>
+          {/* 1.9.6: lo que solo el usuario puede arreglar se dice aquí, con su botón. */}
+          {status.reauth && (
+            <p role="alert" className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/10 px-2.5 py-2 text-destructive">
+              <TriangleAlert className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1">{tr('Google retiró el permiso: vuelve a conectar tu Drive.')}</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void connect()} disabled={busy}>
+                {busy && <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {tr('Volver a conectar')}
+              </Button>
+            </p>
+          )}
+          {status.otherDrive && (
+            <p role="alert" className="flex items-start gap-2 rounded-md bg-destructive/10 px-2.5 py-2 text-destructive">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1">{tr('Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.')}</span>
+            </p>
+          )}
+          {status.outdated.length > 0 && (
+            <p role="status" className="flex items-start gap-2 rounded-md bg-primary/5 px-2.5 py-2 text-muted-foreground">
+              <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">{tr('Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.', { name: status.outdated.join('», «') })}</span>
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Laptop className="h-4 w-4 text-primary" />
             <span className="text-muted-foreground">{tr('Este equipo se llama')}</span>

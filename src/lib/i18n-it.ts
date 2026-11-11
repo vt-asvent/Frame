@@ -2217,7 +2217,6 @@ const DICT: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "Google Drive ha risposto {status}: {message}",
   "Sin conexión con Google Drive.": "Nessun collegamento con Google Drive.",
   "Google no abrió la subida.": "Google non ha aperto il caricamento.",
-  "Conecta tu Google Drive.": "Collega il tuo Google Drive.",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "Google ha revocato il permesso: ricollega il tuo Drive.",
   "No se pudo hablar con Google.": "Impossibile comunicare con Google.",
   "Conectado a Google Drive ({email}).": "Collegato a Google Drive ({email}).",
@@ -2755,6 +2754,12 @@ const DICT: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "La sessione è stata chiusa: ricollega il tuo account",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "La tua sessione è stata chiusa. Ricollega il tuo account dalla campanella.",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "Non è stato possibile verificare la sessione in questo momento. Riprova tra poco.",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "Un altro dei tuoi dispositivi usa Wire con un account Google Drive diverso: collega lo stesso su tutti.",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "La cartella «Frame · Wire» non era più nel tuo Drive: è stata ricreata.",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "Il tuo Google Drive è quasi pieno: Wire aspetta che ci sia spazio per continuare a caricare.",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "«{name}» è arrivato incompleto: si riprova.",
+  "«{name}» no subió entero: se vuelve a intentar.": "«{name}» non è stato caricato per intero: si riprova.",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "Aggiorna Frame su «{name}»: fino ad allora non riceve la musica di questo dispositivo.",
 };
 
 export default DICT;

@@ -2217,7 +2217,6 @@ const DICT: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "Google Drive a répondu {status} : {message}",
   "Sin conexión con Google Drive.": "Pas de connexion à Google Drive.",
   "Google no abrió la subida.": "Google n’a pas ouvert l’envoi.",
-  "Conecta tu Google Drive.": "Connecte ton Google Drive.",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "Google a retiré l’autorisation : reconnecte ton Drive.",
   "No se pudo hablar con Google.": "Impossible de communiquer avec Google.",
   "Conectado a Google Drive ({email}).": "Connecté à Google Drive ({email}).",
@@ -2755,6 +2754,12 @@ const DICT: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "La session a été fermée : reconnecte ton compte",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "Ta session a été fermée. Reconnecte ton compte depuis la cloche.",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "Impossible de vérifier ta session pour l’instant. Réessaie dans un moment.",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "Un autre de tes appareils utilise Wire avec un autre compte Google Drive : connecte le même sur tous.",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "Le dossier « Frame · Wire » n’était plus dans ton Drive : il a été recréé.",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "Ton Google Drive est presque plein : Wire attend qu’il y ait de la place pour continuer à envoyer.",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "« {name} » est arrivé incomplet : nouvel essai à venir.",
+  "«{name}» no subió entero: se vuelve a intentar.": "« {name} » n’a pas été envoyé en entier : nouvel essai à venir.",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "Mets à jour Frame sur « {name} » : d’ici là, il ne reçoit pas la musique de cet appareil.",
 };
 
 export default DICT;

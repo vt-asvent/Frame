@@ -2217,7 +2217,6 @@ const DICT: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "Google ドライブの応答 {status}：{message}",
   "Sin conexión con Google Drive.": "Google ドライブに接続されていません。",
   "Google no abrió la subida.": "Google がアップロードを開始しませんでした。",
-  "Conecta tu Google Drive.": "Google ドライブを接続してください。",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "Google が権限を取り消しました。ドライブをもう一度接続してください。",
   "No se pudo hablar con Google.": "Google と通信できませんでした。",
   "Conectado a Google Drive ({email}).": "Google ドライブに接続しました（{email}）。",
@@ -2755,6 +2754,12 @@ const DICT: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "セッションが終了しました。アカウントを再接続してください",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "セッションが終了しました。ベルのアイコンからアカウントを再接続してください。",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "現在セッションを確認できませんでした。しばらくしてからもう一度お試しください。",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "別のデバイスでは Wire が別の Google ドライブ アカウントに接続されています。すべてのデバイスで同じアカウントを接続してください。",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "「Frame · Wire」フォルダがドライブに見つからなかったため、作り直しました。",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "Google ドライブの空きがほとんどありません。Wire は空きができるまでアップロードを待ちます。",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "「{name}」が不完全な状態で届きました。もう一度試します。",
+  "«{name}» no subió entero: se vuelve a intentar.": "「{name}」を最後までアップロードできませんでした。もう一度試します。",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "「{name}」の Frame を更新してください。それまでは、このデバイスの音楽を受け取れません。",
 };
 
 export default DICT;

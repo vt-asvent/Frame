@@ -42,6 +42,7 @@ import { useLocalEventReminders } from '@/components/calendar/useEventReminders'
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { deleteAttachment } from '@/lib/file-handles';
 import { forgetLyrics } from '@/lib/lyrics';
+import { noteSongRemoved } from '@/lib/extensions/wire/removed';
 import { UNKNOWN_ARTIST } from '@/lib/enum-labels';
 import { reviewStoredSong } from '@/lib/music-review';
 import { foldName, isJunkTag } from '@/lib/song-names';
@@ -2561,6 +2562,8 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
         await deleteSongFileFromDB(id);
         await deleteSongMetadata(id);
         void forgetLyrics(id);
+        // Wire: es un borrado del usuario, no una pérdida; no se vuelve a traer a este equipo.
+        if (userProfile) noteSongRemoved(userProfile.id, id, keyOfDeleted);
         // Desde lo persistido (ver deletePlaylist): no pisa playlists nuevas.
         const latest = getArrayFromLocalStorage<Playlist>(storageKeys.playlists);
         setInLocalStorage(storageKeys.playlists, latest.map(p => (p.songIds.includes(id) ? { ...p, songIds: keepKey(p.songIds) } : p)));

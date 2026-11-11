@@ -2220,7 +2220,6 @@ const EN: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "Google Drive answered {status}: {message}",
   "Sin conexión con Google Drive.": "No connection to Google Drive.",
   "Google no abrió la subida.": "Google didn’t open the upload.",
-  "Conecta tu Google Drive.": "Connect your Google Drive.",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "Google withdrew the permission: connect your Drive again.",
   "No se pudo hablar con Google.": "Couldn’t talk to Google.",
   "Conectado a Google Drive ({email}).": "Connected to Google Drive ({email}).",
@@ -2757,6 +2756,12 @@ const EN: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "The session was closed: reconnect your account",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "Your session was closed. Reconnect your account from the bell.",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "Your session couldn’t be checked right now. Try again in a moment.",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "Another of your devices has Wire on a different Google Drive account: connect the same one on all of them.",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "The “Frame · Wire” folder was no longer in your Drive: it was created again.",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "Your Google Drive is almost full: Wire is waiting for free space to keep uploading.",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "“{name}” arrived incomplete: it will be tried again.",
+  "«{name}» no subió entero: se vuelve a intentar.": "“{name}” did not upload completely: it will be tried again.",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "Update Frame on “{name}”: until then it won’t receive this device’s music.",
 };
 
 export default EN;

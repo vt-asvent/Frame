@@ -2217,7 +2217,6 @@ const DICT: Record<string, string> = {
   "Google Drive respondió {status}: {message}": "O Google Drive respondeu {status}: {message}",
   "Sin conexión con Google Drive.": "Sem conexão com o Google Drive.",
   "Google no abrió la subida.": "O Google não abriu o envio.",
-  "Conecta tu Google Drive.": "Conecte seu Google Drive.",
   "Google retiró el permiso: vuelve a conectar tu Drive.": "O Google retirou a permissão: conecte seu Drive de novo.",
   "No se pudo hablar con Google.": "Não foi possível falar com o Google.",
   "Conectado a Google Drive ({email}).": "Conectado ao Google Drive ({email}).",
@@ -2755,6 +2754,12 @@ const DICT: Record<string, string> = {
   "La sesión se cerró: vuelve a conectar tu cuenta": "A sessão foi encerrada: conecte sua conta de novo",
   "Tu sesión se cerró. Vuelve a conectar tu cuenta desde la campana.": "Sua sessão foi encerrada. Conecte sua conta de novo pelo sino.",
   "No se pudo comprobar tu sesión ahora. Inténtalo de nuevo en un momento.": "Não foi possível verificar sua sessão agora. Tente de novo em instantes.",
+  "Otro de tus equipos tiene Wire en una cuenta de Google Drive distinta: conecta la misma en todos.": "Outro dos teus dispositivos tem o Wire numa conta do Google Drive diferente: liga a mesma em todos.",
+  "La carpeta «Frame · Wire» ya no estaba en tu Drive: se creó de nuevo.": "A pasta «Frame · Wire» já não estava no teu Drive: foi criada de novo.",
+  "Tu Google Drive está casi lleno: Wire espera a que haya espacio para seguir subiendo.": "O teu Google Drive está quase cheio: o Wire espera que haja espaço para continuar a enviar.",
+  "«{name}» llegó incompleto: se vuelve a intentar.": "«{name}» chegou incompleto: vai tentar-se de novo.",
+  "«{name}» no subió entero: se vuelve a intentar.": "«{name}» não foi enviado por inteiro: vai tentar-se de novo.",
+  "Actualiza Frame en «{name}»: hasta entonces no recibe la música de este equipo.": "Atualiza o Frame em «{name}»: até lá não recebe a música deste dispositivo.",
 };
 
 export default DICT;

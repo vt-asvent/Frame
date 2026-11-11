@@ -52,6 +52,8 @@ export interface RelayItem {
   created: number;
   name: string;
   size: number;
+  /** Huella SHA-256 que calculó Drive: lo que baja se comprueba con ella. */
+  sha256?: string;
 }
 
 export interface LocalView {
@@ -110,7 +112,9 @@ export function planCycle(local: LocalView, devices: DeviceRecord[], items: Rela
   for (const item of canonical.values()) {
     const forever = wantedForever(item.key);
     if (item.permanent !== forever) setPermanent.push({ item, permanent: forever });
-    if (!local.have.has(item.key) && !local.declined.has(item.key) && item.from !== local.deviceId) download.push(item);
+    // También lo que subió este mismo equipo (1.9.6): si después perdió sus bytes, es de Drive de
+    // donde puede recuperarlos. Antes no lo bajaba nunca y el objeto se quedaba esperándole para siempre.
+    if (!local.have.has(item.key) && !local.declined.has(item.key)) download.push(item);
     const waiting = sets.filter((s) => !settled(s, item.key)).map((s) => s.device.id);
     if (!local.have.has(item.key) && !local.declined.has(item.key)) waiting.unshift(local.deviceId);
     waitingFor.set(item.id, waiting);
