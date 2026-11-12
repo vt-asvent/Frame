@@ -65,6 +65,7 @@ const WHERE: Record<string, { where: () => string; route: string; label: (row: R
   playlists: { where: () => tr('Música'), route: '/music', label: (row) => String(row.name ?? '') },
   studyVideos: { where: () => tr('Estudio'), route: '/temporizador', label: (row) => String(row.title ?? '') },
   loreFavorites: { where: () => tr('Biblioteca'), route: '/biblioteca', label: () => tr('Favoritos') },
+  loreStudy: { where: () => tr('Biblioteca'), route: '/biblioteca', label: (row) => (row.id === 'perfil' ? tr('Convocatoria de exámenes') : tr('Repaso de tarjetas')) },
   subjectLinks: { where: () => tr('Inicio'), route: '/', label: (row) => tr('Asignatura de «{name}» en el horario', { name: String(row.id ?? '') }) },
   songFavorites: {
     where: () => tr('Música'),

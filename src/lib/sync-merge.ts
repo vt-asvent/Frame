@@ -65,6 +65,9 @@ const COLLECTION_KEYS = [
   // Favoritos de la Biblioteca (1.9.2, id = el del archivo): como el corazón
   // de las canciones, quitar uno deja su lápida.
   'loreFavorites',
+  // Repaso de la Biblioteca (1.9.7, id = la clave del juego de tarjetas, o
+  // `perfil` para la convocatoria): empezar de nuevo deja su lápida.
+  'loreStudy',
   // Qué asignatura es cada nombre del horario (1.9.3, id = el nombre
   // normalizado): vale para todos los horarios de la cuenta.
   'subjectLinks',

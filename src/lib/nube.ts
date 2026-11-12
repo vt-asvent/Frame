@@ -63,6 +63,8 @@ interface NubeCallInit {
   /** JSON ya escrito: se manda tal cual (y puede repetirse). */
   body?: string;
   signal?: AbortSignal;
+  /** Cabeceras de más (la Biblioteca pide tramos de un archivo con `range`). */
+  headers?: Record<string, string>;
 }
 
 const AUTH_RETRY_MS = 1500;
@@ -99,7 +101,7 @@ export async function nubeCall(path: string, init: NubeCallInit = {}): Promise<R
     }
     const response = await nubeFetch(`${NUBE}${path}`, {
       method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
-      headers: { authorization: `Bearer ${token}`, ...(init.body === undefined ? {} : { 'content-type': 'application/json' }) },
+      headers: { ...init.headers, authorization: `Bearer ${token}`, ...(init.body === undefined ? {} : { 'content-type': 'application/json' }) },
       ...(init.body === undefined ? {} : { body: init.body }),
       ...(init.signal ? { signal: init.signal } : {}),
     });

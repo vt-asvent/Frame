@@ -69,6 +69,9 @@ export const SCOPED_KEYS = [
   // Favoritos de la Biblioteca (1.9.2, extensión AK Lore): una ficha por
   // archivo marcado. Las versiones anteriores no la conocen y la conservan.
   'loreFavorites',
+  // Biblioteca 2 (1.9.7): la convocatoria del alumno (ficha `perfil`) y el
+  // avance de repaso de cada juego de tarjetas (una ficha por clave).
+  'loreStudy',
   // Vínculo entre los nombres del horario y las asignaturas (1.9.3,
   // timetable-links.ts): una ficha por nombre.
   'subjectLinks',

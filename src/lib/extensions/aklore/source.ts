@@ -117,15 +117,15 @@ export function fileNameOf(guide: LoreGuide): string {
 
 /** `stop`: no tiene sentido seguir con el resto de una colección. */
 const fail = (message: string, stop = true) => Object.assign(new Error(message), { stop });
-const offline = () => fail(tr('Sin conexión: vuelve a intentarlo cuando tengas internet.'));
+export const offline = () => fail(tr('Sin conexión: vuelve a intentarlo cuando tengas internet.'));
 
 /** La cuenta no pudo atenderse (nube.ts): sin sesión aquí, sesión cerrada en la nube, o no se pudo comprobar ahora. */
 const accountProblem = (error: NubeAuthError, signedOut: string) => fail(error.problem === 'signed-out' ? signedOut : sessionProblemText(error.problem));
 
-async function fromCloud(path: string, signal?: AbortSignal): Promise<Response> {
+export async function fromCloud(path: string, signal?: AbortSignal, headers?: Record<string, string>): Promise<Response> {
   if (!getSupabase() || !navigator.onLine) throw offline();
   // Con plazo y con la sesión resuelta (nube.ts). Un corte de red se dice así, no con el error del navegador.
-  const resp = await nubeCall(path, { signal }).catch((error: unknown) => {
+  const resp = await nubeCall(path, { signal, headers }).catch((error: unknown) => {
     if (error instanceof NubeAuthError) throw accountProblem(error, tr('Entra a Frame con tu cuenta para usar la Biblioteca.'));
     throw signal?.aborted ? error : offline();
   });

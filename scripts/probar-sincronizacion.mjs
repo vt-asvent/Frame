@@ -556,7 +556,7 @@ function wakeUp(dev) {
 const RECORD_KEYS = new Set([
   'courses', 'tasks', 'notes', 'archivedTasks', 'incompleteTasks', 'archivedNotes', 'localEvents', 'dayColors', 'habits',
   'studySessions', 'dailyPerformances', 'playlists', 'spaces', 'syncedImages', 'looseNotes', 'studyVideos', 'imageRefs',
-  'schedules', 'classSessions', 'songFavorites', 'timetables', 'loreFavorites', 'subjectLinks',
+  'schedules', 'classSessions', 'songFavorites', 'timetables', 'loreFavorites', 'subjectLinks', 'loreStudy',
 ]);
 // Igual que RETIRED_KEYS de src/lib/sync-merge.ts (competencyCourseIds, desde la 1.9.0).
 const RETIRED = new Set(['classSessions', 'schedules', 'playHistory', 'headerQuote', 'school', 'competencyCourseIds']);

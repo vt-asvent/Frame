@@ -2,12 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pdfjsAssets } from './scripts/pdfjs-assets';
 
 const pkg = createRequire(import.meta.url)('./package.json') as { version: string };
 
 // Frame — build SPA optimizado para escritorio (Tauri).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pdfjsAssets()],
   // Una sola fuente de verdad para la versión: package.json. Antes estaba
   // escrita a mano en la pantalla de información Y en la telemetría, así que
   // ambas se quedaron congeladas en 1.0.0 mientras la app iba por la 1.2.
