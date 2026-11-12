@@ -30,6 +30,7 @@ new_sqlite_classes = ["FrameRelay"]
 [ai]
 binding = "AI"
 
-# Limpieza diaria de códigos, permisos y sesiones caducados.
+# Limpieza diaria de códigos, permisos y sesiones caducados, y la lectura de la
+# Biblioteca (carpeta «AK Lore» de Drive) cada 5 minutos.
 [triggers]
-crons = ["17 9 * * *"]
+crons = ["17 9 * * *", "*/5 * * * *"]

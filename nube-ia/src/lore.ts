@@ -81,7 +81,7 @@ export function resetDriveAccess(): void {
   access = null;
 }
 
-async function driveToken(env: Env): Promise<string | null> {
+export async function driveToken(env: Env): Promise<string | null> {
   if (access && access.until > Date.now()) return access.token;
   if (!env.LORE_DRIVE_REFRESH || !env.LORE_GOOGLE_ID || !env.LORE_GOOGLE_SECRET) return null;
   const r = await fetch('https://oauth2.googleapis.com/token', {

@@ -20,6 +20,10 @@ export interface Env {
   /** AK Lore (lore-acceso.ts): el Apps Script de Asvent que envía el código de activación, y su clave. */
   LORE_MAIL_URL?: string;
   LORE_MAIL_KEY?: string;
+  /** Biblioteca 2 (biblioteca.ts): la clave JSON de la cuenta de servicio que lee «AK Lore» (lectora). Sin ella, lee con el permiso de Asvent, que solo ve lo que subió Frame. */
+  LORE_SA_JSON?: string;
+  /** Solo si hiciera falta: el id de la carpeta raíz. Si no, es la carpeta «AK Lore» de más arriba. */
+  LORE_ROOT?: string;
 }
 
 const text = new TextEncoder();

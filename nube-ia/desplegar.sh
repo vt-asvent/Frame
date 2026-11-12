@@ -46,3 +46,9 @@ if [ "${NUEVA:-0}" = 1 ] || [ "${SECRETOS:-0}" = 1 ]; then
   fi
   echo "Secretos guardados en el Worker."
 fi
+# Biblioteca: la cuenta de servicio que lee la carpeta «AK Lore» (su clave JSON, fuera de git).
+# Se guarda la primera vez que aparece la clave, o con LECTOR=1.
+if [ -f ../keys/biblioteca-lector.json ] && { [ "${LECTOR:-0}" = 1 ] || [ "${SECRETOS:-0}" = 1 ] || ! wrangler secret list 2>/dev/null | grep -q LORE_SA_JSON; }; then
+  wrangler secret put LORE_SA_JSON < ../keys/biblioteca-lector.json > /dev/null
+  echo "Cuenta lectora de la Biblioteca guardada en el Worker."
+fi

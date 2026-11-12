@@ -42,6 +42,20 @@ export const PREGUNTAS: Record<string, number> = {};
 export const ENVIADOS: { to: string; code: string; minutes: number }[] = [];
 /** El Drive de Asvent de mentira: cada archivo es un PDF corto con su id dentro. */
 export const pdfDe = (id: string) => `%PDF-1.7 archivo ${id}`;
+/**
+ * Biblioteca 2: la carpeta «AK Lore» de mentira. `archivos` es lo que lista Drive (como lo
+ * devuelve la API), `contenido` lo que tiene cada uno (si no, `pdfDe`), `sinMiniatura` los
+ * que no dan portada y `listados` cuántas páginas se pidieron.
+ */
+export const DRIVE: { archivos: Record<string, unknown>[]; contenido: Record<string, string>; sinMiniatura: Set<string>; listados: number; caido: boolean } = {
+  archivos: [],
+  contenido: {},
+  sinMiniatura: new Set(),
+  listados: 0,
+  caido: false,
+};
+/** Una imagen JPEG mínima: la portada que da Drive. */
+export const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9]);
 
 export const HERRAMIENTAS = [
   {
@@ -133,6 +147,8 @@ export interface Arnes {
   socket: (pase: string) => Promise<{ estado: number; ws: any }>;
   pase: (cuenta: string) => Promise<string>;
   cron: () => Promise<void>;
+  /** Una vuelta de la Biblioteca (el cron de cada 5 minutos). */
+  sincronizar: () => Promise<void>;
   cerrar: () => Promise<void>;
 }
 
@@ -221,12 +237,37 @@ export async function crearArnes(): Promise<Arnes> {
             const ok = form.get('refresh_token') === 'renovacion-de-prueba' && form.get('client_id') === 'cliente-de-prueba' && form.get('client_secret') === 'secreto-de-prueba';
             return new Response(JSON.stringify(ok ? { access_token: 'acceso-drive', expires_in: 3600 } : { error: 'invalid_grant' }), { status: ok ? 200 : 400 }) as never;
           }
+          if (url.hostname === 'www.googleapis.com' && url.pathname === '/drive/v3/files') {
+            if (auth !== 'Bearer acceso-drive') return new Response('{}', { status: 401 }) as never;
+            if (DRIVE.caido) return new Response('{}', { status: 500 }) as never;
+            DRIVE.listados++;
+            const desde = Number(url.searchParams.get('pageToken') ?? 0);
+            const tam = Number(url.searchParams.get('pageSize') ?? 100);
+            const vivos = DRIVE.archivos.filter((f) => !f.trashed);
+            const pagina = vivos.slice(desde, desde + tam).map((f) => ({
+              ...f,
+              ...(DRIVE.sinMiniatura.has(String(f.id)) || f.mimeType === 'application/vnd.google-apps.folder' ? {} : { thumbnailLink: `https://lh3.googleusercontent.com/prueba/${f.id}=s220` }),
+            }));
+            const sigue = desde + tam < vivos.length ? { nextPageToken: String(desde + tam) } : {};
+            return new Response(JSON.stringify({ ...sigue, files: pagina }, null, 1), { headers: { 'content-type': 'application/json' } }) as never;
+          }
+          if (url.hostname === 'lh3.googleusercontent.com') {
+            if (auth !== 'Bearer acceso-drive' || !url.pathname.endsWith('=s400')) return new Response('', { status: 403 }) as never;
+            return new Response(JPEG, { headers: { 'content-type': 'image/jpeg' } }) as never;
+          }
           if (url.hostname === 'www.googleapis.com' && url.pathname.startsWith('/drive/v3/files/')) {
             const id = decodeURIComponent(url.pathname.slice('/drive/v3/files/'.length));
             if (auth !== 'Bearer acceso-drive' || url.searchParams.get('alt') !== 'media') return new Response('{}', { status: 401 }) as never;
             if (id === 'falta') return new Response('{}', { status: 404 }) as never;
-            const cuerpo = pdfDe(id);
-            return new Response(cuerpo, { headers: { 'content-type': 'application/pdf', 'content-length': String(cuerpo.length) } }) as never;
+            const cuerpo = DRIVE.contenido[id] ?? pdfDe(id);
+            const rango = /^bytes=(\d+)-(\d*)$/.exec(pedido.headers.get('range') ?? '');
+            if (rango) {
+              const ini = Number(rango[1]);
+              const fin = rango[2] ? Math.min(Number(rango[2]), cuerpo.length - 1) : cuerpo.length - 1;
+              const trozo = cuerpo.slice(ini, fin + 1);
+              return new Response(trozo, { status: 206, headers: { 'content-type': 'application/pdf', 'content-length': String(trozo.length), 'content-range': `bytes ${ini}-${fin}/${cuerpo.length}` } }) as never;
+            }
+            return new Response(cuerpo, { headers: { 'content-type': 'application/pdf', 'content-length': String(Buffer.byteLength(cuerpo)) } }) as never;
           }
           if (url.hostname === 'correo.prueba') {
             const carta = (await pedido.json().catch(() => null)) as { key?: string; to?: string; code?: string; minutes?: number } | null;
@@ -350,5 +391,10 @@ export async function crearArnes(): Promise<Arnes> {
     await w.scheduled({ cron: '17 9 * * *' });
   };
 
-  return { mf, pedir, sql, rpc, mcp, conectar, frame, socket, pase, cron, cerrar: () => mf.dispose() };
+  const sincronizar = async () => {
+    const w = await mf.getWorker();
+    await w.scheduled({ cron: '*/5 * * * *' });
+  };
+
+  return { mf, pedir, sql, rpc, mcp, conectar, frame, socket, pase, cron, sincronizar, cerrar: () => mf.dispose() };
 }

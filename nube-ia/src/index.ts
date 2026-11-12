@@ -6,6 +6,7 @@
 import { readTimetable } from './horario';
 import { accessFrom, authorize, metadata, newPairing, ownerStatus, register, revokeOwner, token } from './oauth';
 import { translateLyrics } from './letras';
+import { bibliotecaArchivo, bibliotecaIndice, bibliotecaTarjetas, bibliotecaVista, sincronizar } from './biblioteca';
 import { loreFile, loreIndex, loreView } from './lore';
 import { loreAccess, loreAccessCleanup, loreActivate, loreSendCode } from './lore-acceso';
 import { callerFromApp } from './supabase';
@@ -16,10 +17,12 @@ export { FrameRelay } from './relay';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type, mcp-protocol-version, mcp-session-id',
-  'access-control-expose-headers': 'www-authenticate, mcp-session-id, content-disposition, content-length',
+  'access-control-allow-headers': 'authorization, content-type, range, mcp-protocol-version, mcp-session-id',
+  'access-control-expose-headers': 'www-authenticate, mcp-session-id, content-disposition, content-length, content-range, accept-ranges',
 };
 const MAX_BODY = 1_000_000;
+/** El cron de la Biblioteca (wrangler.toml). */
+const CADA_5_MIN = '*/5 * * * *';
 /** El pase de la app para abrir su WebSocket: un minuto y un solo uso. */
 const PASS_MS = 60_000;
 
@@ -46,7 +49,7 @@ async function mcp(req: Request, env: Env, origin: string): Promise<Response> {
 }
 
 /** Lo que pide la app, con su sesión de Frame. */
-async function app(req: Request, env: Env, path: string): Promise<Response> {
+async function app(req: Request, env: Env, path: string, url: URL): Promise<Response> {
   const caller = await callerFromApp(env, req.headers.get('authorization'));
   // 401 solo si Supabase dijo que esa sesión no vale. Si no se le pudo preguntar, la sesión
   // puede estar intacta: 503, y la app reintenta en vez de mandar al usuario a entrar de nuevo.
@@ -55,6 +58,9 @@ async function app(req: Request, env: Env, path: string): Promise<Response> {
   const owner = user.owner;
   if (req.method === 'GET' && path.startsWith('/app/lore/archivo/')) return loreFile(env, user, path.slice('/app/lore/archivo/'.length));
   if (req.method === 'GET' && path.startsWith('/app/lore/vista/')) return loreView(env, user, path.slice('/app/lore/vista/'.length));
+  if (req.method === 'GET' && path.startsWith('/app/biblioteca/archivo/')) return bibliotecaArchivo(req, env, user, path.slice('/app/biblioteca/archivo/'.length));
+  if (req.method === 'GET' && path.startsWith('/app/biblioteca/vista/')) return bibliotecaVista(env, user, path.slice('/app/biblioteca/vista/'.length));
+  if (req.method === 'GET' && path.startsWith('/app/biblioteca/tarjetas/')) return bibliotecaTarjetas(env, user, path.slice('/app/biblioteca/tarjetas/'.length));
   switch (`${req.method} ${path}`) {
     case 'POST /app/pair':
       return json(await newPairing(env, owner));
@@ -71,6 +77,8 @@ async function app(req: Request, env: Env, path: string): Promise<Response> {
       return translateLyrics(req, env, owner);
     case 'GET /app/lore':
       return loreIndex(env, user);
+    case 'GET /app/biblioteca':
+      return bibliotecaIndice(env, user, url);
     case 'GET /app/lore/acceso':
       return loreAccess(env, user);
     case 'POST /app/lore/codigo':
@@ -105,7 +113,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/authorize') return authorize(req, env);
   if (path === '/token' && req.method === 'POST') return token(req, env);
   if (path === '/mcp') return mcp(req, env, url.origin);
-  if (path.startsWith('/app/')) return app(req, env, path);
+  if (path.startsWith('/app/')) return app(req, env, path, url);
   if (path === '/') return json({ name: 'Frame', mcp: `${url.origin}/mcp` });
   return json({ error: 'not_found' }, 404);
 }
@@ -123,8 +131,17 @@ export default {
     }
   },
 
-  /** Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas, traducciones, neuronas y descargas de días pasados. */
-  async scheduled(_event: ScheduledController, env: Env, wait: ExecutionContext): Promise<void> {
+  /**
+   * Cada 5 minutos: la Biblioteca lee la carpeta «AK Lore» de Drive (biblioteca.ts).
+   * Cada día: fuera lo caducado, los registros de chats que nunca se conectaron y las cuentas de lecturas, traducciones, neuronas y descargas de días pasados.
+   */
+  async scheduled(event: ScheduledController, env: Env, wait: ExecutionContext): Promise<void> {
+    if (event.cron === CADA_5_MIN) {
+      const v = await sincronizar(env).catch((e) => ({ error: String(e).slice(0, 200) }));
+      if ('error' in v && v.error) console.error('biblioteca', v.error);
+      else console.log('biblioteca', JSON.stringify(v));
+      return;
+    }
     const now = Date.now();
     wait.waitUntil(
       env.DB.batch([

@@ -2,7 +2,9 @@
 // Frame abiertas (respaldo entre equipos, cortes, permisos retirados, frenos).
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, PREGUNTAS, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
+import { generateKeyPairSync, createVerify } from 'node:crypto';
+import { firmarJwt } from '../src/biblioteca';
+import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, DRIVE, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, PREGUNTAS, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
 
 let a: Arnes;
 beforeAll(async () => {
@@ -696,5 +698,179 @@ describe('AK Lore: la Biblioteca', () => {
       expect(await a.sql("SELECT owner FROM lore_accesos WHERE owner IN ('vieja', ?)", viva)).toEqual([{ owner: viva }]);
       expect(await a.sql("SELECT * FROM lore_envios WHERE clave='o:vieja'")).toEqual([]);
     });
+  });
+});
+
+describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
+  const CARPETA = 'application/vnd.google-apps.folder';
+  const carpeta = (id: string, name: string, padre: string) => ({ id, name, mimeType: CARPETA, parents: [padre], version: '1' });
+  const archivo = (id: string, name: string, padre: string, extra: Record<string, unknown> = {}) => ({
+    id, name, mimeType: 'application/pdf', parents: [padre], size: String(pdfDe(id).length), modifiedTime: '2026-11-11T00:00:00.000Z', version: '1', ...extra,
+  });
+  const CONFIG = { formato: 1, convocatorias: [{ id: '2027-11', nombre: 'Noviembre de 2027' }], asignaturas: { Física: { niveles: ['NM'] } } };
+  type Nodo = { i: string; p: string; n: string; k: string; d: string | null; x: Record<string, string> | null; v: string | null; g: string | null };
+  const indice = async (cuenta = ALUMNA) => {
+    const primera = await a.pedir('/app/biblioteca', { token: sesion(cuenta) });
+    const nodos: Nodo[] = [...(primera.datos?.nodos ?? [])];
+    for (let p = 1; p < (primera.datos?.partes ?? 0); p++) nodos.push(...(await a.pedir(`/app/biblioteca?parte=${p}`, { token: sesion(cuenta) })).datos.nodos);
+    return { ...primera, nodos };
+  };
+  const hoy = () => new Date().toISOString().slice(0, 10);
+
+  beforeAll(() => {
+    DRIVE.archivos = [
+      carpeta('raiz-ak-lore-01', 'AK Lore', 'mi-unidad-de-asvent'),
+      carpeta('carpeta-bib-01', '_Biblioteca', 'raiz-ak-lore-01'),
+      archivo('config-json-01', 'biblioteca.json', 'carpeta-bib-01', { mimeType: 'application/json', size: '200' }),
+      carpeta('carpeta-tarj-01', 'Tarjetas', 'carpeta-bib-01'),
+      archivo('tarjetas-fis-01', 'fisica-guia.json', 'carpeta-tarj-01', { mimeType: 'application/json', size: '100' }),
+      carpeta('carpeta-dest-01', 'Destacados', 'carpeta-bib-01'),
+      { id: 'atajo-guia-0001', name: '01 Guía de Física', mimeType: 'application/vnd.google-apps.shortcut', parents: ['carpeta-dest-01'], shortcutDetails: { targetId: 'guia-fisica-001' }, version: '1' },
+      carpeta('carpeta-fis-001', 'Física', 'raiz-ak-lore-01'),
+      carpeta('carpeta-guia-01', 'Guía y programa', 'carpeta-fis-001'),
+      archivo('guia-fisica-001', 'Guía de Física (primeros exámenes en 2025)', 'carpeta-guia-01', {
+        description: 'La guía oficial de la asignatura.',
+        properties: { clave: 'fisica-guia', tipo: 'guia', guia: '2025', idioma: 'es', origen: 'IB' },
+      }),
+      carpeta('carpeta-exam-01', 'Exámenes', 'carpeta-fis-001'),
+      archivo('examen-fis-0001', 'Prueba 2 de Física, mayo de 2025, zona horaria 2', 'carpeta-exam-01', { properties: { clave: 'fisica-examen-2025-05-z2-p2', tipo: 'examen' } }),
+      carpeta('carpeta-temas-1', 'Temas', 'carpeta-fis-001'),
+      ...Array.from({ length: 510 }, (_, i) => archivo(`relleno-${String(i).padStart(6, '0')}`, `Apuntes ${i}`, 'carpeta-temas-1')),
+      carpeta('carpeta-vieja-1', '_Anterior - Programa del Diploma (10-nov-2026)', 'raiz-ak-lore-01'),
+      archivo('archivo-viejo-1', 'Guía vieja', 'carpeta-vieja-1'),
+      archivo('oculto-punto-1', '.borrador', 'carpeta-guia-01'),
+      { id: 'documento-gdoc1', name: 'Un documento de Google', mimeType: 'application/vnd.google-apps.document', parents: ['carpeta-guia-01'], version: '1' },
+      archivo('fuera-de-raiz-1', 'Suelto', 'otra-carpeta-de-asvent'),
+    ];
+    DRIVE.contenido['config-json-01'] = JSON.stringify(CONFIG);
+    DRIVE.contenido['tarjetas-fis-01'] = JSON.stringify({ formato: 1, de: 'fisica-guia', tarjetas: [{ id: 1, frente: 'a', reverso: 'b' }] });
+  });
+
+  it('antes de leer Drive, un índice vacío; y solo para cuentas que pueden abrirla', async () => {
+    const r = await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) });
+    expect(r.estado).toBe(200);
+    expect(r.datos).toMatchObject({ formato: 2, partes: 0, nodos: [], config: null });
+    expect((await a.pedir('/app/biblioteca', { token: sesion(LUIS) })).datos).toEqual({ error: 'school' });
+    expect((await a.pedir('/app/biblioteca')).estado).toBe(401);
+  });
+
+  it('lee la carpeta entera, por páginas, y arma el índice por partes', async () => {
+    await a.sincronizar();
+    expect(DRIVE.listados).toBe(2);
+    const r = await indice();
+    expect(r.datos.partes).toBe(2);
+    expect(r.datos.raiz).toBe('raiz-ak-lore-01');
+    expect(r.datos.config).toEqual(CONFIG);
+    const ids = new Set(r.nodos.map((n) => n.i));
+    expect(ids.size).toBe(r.nodos.length);
+    for (const id of ['carpeta-bib-01', 'config-json-01', 'tarjetas-fis-01', 'atajo-guia-0001', 'guia-fisica-001', 'examen-fis-0001', 'relleno-000509']) expect(ids).toContain(id);
+    for (const id of ['raiz-ak-lore-01', 'carpeta-vieja-1', 'archivo-viejo-1', 'oculto-punto-1', 'documento-gdoc1', 'fuera-de-raiz-1']) expect(ids).not.toContain(id);
+    const guia = r.nodos.find((n) => n.i === 'guia-fisica-001')!;
+    expect(guia).toMatchObject({ p: 'carpeta-guia-01', n: 'Guía de Física (primeros exámenes en 2025)', k: 'f', d: 'La guía oficial de la asignatura.', x: { clave: 'fisica-guia', tipo: 'guia' } });
+    expect(r.nodos.find((n) => n.i === 'atajo-guia-0001')).toMatchObject({ k: 's', g: 'guia-fisica-001' });
+    expect(r.nodos.find((n) => n.i === 'carpeta-fis-001')).toMatchObject({ k: 'd', p: 'raiz-ak-lore-01' });
+    // El examen lleva portada dibujada por la app: no se copia la de Drive. Lo apartado, tampoco.
+    expect(r.nodos.find((n) => n.i === 'examen-fis-0001')!.v).toBeNull();
+    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id IN ('archivo-viejo-1', 'examen-fis-0001')")).toEqual([{ n: 0 }]);
+  });
+
+  it('las portadas llegan poco a poco y, sin cambios, la app no vuelve a bajar el índice', async () => {
+    const { datos } = await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) });
+    const igual = await a.pedir(`/app/biblioteca?si=${encodeURIComponent(datos.actualizado)}`, { token: sesion(ALUMNA) });
+    expect(igual.datos).toEqual({ formato: 2, actualizado: datos.actualizado, igual: true });
+    for (let i = 0; i < 30; i++) await a.sincronizar();
+    expect(await a.sql('SELECT count(*) AS n FROM lore_nodos WHERE pendiente = 1')).toEqual([{ n: 0 }]);
+    expect((await indice()).nodos.find((n) => n.i === 'guia-fisica-001')!.v).toBe('1');
+    const antes = (await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.actualizado;
+    await a.sincronizar();
+    expect((await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.actualizado).toBe(antes);
+  });
+
+  it('mover, renombrar o borrar en Drive basta', async () => {
+    const guia = DRIVE.archivos.find((f) => f.id === 'guia-fisica-001')!;
+    guia.parents = ['carpeta-exam-01'];
+    guia.name = 'Guía de Física (nueva)';
+    guia.version = '2';
+    DRIVE.archivos.find((f) => f.id === 'relleno-000001')!.trashed = true;
+    await a.sincronizar();
+    const r = await indice();
+    expect(r.nodos.find((n) => n.i === 'guia-fisica-001')).toMatchObject({ p: 'carpeta-exam-01', n: 'Guía de Física (nueva)' });
+    expect(r.nodos.find((n) => n.i === 'relleno-000001')).toBeUndefined();
+    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id = 'relleno-000001'")).toEqual([{ n: 0 }]);
+    // La portada se renueva con la versión.
+    expect(await a.sql("SELECT version FROM lore_vistas WHERE id = 'guia-fisica-001'")).toEqual([{ version: '2' }]);
+  });
+
+  it('si Drive no responde, no se quita nada', async () => {
+    DRIVE.caido = true;
+    const antes = (await indice()).nodos.length;
+    await a.sincronizar();
+    DRIVE.caido = false;
+    expect((await indice()).nodos.length).toBe(antes);
+  });
+
+  it('pasa el archivo de la carpeta, entero o por tramos, y lo cuenta', async () => {
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    const tam = pdfDe('guia-fisica-001').length;
+    const r = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) });
+    expect(r.estado).toBe(200);
+    expect(r.texto).toBe(pdfDe('guia-fisica-001'));
+    expect(r.r.headers.get('content-disposition')).toContain(encodeURIComponent('Guía de Física (nueva)'));
+    expect(r.r.headers.get('accept-ranges')).toBe('bytes');
+    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: tam }]);
+    const t = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } });
+    expect(t.estado).toBe(206);
+    expect(t.texto).toBe(pdfDe('guia-fisica-001').slice(5, 10));
+    expect(t.r.headers.get('content-range')).toBe(`bytes 5-9/${tam}`);
+    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: tam + 5 }]);
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: `bytes=${tam + 5}-` } })).estado).toBe(416);
+  });
+
+  it('nada fuera de la raíz, apartado, carpeta o de Google', async () => {
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    for (const id of ['archivo-viejo-1', 'fuera-de-raiz-1', 'oculto-punto-1', 'carpeta-fis-001', 'documento-gdoc1', 'no-existe-nunca', '..%2Fx', 'relleno-000001']) {
+      expect((await a.pedir(`/app/biblioteca/archivo/${id}`, { token: sesion(ALUMNA) })).estado, id).toBe(404);
+    }
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([]);
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(LUIS) })).estado).toBe(403);
+  });
+
+  it('portadas y tarjetas, sin gastar el tope', async () => {
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    const v = await a.pedir('/app/biblioteca/vista/guia-fisica-001', { token: sesion(ALUMNA) });
+    expect(v.estado).toBe(200);
+    expect(v.r.headers.get('content-type')).toBe('image/jpeg');
+    expect((await a.pedir('/app/biblioteca/vista/examen-fis-0001', { token: sesion(ALUMNA) })).estado).toBe(404);
+    const t = await a.pedir('/app/biblioteca/tarjetas/fisica-guia', { token: sesion(ALUMNA) });
+    expect(t.estado).toBe(200);
+    expect(t.datos).toMatchObject({ formato: 1, de: 'fisica-guia' });
+    expect((await a.pedir('/app/biblioteca/tarjetas/no-hay', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/biblioteca/tarjetas/..%2Fx', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/biblioteca/tarjetas/fisica-guia', { token: sesion(LUIS) })).estado).toBe(403);
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([]);
+  });
+
+  it('una configuración rota no reemplaza a la buena', async () => {
+    DRIVE.contenido['config-json-01'] = '{ esto no es JSON';
+    DRIVE.archivos.find((f) => f.id === 'config-json-01')!.version = '2';
+    await a.sincronizar();
+    expect((await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.config).toEqual(CONFIG);
+  });
+
+  it('la cuenta de servicio firma su JWT con RS256', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    const jwt = await firmarJwt({ client_email: 'lector@proyecto.iam.gserviceaccount.com', private_key: pem }, 1_800_000_000_000);
+    const [cab, cuerpo, firma] = jwt.split('.');
+    const leer = (s: string) => JSON.parse(Buffer.from(s, 'base64url').toString());
+    expect(leer(cab!)).toEqual({ alg: 'RS256', typ: 'JWT' });
+    expect(leer(cuerpo!)).toEqual({
+      iss: 'lector@proyecto.iam.gserviceaccount.com',
+      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: 1_800_000_000,
+      exp: 1_800_003_600,
+    });
+    expect(createVerify('RSA-SHA256').update(`${cab}.${cuerpo}`).verify(publicKey, Buffer.from(firma!, 'base64url'))).toBe(true);
   });
 });
