@@ -32,13 +32,14 @@ const VISTA_ID = /^[A-Za-z0-9_-]{3,100}$/;
 const CLAVE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const POR_PAGINA = 500;
 const MAX_PAGINAS = 16;
-const VISTAS_POR_VUELTA = 20;
+/** Con las páginas de la lectura, el token y la configuración, por debajo de las 50 peticiones que da el plan gratis por ejecución. */
+const VISTAS_POR_VUELTA = 36;
 const NODOS_POR_PARTE = 400;
 const MAX_TARJETAS = 1_000_000;
 const MAX_CONFIG = 500_000;
 const MAX_VISTA = 400_000;
-/** Tipos cuya portada dibuja la app (asignatura, prueba, convocatoria): sus primeras páginas son casi iguales. */
-const PORTADA_GENERADA = "('examen', 'esquema', 'simulacro', 'banco', 'prueba-colegio')";
+/** Lado mayor de la portada copiada. Va en su versión: al cambiarlo, la app pide la nueva. */
+const LADO_VISTA = 640;
 const CAMPOS =
   'nextPageToken,files(id,name,mimeType,parents,description,properties,size,modifiedTime,sha256Checksum,version,thumbnailLink,shortcutDetails(targetId))';
 const SIN_CACHE = { 'cache-control': 'private, no-store' };
@@ -138,10 +139,11 @@ WHERE json_extract(f.value, '$.id') IS NOT NULL AND json_extract(f.value, '$.nam
 ON CONFLICT (id) DO UPDATE SET padre = excluded.padre, nombre = excluded.nombre, mime = excluded.mime, descripcion = excluded.descripcion,
   props = excluded.props, tamano = excluded.tamano, modificado = excluded.modificado, huella = excluded.huella, destino = excluded.destino,
   version = excluded.version, miniatura = excluded.miniatura,
-  pendiente = CASE WHEN lore_nodos.version IS excluded.version THEN lore_nodos.pendiente ELSE excluded.miniatura IS NOT NULL END,
-  intentos = CASE WHEN lore_nodos.version IS excluded.version THEN lore_nodos.intentos ELSE 0 END
+  pendiente = CASE WHEN lore_nodos.version IS excluded.version AND lore_nodos.miniatura IS NOT NULL THEN lore_nodos.pendiente ELSE excluded.miniatura IS NOT NULL END,
+  intentos = CASE WHEN lore_nodos.version IS excluded.version AND lore_nodos.miniatura IS NOT NULL THEN lore_nodos.intentos ELSE 0 END
 WHERE lore_nodos.version IS NOT excluded.version OR lore_nodos.padre IS NOT excluded.padre OR lore_nodos.nombre IS NOT excluded.nombre
-  OR (lore_nodos.pendiente = 1 AND lore_nodos.miniatura IS NOT excluded.miniatura)`;
+  OR (lore_nodos.pendiente = 1 AND lore_nodos.miniatura IS NOT excluded.miniatura)
+  OR (lore_nodos.miniatura IS NULL AND excluded.miniatura IS NOT NULL)`;
 
 /** Los nodos que se ven: los de la raíz para abajo, sin carpetas ni archivos que empiecen por «_» o «.» (salvo `_Biblioteca`). */
 const ARBOL = `arbol(id) AS (
@@ -242,12 +244,9 @@ export async function sincronizar(env: Env): Promise<Vuelta> {
     }
   }
 
-  // 4. Portadas: solo las de lo que se ve, y no las que dibuja la app.
+  // 4. Portadas: la primera página de todo lo que se ve (1.9.8: también exámenes, esquemas y bancos).
   if (v.cambios || v.borrados) {
-    await env.DB.prepare(
-      `WITH RECURSIVE ${ARBOL} UPDATE lore_nodos SET pendiente = 0 WHERE pendiente = 1 AND (id NOT IN (SELECT id FROM arbol)
-        OR (json_extract(props, '$.tipo') IN ${PORTADA_GENERADA} AND json_extract(props, '$.portada') IS NOT 'archivo'))`,
-    ).run();
+    await env.DB.prepare(`WITH RECURSIVE ${ARBOL} UPDATE lore_nodos SET pendiente = 0 WHERE pendiente = 1 AND id NOT IN (SELECT id FROM arbol)`).run();
   }
   v.vistas = await copiarPortadas(env);
 
@@ -275,7 +274,7 @@ async function copiarPortadas(env: Env): Promise<number> {
   const hechos = await Promise.all(
     results.map(async (n) => {
       if (!n.miniatura?.startsWith('https://')) return { n, ok: null };
-      const url = /=s\d+$/.test(n.miniatura) ? n.miniatura.replace(/=s\d+$/, '=s400') : n.miniatura;
+      const url = /=s\d+$/.test(n.miniatura) ? n.miniatura.replace(/=s\d+$/, `=s${LADO_VISTA}`) : n.miniatura;
       const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
       const mime = (r?.headers.get('content-type') ?? '').split(';')[0]!.trim();
       if (!r?.ok || !/^image\/(jpeg|png|webp)$/.test(mime)) return { n, ok: null };
@@ -286,10 +285,10 @@ async function copiarPortadas(env: Env): Promise<number> {
   const pasos = hechos.flatMap(({ n, ok }) =>
     ok
       ? [
-          env.DB.prepare('INSERT OR REPLACE INTO lore_vistas (id, mime, datos, version) VALUES (?, ?, ?, ?)').bind(n.id, ok.mime, ok.datos, n.version ?? '0'),
+          env.DB.prepare('INSERT OR REPLACE INTO lore_vistas (id, mime, datos, version) VALUES (?, ?, ?, ?)').bind(n.id, ok.mime, ok.datos, `${n.version ?? '0'}.${LADO_VISTA}`),
           env.DB.prepare('UPDATE lore_nodos SET pendiente = 0 WHERE id = ? AND version IS ?').bind(n.id, n.version),
         ]
-      : // Tres intentos (el enlace se renueva en cada lectura) y la app dibuja la portada.
+      : // Tres intentos (el enlace se renueva en cada lectura); sin portada, la app enseña una hoja en blanco.
         [env.DB.prepare('UPDATE lore_nodos SET intentos = intentos + 1, pendiente = intentos + 1 < 3 WHERE id = ?').bind(n.id)],
   );
   await env.DB.batch(pasos);

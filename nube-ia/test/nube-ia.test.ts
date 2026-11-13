@@ -769,9 +769,8 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     expect(guia).toMatchObject({ p: 'carpeta-guia-01', n: 'Guía de Física (primeros exámenes en 2025)', k: 'f', d: 'La guía oficial de la asignatura.', x: { clave: 'fisica-guia', tipo: 'guia' } });
     expect(r.nodos.find((n) => n.i === 'atajo-guia-0001')).toMatchObject({ k: 's', g: 'guia-fisica-001' });
     expect(r.nodos.find((n) => n.i === 'carpeta-fis-001')).toMatchObject({ k: 'd', p: 'raiz-ak-lore-01' });
-    // El examen lleva portada dibujada por la app: no se copia la de Drive. Lo apartado, tampoco.
-    expect(r.nodos.find((n) => n.i === 'examen-fis-0001')!.v).toBeNull();
-    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id IN ('archivo-viejo-1', 'examen-fis-0001')")).toEqual([{ n: 0 }]);
+    // Lo apartado no se ve: su portada no se copia.
+    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id = 'archivo-viejo-1'")).toEqual([{ n: 0 }]);
   });
 
   it('las portadas llegan poco a poco y, sin cambios, la app no vuelve a bajar el índice', async () => {
@@ -780,7 +779,9 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     expect(igual.datos).toEqual({ formato: 2, actualizado: datos.actualizado, igual: true });
     for (let i = 0; i < 30; i++) await a.sincronizar();
     expect(await a.sql('SELECT count(*) AS n FROM lore_nodos WHERE pendiente = 1')).toEqual([{ n: 0 }]);
-    expect((await indice()).nodos.find((n) => n.i === 'guia-fisica-001')!.v).toBe('1');
+    expect((await indice()).nodos.find((n) => n.i === 'guia-fisica-001')!.v).toBe('1.640');
+    // También la del examen (1.9.8): cada tarjeta enseña la primera página de su archivo.
+    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id IN ('archivo-viejo-1', 'examen-fis-0001')")).toEqual([{ n: 1 }]);
     const antes = (await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.actualizado;
     await a.sincronizar();
     expect((await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.actualizado).toBe(antes);
@@ -798,7 +799,7 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     expect(r.nodos.find((n) => n.i === 'relleno-000001')).toBeUndefined();
     expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id = 'relleno-000001'")).toEqual([{ n: 0 }]);
     // La portada se renueva con la versión.
-    expect(await a.sql("SELECT version FROM lore_vistas WHERE id = 'guia-fisica-001'")).toEqual([{ version: '2' }]);
+    expect(await a.sql("SELECT version FROM lore_vistas WHERE id = 'guia-fisica-001'")).toEqual([{ version: '2.640' }]);
   });
 
   it('si Drive no responde, no se quita nada', async () => {
@@ -840,7 +841,8 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     const v = await a.pedir('/app/biblioteca/vista/guia-fisica-001', { token: sesion(ALUMNA) });
     expect(v.estado).toBe(200);
     expect(v.r.headers.get('content-type')).toBe('image/jpeg');
-    expect((await a.pedir('/app/biblioteca/vista/examen-fis-0001', { token: sesion(ALUMNA) })).estado).toBe(404);
+    expect((await a.pedir('/app/biblioteca/vista/examen-fis-0001', { token: sesion(ALUMNA) })).estado).toBe(200);
+    expect((await a.pedir('/app/biblioteca/vista/archivo-viejo-1', { token: sesion(ALUMNA) })).estado).toBe(404);
     const t = await a.pedir('/app/biblioteca/tarjetas/fisica-guia', { token: sesion(ALUMNA) });
     expect(t.estado).toBe(200);
     expect(t.datos).toMatchObject({ formato: 1, de: 'fisica-guia' });

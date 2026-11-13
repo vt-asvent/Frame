@@ -252,7 +252,7 @@ export async function crearArnes(): Promise<Arnes> {
             return new Response(JSON.stringify({ ...sigue, files: pagina }, null, 1), { headers: { 'content-type': 'application/json' } }) as never;
           }
           if (url.hostname === 'lh3.googleusercontent.com') {
-            if (auth !== 'Bearer acceso-drive' || !url.pathname.endsWith('=s400')) return new Response('', { status: 403 }) as never;
+            if (auth !== 'Bearer acceso-drive' || !url.pathname.endsWith('=s640')) return new Response('', { status: 403 }) as never;
             return new Response(JPEG, { headers: { 'content-type': 'image/jpeg' } }) as never;
           }
           if (url.hostname === 'www.googleapis.com' && url.pathname.startsWith('/drive/v3/files/')) {
