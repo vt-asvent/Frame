@@ -10,8 +10,8 @@ import { courseForSubject, normalize, type TimetableClass } from '@/lib/timetabl
 // asignatura (por su id: cambiarle el nombre no rompe el vínculo), y vale para
 // todos los horarios de la cuenta, también el del mes que viene.
 //
-// El vínculo lo pone, por este orden: el propio usuario (toca la tarjeta y
-// elige), el nombre idéntico, la IA que leyó la foto (nube-ia/horario.ts, que
+// El vínculo lo pone, por este orden: el propio usuario (el eslabón del
+// Horario), el nombre idéntico, la IA que leyó la foto (nube-ia/horario.ts, que
 // recibe los nombres de las asignaturas) y el parecido de siempre
 // (`courseForSubject`). Lo que nadie supo vincular se pregunta una sola vez,
 // al terminar de leer la foto.
@@ -86,16 +86,7 @@ export function useSubjectLinks(uid: string | null | undefined): ReadonlyMap<str
 
 export const readSubjectLinks = (uid: string): ReadonlyMap<string, string> => read(uid);
 
-/** Vincula un nombre del horario con una asignatura; `null` = «ninguna». */
-export function setSubjectLink(uid: string, subject: string, courseId: string | null): void {
-  const id = normalize(subject);
-  if (!id) return;
-  const next = new Map(read(uid));
-  next.set(id, courseId ?? '');
-  write(uid, next);
-}
-
-/** Varios a la vez (lo que resolvió la lectura de la foto): una sola escritura. */
+/** Vincula nombres del horario con su asignatura (`null` = «ninguna»), en una sola escritura. */
 export function setSubjectLinks(uid: string, entries: readonly (readonly [subject: string, courseId: string | null])[]): void {
   if (entries.length === 0) return;
   const next = new Map(read(uid));

@@ -18,6 +18,10 @@ import { AKLORE, demoOn, fold, fromCloud } from './source';
 // `_Biblioteca` (configuración, Destacados, Tarjetas y Portadas). Lo que no
 // está donde debe se muestra igual (en «Otros»): la app es tolerante; el
 // validador del contrato, estricto. Subir o mover algo en Drive basta.
+//
+// 1.9.8: la configuración trae los «programas» (IB, CNEB…), cada uno con sus
+// grupos de asignaturas y sus pruebas: de ahí salen los filtros de la pantalla.
+// Nada de eso está escrito en la app.
 // ============================================================
 
 export interface BibNode {
@@ -45,9 +49,20 @@ export interface BibSubjectConf {
   color?: string;
 }
 
+/** Un programa («IB», «CNEB»): lo que se ve con él y los dos filtros que ofrece. */
+export interface BibPrograma {
+  nombre: string;
+  /** Cómo se llama elegir uno de sus grupos («Nivel», «Curso»). */
+  etiqueta?: string;
+  /** Sus asignaturas, por grupos («Core», «NM»…; o un grupo por curso). */
+  grupos: { nombre: string; asignaturas: string[] }[];
+  /** Sus pruebas («Prueba 1», «IA»…): cada una reúne los componentes que le tocan. */
+  componentes: { nombre: string; incluye: string[] }[];
+}
+
 export interface BibConfig {
   convocatorias: { id: string; nombre: string }[];
-  secciones: { nombre: string; asignaturas: string[] }[];
+  programas: BibPrograma[];
   asignaturas: Record<string, BibSubjectConf>;
 }
 
@@ -78,13 +93,11 @@ export interface BibItem {
 export interface BibSubject {
   name: string;
   conf: BibSubjectConf;
-  section: string;
   items: BibItem[];
 }
 
 export interface BibModel {
   subjects: BibSubject[];
-  sections: { name: string; subjects: BibSubject[] }[];
   items: BibItem[];
   byId: Map<string, BibItem>;
   featured: BibItem[];
@@ -124,10 +137,6 @@ export const TIPO_LABEL: Record<string, string> = {
 
 export const tipoLabel = (item: BibItem) => tr(TIPO_LABEL[item.tipo] ?? (item.ext ? item.ext.toUpperCase() : 'Archivo'));
 
-/** Portada dibujada por la app: las primeras páginas de estos se parecen todas. */
-const DRAWN = new Set(['examen', 'esquema', 'simulacro', 'banco', 'prueba-colegio']);
-export const drawnCover = (item: BibItem) => !item.customCover && (item.props.portada === 'generada' || (DRAWN.has(item.tipo) && item.props.portada !== 'archivo') || !item.cover);
-
 
 /** «2025-05» → «mayo de 2025»; «muestra-2025» → «Examen de muestra (2025)». */
 export function convocatoriaLabel(value: string | undefined): string {
@@ -159,7 +168,7 @@ export const vinculosDe = (item: BibItem) => (item.props.vinculos ? item.props.v
 // El modelo, a partir de los nodos
 // ------------------------------------------------------------
 
-const EMPTY_CONFIG: BibConfig = { convocatorias: [], secciones: [], asignaturas: {} };
+const EMPTY_CONFIG: BibConfig = { convocatorias: [], programas: [], asignaturas: {} };
 
 export function parseConfig(raw: unknown): BibConfig {
   const c = raw as Partial<BibConfig> | null;
@@ -183,10 +192,28 @@ export function parseConfig(raw: unknown): BibConfig {
   }
   return {
     convocatorias: list(c.convocatorias, (x): x is { id: string; nombre: string } => !!x && isText((x as { id?: unknown }).id) && isText((x as { nombre?: unknown }).nombre)),
-    secciones: list(c.secciones, (x): x is { nombre: string; asignaturas: string[] } => !!x && isText((x as { nombre?: unknown }).nombre) && Array.isArray((x as { asignaturas?: unknown }).asignaturas)),
+    programas: list(c.programas, (x): x is BibPrograma => !!x && isText((x as BibPrograma).nombre)).map((p) => ({
+      nombre: p.nombre,
+      etiqueta: isText(p.etiqueta) ? p.etiqueta : undefined,
+      grupos: list(p.grupos, (g): g is BibPrograma['grupos'][number] => !!g && isText((g as { nombre?: unknown }).nombre)).map((g) => ({ nombre: g.nombre, asignaturas: list(g.asignaturas, isText) })),
+      componentes: list(p.componentes, (k): k is BibPrograma['componentes'][number] => !!k && isText((k as { nombre?: unknown }).nombre)).map((k) => ({ nombre: k.nombre, incluye: list(k.incluye, isText) })),
+    })),
     asignaturas,
   };
 }
+
+/** Las asignaturas de un programa (o de uno de sus grupos). Las que ningún programa nombra van con el primero. */
+export function subjectsIn(model: BibModel, programa: BibPrograma | null, grupo: string | null): BibSubject[] {
+  if (!programa) return model.subjects;
+  const all = model.config.programas;
+  const group = programa.grupos.find((g) => g.nombre === grupo);
+  const names = new Set((group ? [group] : programa.grupos).flatMap((g) => g.asignaturas));
+  const listed = new Set(all.flatMap((p) => p.grupos.flatMap((g) => g.asignaturas)));
+  return model.subjects.filter((s) => names.has(s.name) || (!group && programa === all[0] && !listed.has(s.name)));
+}
+
+/** ¿Es de esa prueba? (`null`: sin filtro). */
+export const deComponente = (item: BibItem, componente: BibPrograma['componentes'][number] | null) => !componente || componente.incluye.includes(item.props.componente ?? '');
 
 const LOOSE = 'Otros archivos';
 
@@ -253,21 +280,18 @@ export function buildModel(nodes: BibNode[], raiz: string | null, rawConfig: unk
 
   const bySubject = new Map<string, BibItem[]>();
   for (const it of items) bySubject.set(it.subject, [...(bySubject.get(it.subject) ?? []), it]);
-  const sectionOf = new Map<string, string>();
-  for (const s of config.secciones) for (const a of s.asignaturas) if (!sectionOf.has(a)) sectionOf.set(a, s.nombre);
-  const order = config.secciones.flatMap((s) => s.asignaturas);
+  // En el orden de los programas y sus grupos; lo que no nombran, al final.
+  const order = config.programas.flatMap((p) => p.grupos.flatMap((g) => g.asignaturas));
   const subjects: BibSubject[] = [...bySubject.keys()]
     .sort((a, b) => {
       const ia = order.indexOf(a);
       const ib = order.indexOf(b);
       return (ia < 0 ? 1e6 : ia) - (ib < 0 ? 1e6 : ib) || a.localeCompare(b, 'es');
     })
-    .map((name) => ({ name, conf: config.asignaturas[name] ?? {}, section: sectionOf.get(name) ?? 'Otras', items: bySubject.get(name)! }));
-  const sectionNames = [...config.secciones.map((s) => s.nombre), 'Otras'];
-  const sections = sectionNames.map((name) => ({ name, subjects: subjects.filter((s) => s.section === name) })).filter((s) => s.subjects.length > 0);
+    .map((name) => ({ name, conf: config.asignaturas[name] ?? {}, items: bySubject.get(name)! }));
   const byId = new Map(items.map((it) => [it.id, it]));
   const featured = featuredTargets.map((id) => byId.get(id)).filter((it): it is BibItem => !!it);
-  return { subjects, sections, items, byId, featured, config };
+  return { subjects, items, byId, featured, config };
 }
 
 // ------------------------------------------------------------
@@ -349,7 +373,7 @@ export interface BibState {
 
 export function useBiblioteca(enabled: boolean): BibState {
   const demo = demoOn();
-  const [copy, setCopy] = useState<IndexCopy | null>(() => (demo ? DEMO_INDEX : extRead<IndexCopy | null>(AKLORE, INDEX_KEY, null)));
+  const [copy, setCopy] = useState<IndexCopy | null>(() => (demo ? demoIndex() : extRead<IndexCopy | null>(AKLORE, INDEX_KEY, null)));
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -357,7 +381,7 @@ export function useBiblioteca(enabled: boolean): BibState {
   useEffect(() => {
     if (!enabled) return;
     if (demo) {
-      setCopy(DEMO_INDEX);
+      setCopy(demoIndex());
       setLoading(false);
       return;
     }
@@ -420,9 +444,9 @@ async function loadCover(id: string, v: string): Promise<string | null> {
   }
 }
 
-/** La portada de un archivo (dirección de imagen), o null mientras llega o si la dibuja la app. */
+/** La portada de un archivo (dirección de imagen): su primera página, o null mientras llega o si no tiene. */
 export function useCover(item: BibItem | null, visible: boolean): string | null {
-  const target = !item || demoOn() ? null : item.customCover ?? (drawnCover(item) || !item.cover ? null : { id: item.id, v: item.cover });
+  const target = !item || demoOn() ? null : item.customCover ?? (item.cover ? { id: item.id, v: item.cover } : null);
   const key = target ? `${target.id}:${target.v}` : null;
   const [url, setUrl] = useState<string | null>(() => (key ? coverUrls.get(key) ?? null : null));
   useEffect(() => {
@@ -666,9 +690,22 @@ const DEMO_INDEX: IndexCopy = {
   raiz: 'raiz',
   config: {
     convocatorias: [{ id: '2027-11', nombre: 'Noviembre de 2027' }, { id: '2028-11', nombre: 'Noviembre de 2028' }],
-    secciones: [
-      { nombre: 'Asignaturas del Diploma', asignaturas: ['Física', 'Historia'] },
-      { nombre: 'Núcleo del Diploma', asignaturas: ['Monografía'] },
+    programas: [
+      {
+        nombre: 'IB',
+        etiqueta: 'Nivel',
+        grupos: [
+          { nombre: 'Core', asignaturas: ['Monografía'] },
+          { nombre: 'NM', asignaturas: ['Física'] },
+          { nombre: 'NS', asignaturas: ['Historia'] },
+        ],
+        componentes: [
+          { nombre: 'Prueba 1', incluye: ['Prueba 1', 'Prueba 1A', 'Prueba 1B'] },
+          { nombre: 'Prueba 2', incluye: ['Prueba 2'] },
+          { nombre: 'IA', incluye: ['Evaluación interna', 'Investigación histórica'] },
+        ],
+      },
+      { nombre: 'CNEB', etiqueta: 'Curso', grupos: [{ nombre: 'Matemática (3.º)', asignaturas: ['Matemática (3.º)'] }], componentes: [] },
     ],
     asignaturas: {
       Física: { grupo: 'Grupo 4, Ciencias', niveles: ['NM'], alias: ['fisica'], programa: { '2027-11': '2025', '2028-11': '2025' }, componentes: ['Prueba 1A', 'Prueba 1B', 'Prueba 2', 'Evaluación interna'], temas: ['A.1 Cinemática', 'A.2 Fuerzas y cantidad de movimiento'], color: '#2563eb' },
@@ -700,11 +737,17 @@ const DEMO_INDEX: IndexCopy = {
     demoNode('his', 'raiz', 'Historia'),
     demoNode('hg', 'his', 'Guía y programa'),
     demoNode('h1', 'hg', 'Guía de Historia (primeros exámenes en 2017).pdf', 'f', { clave: 'historia-guia-2017', tipo: 'guia', guia: '2017', idioma: 'es', origen: 'IB' }, 'Guía oficial del IB.'),
+    demoNode('mat', 'raiz', 'Matemática (3.º)'),
+    demoNode('mt', 'mat', 'Temas'),
+    demoNode('mt1', 'mt', 'Ecuaciones cuadráticas, clase de Matemática de 3.º.pdf', 'f', { clave: 'mate3-clase-cuadraticas', tipo: 'clase', idioma: 'es', origen: 'colegio' }, 'Sesión de tercero sobre ecuaciones cuadráticas.'),
     demoNode('mon', 'raiz', 'Monografía'),
     demoNode('mw', 'mon', 'Trabajos'),
     demoNode('m1', 'mw', 'Monografía calificada de ejemplo de Historia (24 de 30).pdf', 'f', { clave: 'mono-historia-1', tipo: 'ejemplo', componente: 'Monografía', vinculos: 'Historia', puntos: '24 de 30', idioma: 'es', origen: 'IB' }, 'Una monografía de Historia con su calificación.'),
   ],
 };
+
+/** La página de pruebas puede dejar su propio índice (el real, por ejemplo) en `window.__frameBibDemo`. */
+const demoIndex = (): IndexCopy => (window as { __frameBibDemo?: IndexCopy }).__frameBibDemo ?? DEMO_INDEX;
 
 const DEMO_CARDS = {
   titulo: 'Guía de Física: cómo te evalúan',

@@ -3,30 +3,33 @@ import { ArrowRight, Check, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { setSubjectLinks } from '@/lib/timetable-links';
+import { linkedCourse, readSubjectLinks, setSubjectLinks } from '@/lib/timetable-links';
 import { tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 // ============================================================
 // Horario → «¿De qué asignatura son estas clases?» (1.9.3, Diego).
 //
-// Solo aparece al terminar de leer una foto, y solo con los nombres que ni el
-// parecido ni la IA supieron vincular con una asignatura de Frame. Una fila por
-// nombre: a la izquierda como viene en el horario, a la derecha la asignatura.
-// Lo que se deja en «Ninguna» no se vuelve a preguntar (se cambia tocando su
-// tarjeta en el Horario).
+// Aparece sola al terminar de leer una foto, con los nombres que ni el parecido
+// ni la IA supieron vincular con una asignatura de Frame, y con todos los del
+// horario al tocar el eslabón (1.9.8). Una fila por nombre: a la izquierda como
+// viene en el horario, a la derecha la asignatura que tiene ahora. Lo que se
+// deja en «Ninguna» no se vuelve a preguntar.
 // ============================================================
 
 interface Props {
   uid: string;
-  /** Los nombres del horario sin asignatura, como están escritos. */
+  /** Los nombres del horario, como están escritos. */
   subjects: string[];
   courses: readonly { id: string; name: string }[];
   onClose: () => void;
 }
 
 export default function ScheduleLinkDialog({ uid, subjects, courses, onClose }: Props) {
-  const [chosen, setChosen] = useState<Record<string, string>>({});
+  const [chosen, setChosen] = useState<Record<string, string>>(() => {
+    const links = readSubjectLinks(uid);
+    return Object.fromEntries(subjects.map((subject) => [subject, linkedCourse(courses, links, subject)?.id ?? '']));
+  });
   const save = () => {
     setSubjectLinks(uid, subjects.map((subject) => [subject, chosen[subject] || null] as const));
     onClose();
@@ -37,7 +40,7 @@ export default function ScheduleLinkDialog({ uid, subjects, courses, onClose }: 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{tr('¿De qué asignatura son estas clases?')}</DialogTitle>
-          <DialogDescription>{tr('Frame no reconoció estos nombres de tu horario. Elige su asignatura y verás su imagen en el Horario.')}</DialogDescription>
+          <DialogDescription>{tr('Elige la asignatura de Frame de cada clase de tu horario.')}</DialogDescription>
         </DialogHeader>
         <ul className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
           {subjects.map((subject) => {

@@ -138,7 +138,7 @@ export default function BibFileDialog({ item, color, conf, convocatoria, favorit
         </div>
         {/* Derecha: la vista previa */}
         <div className="min-h-0 flex-1 overflow-hidden bg-muted/40">
-          <Preview item={item} color={color} onEnlarge={setEnlarged} />
+          <Preview item={item} onEnlarge={setEnlarged} />
         </div>
         {enlarged !== null && <PdfFullView item={item} startPage={enlarged} onClose={() => setEnlarged(null)} />}
       </DialogContent>
@@ -149,19 +149,19 @@ export default function BibFileDialog({ item, color, conf, convocatoria, favorit
 const nivelLabel = (nivel: string) =>
   /NM/.test(nivel) && /NS/.test(nivel) ? tr('Nivel Medio y Superior') : /NS/.test(nivel) ? tr('Nivel Superior') : /NM/.test(nivel) ? tr('Nivel Medio') : nivel;
 
-function Preview({ item, color, onEnlarge }: { item: BibItem; color: string; onEnlarge: (page: number) => void }) {
-  if (item.ext === 'pdf') return <PdfPreview item={item} color={color} onEnlarge={onEnlarge} />;
+function Preview({ item, onEnlarge }: { item: BibItem; onEnlarge: (page: number) => void }) {
+  if (item.ext === 'pdf') return <PdfPreview item={item} onEnlarge={onEnlarge} />;
   if (['jpg', 'jpeg', 'png', 'webp'].includes(item.ext)) return <BlobPreview item={item} kind="image" />;
-  if (['mp3', 'm4a'].includes(item.ext)) return <BlobPreview item={item} kind="audio" color={color} />;
-  if (item.ext === 'mp4') return <BlobPreview item={item} kind="video" color={color} />;
-  return <NoPreview item={item} color={color} text={tr('Este archivo se abre con su programa: descárgalo para verlo.')} />;
+  if (['mp3', 'm4a'].includes(item.ext)) return <BlobPreview item={item} kind="audio" />;
+  if (item.ext === 'mp4') return <BlobPreview item={item} kind="video" />;
+  return <NoPreview item={item} text={tr('Este archivo se abre con su programa: descárgalo para verlo.')} />;
 }
 
-function NoPreview({ item, color, text, children }: { item: BibItem; color: string; text?: string; children?: ReactNode }) {
+function NoPreview({ item, text, children }: { item: BibItem; text?: string; children?: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="w-40">
-        <Cover item={item} color={color} />
+        <Cover item={item} />
       </div>
       {text && <p className="max-w-xs text-sm text-muted-foreground">{text}</p>}
       {children}
@@ -170,7 +170,7 @@ function NoPreview({ item, color, text, children }: { item: BibItem; color: stri
 }
 
 /** Imágenes, audio y vídeo: el archivo entero (el audio y el vídeo, solo si se pide). */
-function BlobPreview({ item, kind, color = '#334155' }: { item: BibItem; kind: 'image' | 'audio' | 'video'; color?: string }) {
+function BlobPreview({ item, kind }: { item: BibItem; kind: 'image' | 'audio' | 'video' }) {
   const [wanted, setWanted] = useState(kind === 'image');
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -190,10 +190,10 @@ function BlobPreview({ item, kind, color = '#334155' }: { item: BibItem; kind: '
       if (made) URL.revokeObjectURL(made);
     };
   }, [item, wanted]);
-  if (error) return <NoPreview item={item} color={color} text={error} />;
+  if (error) return <NoPreview item={item} text={error} />;
   if (!wanted)
     return (
-      <NoPreview item={item} color={color}>
+      <NoPreview item={item}>
         <Button variant="outline" onClick={() => setWanted(true)}>
           <Play className="mr-2 h-4 w-4" />
           {kind === 'audio' ? tr('Escuchar') : tr('Ver el vídeo')}
@@ -205,7 +205,7 @@ function BlobPreview({ item, kind, color = '#334155' }: { item: BibItem; kind: '
   if (kind === 'image') return <img src={url} alt={item.title} className="h-full w-full object-contain p-4" />;
   if (kind === 'audio')
     return (
-      <NoPreview item={item} color={color}>
+      <NoPreview item={item}>
         <audio src={url} controls autoPlay className="w-full max-w-sm" />
       </NoPreview>
     );
@@ -234,7 +234,7 @@ function usePdf(item: BibItem): { doc: PDFDocumentProxy | null; error: string | 
   return state;
 }
 
-function PdfPreview({ item, color, onEnlarge }: { item: BibItem; color: string; onEnlarge: (page: number) => void }) {
+function PdfPreview({ item, onEnlarge }: { item: BibItem; onEnlarge: (page: number) => void }) {
   const { doc, error } = usePdf(item);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -245,7 +245,7 @@ function PdfPreview({ item, color, onEnlarge }: { item: BibItem; color: string; 
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  if (error) return <NoPreview item={item} color={color} text={tr('No se pudo mostrar la vista previa: descárgalo para verlo.')} />;
+  if (error) return <NoPreview item={item} text={tr('No se pudo mostrar la vista previa: descárgalo para verlo.')} />;
   return (
     <div ref={box} className="h-full overflow-y-auto overscroll-contain">
       {!doc || width === 0 ? (

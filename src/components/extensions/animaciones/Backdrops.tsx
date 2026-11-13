@@ -8,6 +8,7 @@ import {
   ANIMACIONES,
   animationsWith,
   applyModAccent,
+  DEFAULT_CORNERS,
   DEFAULT_FOCUS,
   effectiveLook,
   HEADING_FONTS,
@@ -212,6 +213,17 @@ export default function AppBackdrop() {
       root.removeProperty('--font-headline');
     };
   }, [headingFont]);
+
+  // Las esquinas de los recuadros (1.9.8): `--radius`, de la que salen todos los redondeos.
+  const corners = on && look.corners !== DEFAULT_CORNERS ? look.corners : null;
+  useEffect(() => {
+    if (corners === null) return;
+    const root = document.documentElement.style;
+    root.setProperty('--radius', `${corners / 16}rem`);
+    return () => {
+      root.removeProperty('--radius');
+    };
+  }, [corners]);
 
   // El color de un mod va encima del acento de Ajustes; sin el mod, sin la
   // extensión o apagada, se quita y vuelve el de antes.

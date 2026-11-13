@@ -1,23 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ChevronLeft, ChevronRight, Layers, Sparkles, Star } from 'lucide-react';
-import {
-  convocatoriaLabel,
-  drawnCover,
-  programaDe,
-  temasDe,
-  tipoLabel,
-  useCover,
-  type BibItem,
-  type BibSubjectConf,
-} from '@/lib/extensions/aklore/biblioteca';
+import { ChevronLeft, ChevronRight, FileText, Film, Headphones, Layers, Sparkles, Star } from 'lucide-react';
+import { convocatoriaLabel, programaDe, tipoLabel, useCover, type BibItem, type BibSubjectConf } from '@/lib/extensions/aklore/biblioteca';
 import { tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 // ============================================================
-// Biblioteca 2 (1.9.7): las piezas de la pantalla. Cada archivo es una
-// portada (la primera página que copió la nube, una propia o, para exámenes y
-// parecidos, una dibujada con el color de su asignatura), su título y debajo
-// qué es. Se abre con un clic (BibFileDialog).
+// Biblioteca (1.9.7; 1.9.8): las piezas de la pantalla. Cada archivo es una
+// tarjeta con su primera página (la copia la nube; mientras llega, o si el
+// archivo no tiene páginas, una hoja en blanco: nunca un color entero), su
+// título y debajo qué es. Se abre con un clic (BibFileDialog).
+// En una fila caben cinco tarjetas y asoma la sexta (1.9.8, Diego).
 // ============================================================
 
 const PALETTE = ['#2563eb', '#0d9488', '#7c3aed', '#c2410c', '#be123c', '#15803d', '#a16207', '#0369a1', '#4338ca', '#334155'];
@@ -49,7 +41,7 @@ export function useVisible<T extends Element>(margin = '300px'): [RefObject<T | 
 }
 
 /** Lo que dice la línea de debajo del título: lo que más ayuda a elegir. */
-export function itemDetail(item: BibItem): string {
+function itemDetail(item: BibItem): string {
   const parts: string[] = [tipoLabel(item)];
   if (item.props.convocatoria) parts.push(convocatoriaLabel(item.props.convocatoria));
   else if (item.props.anio && item.tipo !== 'guia') parts.push(item.props.anio);
@@ -57,21 +49,22 @@ export function itemDetail(item: BibItem): string {
   return parts.join(' · ');
 }
 
-export function Cover({ item, color, className }: { item: BibItem; color: string; className?: string }) {
+const BLANK_LINES = [82, 100, 94, 100, 61];
+
+export function Cover({ item, className }: { item: BibItem; className?: string }) {
   const [ref, visible] = useVisible<HTMLDivElement>();
   const url = useCover(item, visible);
-  const drawn = drawnCover(item) || !url;
-  const tema = temasDe(item)[0];
-  const sub = [item.props.componente, item.props.convocatoria ? convocatoriaLabel(item.props.convocatoria) : null, !item.props.componente ? tema : null].filter(Boolean).join(' · ');
+  const Icon = ['mp3', 'm4a'].includes(item.ext) ? Headphones : item.ext === 'mp4' ? Film : FileText;
   return (
-    <div ref={ref} className={cn('relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-border/60 bg-muted', className)}>
-      {!drawn && url ? (
+    <div ref={ref} className={cn('relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-border/60 bg-white', className)}>
+      {url ? (
         <img src={url} alt="" draggable={false} className="h-full w-full object-cover object-top" />
       ) : (
-        <div className="flex h-full w-full flex-col justify-between p-3 text-white" style={{ background: `linear-gradient(160deg, ${color}, color-mix(in srgb, ${color} 55%, black))` }}>
-          <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{tipoLabel(item)}</span>
-          <span className="line-clamp-5 text-sm font-bold leading-snug">{item.props.componente && item.tipo !== 'banco' ? item.props.componente : tema ?? item.title}</span>
-          <span className="line-clamp-2 text-[11px] leading-tight opacity-85">{sub || item.subject}</span>
+        <div className="flex h-full w-full flex-col gap-[5%] p-[12%]" aria-hidden>
+          <Icon className="mb-[6%] h-[13%] w-auto self-start text-zinc-300" />
+          {BLANK_LINES.map((width, i) => (
+            <span key={i} className="h-[2.4%] rounded-full bg-zinc-200" style={{ width: `${width}%` }} />
+          ))}
         </div>
       )}
       {item.props.origen === 'IA' && (
@@ -86,7 +79,6 @@ export function Cover({ item, color, className }: { item: BibItem; color: string
 
 export function ItemCard({
   item,
-  color,
   conf,
   convocatoria,
   favorite,
@@ -95,7 +87,6 @@ export function ItemCard({
   onToggleFavorite,
 }: {
   item: BibItem;
-  color: string;
   conf?: BibSubjectConf;
   convocatoria: string | null;
   favorite: boolean;
@@ -107,7 +98,7 @@ export function ItemCard({
   return (
     <div className="group relative flex min-w-0 flex-col gap-1.5">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-col gap-1.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Cover item={item} color={color} className="transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:shadow-md" />
+        <Cover item={item} className="transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:shadow-md" />
         <span className="line-clamp-3 text-[13px] font-semibold leading-snug text-foreground">{item.title}</span>
         <span className="line-clamp-2 text-xs leading-snug text-muted-foreground">
           {showSubject ? `${item.subject} · ` : ''}
@@ -158,12 +149,12 @@ export function Tag({ tone = 'muted', children }: { tone?: 'muted' | 'warn' | 'i
   );
 }
 
-/** Rejilla de portadas: tantas columnas como quepan. */
+/** Rejilla de portadas: cinco por fila (menos en una pantalla estrecha). */
 export function ItemGrid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-x-4 gap-y-6">{children}</div>;
+  return <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-5">{children}</div>;
 }
 
-/** Una fila que se desliza, con una flecha en cada extremo (como «Destacados» de la 1.9.4). */
+/** Una fila que se desliza, con una flecha en cada extremo: cinco tarjetas enteras y un trozo de la sexta. */
 export function Shelf({ label, children, count }: { label: string; children: ReactNode; count: number }) {
   const track = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ start: true, end: true });
@@ -179,7 +170,12 @@ export function Shelf({ label, children, count }: { label: string; children: Rea
     observer.observe(el);
     return () => observer.disconnect();
   }, [measure, count]);
-  const move = (direction: 1 | -1) => track.current?.scrollBy({ left: direction * Math.max(200, track.current.clientWidth - 200), behavior: 'smooth' });
+  // Avanza las tarjetas enteras que se ven: la que asomaba pasa a ser la primera.
+  const move = (direction: 1 | -1) => {
+    const el = track.current;
+    const card = el?.firstElementChild?.getBoundingClientRect().width ?? 0;
+    if (el) el.scrollBy({ left: direction * Math.max(card, Math.floor(el.clientWidth / (card + 16)) * (card + 16)), behavior: 'smooth' });
+  };
   const arrow = 'absolute top-[35%] z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-card/95 text-foreground shadow-md hover:bg-card md:flex';
   return (
     <div className="relative">
@@ -200,10 +196,10 @@ export function Shelf({ label, children, count }: { label: string; children: Rea
   );
 }
 
-/** Cada tarjeta de una fila: ancho fijo para que las portadas se vean iguales. */
+/** Cada tarjeta de una fila: un poco menos de un quinto del ancho, para que asome la siguiente. */
 export function ShelfItem({ children }: { children: ReactNode }) {
   return (
-    <div role="listitem" className="w-[9.5rem] shrink-0 snap-start">
+    <div role="listitem" className="w-[calc((100%-2rem)/2.3)] shrink-0 snap-start sm:w-[calc((100%-3rem)/3.3)] md:w-[calc((100%-5rem)/5.3)]">
       {children}
     </div>
   );

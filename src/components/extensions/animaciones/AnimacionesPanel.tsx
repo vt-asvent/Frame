@@ -11,11 +11,13 @@ import { accentById, getAccent } from '@/lib/accent';
 import { useContributions } from '@/lib/extensions/store';
 import {
   animationsWith,
+  DEFAULT_CORNERS,
   DEFAULT_FOCUS,
   deleteOwnBackground,
   effectiveLook,
   HEADING_FONTS,
   headingFontName,
+  MAX_CORNERS,
   MIN_DIM,
   pickAnimation,
   placeCover,
@@ -36,7 +38,7 @@ import { cn } from '@/lib/utils';
 // Las opciones van sobre fondos opacos: detrás puede estar la animación.
 // ============================================================
 
-type Category = 'fondo' | 'marco' | 'titulos' | 'color';
+type Category = 'fondo' | 'marco' | 'recuadros' | 'titulos' | 'color';
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
@@ -58,12 +60,14 @@ export function AnimacionesPanel() {
           : tr('figuras en la cabecera')
     );
   }
+  if (look.corners !== DEFAULT_CORNERS) parts.push(look.corners === 0 ? tr('esquinas rectas') : tr('esquinas de {n} px', { n: look.corners }));
   if (look.headingFont !== 'poppins') parts.push(tr('títulos en {font}', { font: headingFontName(look.headingFont) }));
   if (look.accentFrom) parts.push(tr('color de un mod'));
 
   const categories: [Category, string][] = [
     ['fondo', tr('Fondo')],
     ['marco', tr('Barra lateral y cabecera')],
+    ['recuadros', tr('Recuadros')],
     ['titulos', tr('Títulos')],
     ['color', tr('Color')],
   ];
@@ -84,6 +88,9 @@ export function AnimacionesPanel() {
         </TabsContent>
         <TabsContent value="marco" className="mt-5">
           <ChromeCategory />
+        </TabsContent>
+        <TabsContent value="recuadros" className="mt-5">
+          <CornersCategory />
         </TabsContent>
         <TabsContent value="titulos" className="mt-5">
           <TitlesCategory />
@@ -527,6 +534,27 @@ function ChromeCategory() {
           </div>
         </>
       )}
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------
+// Recuadros: qué tan redondeadas son las esquinas (1.9.8, Diego)
+// ------------------------------------------------------------
+
+function CornersCategory() {
+  const { corners } = useLook();
+  return (
+    <Section title={tr('Esquinas de los recuadros')} hint={tr('Qué tan redondeadas son en toda la app.')}>
+      <div className="max-w-xl space-y-3 rounded-lg border border-border/60 bg-card p-3">
+        <RangeRow label={tr('Redondeo')} left={tr('Rectas')} right={tr('Curvas')} value={corners} min={0} max={MAX_CORNERS} step={1} onChange={(value) => setLook({ corners: value })} />
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span className="tabular-nums">{corners === DEFAULT_CORNERS ? tr('{n} px (el de Frame)', { n: corners }) : tr('{n} px', { n: corners })}</span>
+          <Button size="sm" variant="outline" className="h-7 rounded-full text-xs" disabled={corners === DEFAULT_CORNERS} onClick={() => setLook({ corners: DEFAULT_CORNERS })}>
+            {tr('Restablecer')}
+          </Button>
+        </div>
+      </div>
     </Section>
   );
 }

@@ -94,9 +94,13 @@ export interface LookSettings {
   accentFrom: string | null;
   chrome: ChromeLook;
   headingFont: HeadingFont;
+  /** Radio de las esquinas de los recuadros, en px (1.9.8): 8 es el de Frame. */
+  corners: number;
 }
 
 export const DEFAULT_CHROME: ChromeLook = { pattern: 'none', where: 'ambas', strength: 0.5 };
+export const DEFAULT_CORNERS = 8;
+export const MAX_CORNERS = 24;
 
 export const DEFAULT_LOOK: LookSettings = {
   chosen: ['constelacion'],
@@ -107,6 +111,7 @@ export const DEFAULT_LOOK: LookSettings = {
   accentFrom: null,
   chrome: DEFAULT_CHROME,
   headingFont: 'poppins',
+  corners: DEFAULT_CORNERS,
 };
 
 /** El velo mínimo sobre una imagen de fondo: por debajo, el texto pierde. */
@@ -127,6 +132,7 @@ export function readLook(): LookSettings {
     const saved = extRead<Partial<LookSettings>>(ANIMACIONES, 'settings', {});
     const look: LookSettings = { ...DEFAULT_LOOK, ...saved, chrome: { ...DEFAULT_CHROME, ...(saved.chrome ?? {}) } };
     if (!HEADING_FONTS.some((f) => f.id === look.headingFont)) look.headingFont = 'poppins';
+    look.corners = Number.isFinite(look.corners) ? clamp(Math.round(look.corners), 0, MAX_CORNERS) : DEFAULT_CORNERS;
     cache = look;
   }
   return cache;
@@ -136,6 +142,7 @@ export function setLook(patch: Partial<LookSettings>): void {
   const next = { ...readLook(), ...patch };
   next.intensity = clamp(next.intensity, 0.2, 1);
   next.speed = clamp(next.speed, 0.5, 1.6);
+  next.corners = clamp(Math.round(next.corners), 0, MAX_CORNERS);
   if (next.background) {
     const focus = next.background.focus;
     next.background = {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ImageUp, Loader2, Plus, RotateCw, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ImageUp, Link2, Loader2, Plus, RotateCw, Sparkles, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -23,7 +23,7 @@ import { useStoredImage } from '@/hooks/use-stored-image';
 import { IMAGE_UPDATED_EVENT, getImageRecord, type ImageUpdatedDetail } from '@/lib/music-db';
 import { scheduleImageKey } from '@/lib/profile-scope';
 import { readTimetable, useReading } from '@/lib/timetable-read';
-import { readSubjectLinks, unlinkedSubjects } from '@/lib/timetable-links';
+import { readSubjectLinks, subjectsOf, unlinkedSubjects } from '@/lib/timetable-links';
 import {
   addTimetable,
   localImageKey,
@@ -42,12 +42,13 @@ import { cn } from '@/lib/utils';
 // ============================================================
 // Inicio → Horario (1.9.0, Diego).
 //
-//   Horario                           Noviembre ▾  Semanal  [Ver original]
+//   Horario                        ⛓  Noviembre ▾  Semanal  [Ver original]
 //   ── la línea del día (ScheduleTimeline), la semana (ScheduleWeek) o la foto
 //
 // «Mes» elige entre los horarios guardados (uno o varios por mes) y añade o
 // quita; al añadir se elige el mes y Frame lee las clases de la foto
 // (timetable-read.ts). «Semanal» y «Ver original» se alternan con la línea.
+// El eslabón (1.9.8) corrige qué asignatura de Frame es cada clase.
 // ============================================================
 
 type View = 'line' | 'week' | 'original';
@@ -65,16 +66,18 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
   const { toast } = useToast();
   const reading = useReading(selected?.id);
   const { courses } = useCourse();
-  // Los nombres del horario recién leído que nadie supo vincular: se preguntan una vez.
-  const [unlinked, setUnlinked] = useState<string[]>([]);
+  // Los nombres del horario cuya asignatura se está eligiendo: los que nadie supo
+  // vincular al leer la foto (se preguntan una vez) o todos, con el eslabón.
+  const [linking, setLinking] = useState<string[]>([]);
+  const own = courses ?? [];
+  const fixLinks = () => selected && setLinking(subjectsOf(selected.classes));
 
   /** Lee la foto y, si algún nombre quedó sin asignatura, lo pregunta. */
   const read = (id: string) => {
-    const own = courses ?? [];
     void readTimetable(uid, id, own).then((done) => {
       if (!done || own.length === 0) return;
       const classes = readTimetables(uid).find((item) => item.id === id)?.classes ?? [];
-      setUnlinked(unlinkedSubjects(classes, own, readSubjectLinks(uid)));
+      setLinking(unlinkedSubjects(classes, own, readSubjectLinks(uid)));
     });
   };
 
@@ -136,6 +139,11 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-headline text-lg font-bold text-primary">{tr('Horario')}</h2>
         <div className="flex flex-wrap items-center gap-2">
+          {selected && selected.classes.length > 0 && own.length > 0 && (
+            <button type="button" className={TEXT_BUTTON} onClick={fixLinks} aria-label={tr('Asignatura de cada clase')} title={tr('Asignatura de cada clase')}>
+              <Link2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" className={TEXT_BUTTON}>
@@ -175,6 +183,7 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
           <Button
             variant={view === 'original' ? 'default' : 'fantasma'}
             size="sm"
+            className="h-7 px-2.5 text-xs"
             disabled={!selected}
             aria-pressed={view === 'original'}
             onClick={() => toggle('original')}
@@ -192,12 +201,12 @@ export default function ScheduleBoard({ uid }: { uid: string }) {
         ) : view === 'week' ? (
           <ScheduleWeek classes={selected.classes} onChange={(classes) => updateTimetable(uid, selected.id, { classes, read: 'done' })} />
         ) : (
-          <Line uid={uid} timetable={selected} reading={reading} onRead={() => read(selected.id)} onManual={() => setView('week')} />
+          <Line uid={uid} timetable={selected} reading={reading} onRead={() => read(selected.id)} onManual={() => setView('week')} onFix={fixLinks} />
         )}
       </div>
 
       {picked && <AddDialog image={picked} onCancel={() => setPicked(null)} onSave={save} existing={list} />}
-      {unlinked.length > 0 && <ScheduleLinkDialog uid={uid} subjects={unlinked} courses={courses ?? []} onClose={() => setUnlinked([])} />}
+      {linking.length > 0 && <ScheduleLinkDialog uid={uid} subjects={linking} courses={own} onClose={() => setLinking([])} />}
 
       <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
         <AlertDialogContent>
@@ -238,7 +247,7 @@ function EmptyState({ onPick }: { onPick: () => void }) {
 }
 
 /** La línea del día, o en qué va la lectura de la foto. */
-function Line({ uid, timetable, reading, onRead, onManual }: { uid: string; timetable: Timetable; reading: boolean; onRead: () => void; onManual: () => void }) {
+function Line({ uid, timetable, reading, onRead, onManual, onFix }: { uid: string; timetable: Timetable; reading: boolean; onRead: () => void; onManual: () => void; onFix: () => void }) {
   if (reading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-10 text-center" role="status">
@@ -251,7 +260,7 @@ function Line({ uid, timetable, reading, onRead, onManual }: { uid: string; time
   if (timetable.classes.length > 0) {
     return (
       <>
-        <ScheduleTimeline uid={uid} classes={timetable.classes} />
+        <ScheduleTimeline uid={uid} classes={timetable.classes} onFix={onFix} />
         {timetable.read === 'failed' && timetable.error && (
           <p className="mt-3 text-center text-xs text-muted-foreground">
             {timetable.error}{' '}

@@ -749,7 +749,7 @@ export default function SettingsPage() {
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-semibold text-foreground">{tr('Extensiones')}</span>
               <span className="block text-xs text-muted-foreground">
-                {extensionsOn > 0 ? tr('{count} activas', { count: extensionsOn }) : tr('Añade funciones a Frame')}
+                {extensionsOn === 1 ? tr('1 activa') : extensionsOn > 1 ? tr('{count} activas', { count: extensionsOn }) : tr('Añade funciones a Frame')}
               </span>
             </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />

@@ -74,6 +74,10 @@ export default {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        // Los grandes siguen a `--radius` (1.9.8): con el valor de fábrica dan lo mismo que antes.
+        xl: 'calc(var(--radius) * 1.5)',
+        '2xl': 'calc(var(--radius) * 2)',
+        '3xl': 'calc(var(--radius) * 3)',
       },
       keyframes: {
         'accordion-down': {

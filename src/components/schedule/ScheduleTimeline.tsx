@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import WaveBackdrop from '@/components/courses/WaveBackdrop';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useCourse } from '@/context/CourseContext';
 import { useStoredImage } from '@/hooks/use-stored-image';
 import { useCardImageRatio } from '@/lib/card-image-height';
-import { linkedCourse, setSubjectLink, useSubjectLinks } from '@/lib/timetable-links';
+import { linkedCourse, useSubjectLinks } from '@/lib/timetable-links';
 import {
   minutesOf,
   minutesOfDay,
@@ -34,8 +33,8 @@ import { cn } from '@/lib/utils';
 // elegida, las olas que tiene en Asignaturas) con la PROPORCIÓN que el usuario
 // eligió en Asignaturas, una línea y, debajo, solo el nombre, centrado. Sin
 // esquinas redondeadas. El día, si no es hoy, va en una etiqueta sobre la
-// imagen. Al tocarla se elige a qué asignatura de Frame corresponde
-// (timetable-links.ts). Mide un poco menos de un tercio del ancho: una al medio, una a
+// imagen. Al tocarla se abre su asignatura (1.9.8); si aún no tiene, se elige
+// cuál es (timetable-links.ts). Mide un poco menos de un tercio del ancho: una al medio, una a
 // cada lado y, en los bordes, un trozo de la siguiente con degradado. La pista
 // se mueve con el reloj: una clase de 8 a 12 queda centrada a las 10, y a las
 // 9 la línea cae a un cuarto de su tarjeta. Entre días (y el fin de semana)
@@ -56,7 +55,7 @@ function dayLabel(occurrence: Occurrence, today: number): string {
   return dayTitle(occurrence.item.day - 1);
 }
 
-export default function ScheduleTimeline({ uid, classes }: { uid: string; classes: TimetableClass[] }) {
+export default function ScheduleTimeline({ uid, classes, onFix }: { uid: string; classes: TimetableClass[]; onFix: () => void }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   // La misma proporción de imagen que en Asignaturas: la tarjeta crece o encoge con ella.
@@ -92,7 +91,7 @@ export default function ScheduleTimeline({ uid, classes }: { uid: string; classe
       {classes.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">{tr('Este horario aún no tiene clases. Añádelas en «Semanal».')}</p>
       ) : (
-        <Track uid={uid} list={list} visible={visible} width={width} card={card} height={Math.round(card * ratio) + NAME_ROW} step={step} offset={offset} now={now} today={today} />
+        <Track uid={uid} list={list} visible={visible} width={width} card={card} height={Math.round(card * ratio) + NAME_ROW} step={step} offset={offset} now={now} today={today} onFix={onFix} />
       )}
     </div>
   );
@@ -110,9 +109,10 @@ interface TrackProps {
   offset: number;
   now: number;
   today: number;
+  onFix: () => void;
 }
 
-function Track({ uid, list, visible, width, card, height, step, offset, now, today }: TrackProps) {
+function Track({ uid, list, visible, width, card, height, step, offset, now, today, onFix }: TrackProps) {
   return (
     <>
       {/* La hora de ahora, siempre al medio */}
@@ -156,7 +156,7 @@ function Track({ uid, list, visible, width, card, height, step, offset, now, tod
             {/* Tarjetas */}
             <div className="relative mt-2" style={{ height }}>
               {visible.map(({ occurrence, index }) => (
-                <ClassCard key={occurrence.key} uid={uid} occurrence={occurrence} left={index * step} width={card} now={now} today={today} />
+                <ClassCard key={occurrence.key} uid={uid} occurrence={occurrence} left={index * step} width={card} now={now} today={today} onFix={onFix} />
               ))}
             </div>
           </div>
@@ -166,8 +166,9 @@ function Track({ uid, list, visible, width, card, height, step, offset, now, tod
   );
 }
 
-function ClassCard({ uid, occurrence, left, width, now, today }: { uid: string; occurrence: Occurrence; left: number; width: number; now: number; today: number }) {
+function ClassCard({ uid, occurrence, left, width, now, today, onFix }: { uid: string; occurrence: Occurrence; left: number; width: number; now: number; today: number; onFix: () => void }) {
   const { item } = occurrence;
+  const navigate = useNavigate();
   const { courses } = useCourse();
   const links = useSubjectLinks(uid);
   const own = courses ?? [];
@@ -225,27 +226,14 @@ function ClassCard({ uid, occurrence, left, width, now, today }: { uid: string; 
           {face}
         </div>
       ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" className={cn(frame, 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')} title={details}>
-              {face}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="max-h-72 min-w-[13rem] max-w-[18rem] overflow-y-auto">
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{tr('Asignatura de «{name}»', { name: item.subject })}</DropdownMenuLabel>
-            {own.map((option) => (
-              <DropdownMenuItem key={option.id} onSelect={() => setSubjectLink(uid, item.subject, option.id)}>
-                <Check className={cn('mr-2 h-4 w-4 shrink-0', option.id === course?.id ? 'opacity-100' : 'opacity-0')} />
-                <span className="truncate">{option.name}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setSubjectLink(uid, item.subject, null)}>
-              <Check className={cn('mr-2 h-4 w-4 shrink-0', course ? 'opacity-0' : 'opacity-100')} />
-              {tr('Ninguna')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          type="button"
+          className={cn(frame, 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
+          title={details}
+          onClick={() => (course ? navigate(`/cursos?id=${encodeURIComponent(course.id)}`) : onFix())}
+        >
+          {face}
+        </button>
       )}
     </div>
   );

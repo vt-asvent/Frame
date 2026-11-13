@@ -1356,39 +1356,16 @@ fn save_in_downloads(
     fallback: &str,
     mark: bool,
 ) -> Result<String, String> {
-    save_in_downloads_at(app_handle, None, file_name, data_base64, allowed, fallback, mark)
-}
-
-/// Igual, pero dentro de una carpeta propia de Descargas (`folder`, un solo
-/// nombre: sin barras ni «..»).
-fn save_in_downloads_at(
-    app_handle: &tauri::AppHandle,
-    folder: Option<&str>,
-    file_name: &str,
-    data_base64: &str,
-    allowed: Option<&[&str]>,
-    fallback: &str,
-    mark: bool,
-) -> Result<String, String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.as_bytes())
         .map_err(|e| format!("Informe ilegible: {e}"))?;
 
-    let mut dir = app_handle
+    let dir = app_handle
         .path()
         .download_dir()
         .or_else(|_| app_handle.path().document_dir())
         .map_err(|e| format!("Sin carpeta de descargas: {e}"))?;
-    if let Some(folder) = folder {
-        let clean: String = folder
-            .chars()
-            .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
-            .take(80)
-            .collect();
-        let clean = clean.trim().trim_matches('.').trim();
-        dir = dir.join(if clean.is_empty() { "Frame" } else { clean });
-    }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let safe: String = file_name
@@ -1452,18 +1429,6 @@ fn save_file_copy(
     data_base64: String,
 ) -> Result<String, String> {
     save_in_downloads(&app_handle, &file_name, &data_base64, None, "Archivo", true)
-}
-
-/// «Descarga por colección» de la Biblioteca (1.9.2): cada archivo va a una
-/// carpeta propia de Descargas («Biblioteca 2026-11-09»), no suelto.
-#[tauri::command]
-fn save_file_in_folder(
-    app_handle: tauri::AppHandle,
-    folder: String,
-    file_name: String,
-    data_base64: String,
-) -> Result<String, String> {
-    save_in_downloads_at(&app_handle, Some(&folder), &file_name, &data_base64, None, "Archivo", true)
 }
 
 // ============================================================
@@ -1895,7 +1860,6 @@ pub fn run() {
             focus_main_window,
             save_report_file,
             save_file_copy,
-            save_file_in_folder,
             schedule_peek,
             schedule_peek_enable,
             schedule_peek_resize,
