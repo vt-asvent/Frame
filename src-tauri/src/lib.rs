@@ -1371,13 +1371,34 @@ fn clean_subfolder(folder: &str) -> std::path::PathBuf {
             .collect();
         let clean = clean.trim().trim_matches('.').trim();
         if !clean.is_empty() {
-            out.push(clean);
+            out.push(if reserved_name(clean) { format!("_{clean}") } else { clean.to_string() });
         }
     }
     if out.as_os_str().is_empty() {
         out.push("Frame");
     }
     out
+}
+
+/// Nombres que Windows reserva para dispositivos («CON», «NUL», «COM1»…), con o sin extensión: no sirven de archivo.
+fn reserved_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim().to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ((stem.starts_with("COM") || stem.starts_with("LPT")) && stem.len() == 4 && stem.ends_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Los archivos que «Tu paquete» creó en esta sesión: solo a ellos se les añaden trozos.
+static PACK_FILES: std::sync::Mutex<std::collections::BTreeSet<std::path::PathBuf>> = std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+/// En una subcarpeta (el paquete), el primer trozo crea el archivo y queda anotado; `append` solo vale sobre lo anotado.
+fn write_pack(path: &std::path::Path, bytes: &[u8], append: bool) -> Result<(), String> {
+    let mut created = PACK_FILES.lock().map_err(|_| "No se pudo guardar la copia".to_string())?;
+    if append && !created.contains(path) {
+        return Err("No se pudo guardar la copia".into());
+    }
+    write_bytes(path, bytes, append)?;
+    created.insert(path.to_path_buf());
+    Ok(())
 }
 
 /// Escribe un archivo o, con `append`, añade al final del que ya está: lo grande llega por trozos.
@@ -1425,6 +1446,7 @@ fn save_in_downloads_at(
         .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
         .collect();
     let safe = if safe.trim().is_empty() { fallback.to_string() } else { safe };
+    let safe = if reserved_name(&safe) { format!("_{safe}") } else { safe };
 
     let (stem, extension) = match safe.rfind('.') {
         Some(index) => (safe[..index].to_string(), safe[index..].to_string()),
@@ -1446,7 +1468,11 @@ fn save_in_downloads_at(
         }
     }
 
-    write_bytes(&path, &bytes, append)?;
+    if folder.is_some() {
+        write_pack(&path, &bytes, append)?;
+    } else {
+        write_bytes(&path, &bytes, append)?;
+    }
     if mark && !append {
         mark_from_internet(&path);
     }
@@ -1483,18 +1509,25 @@ fn save_file_copy(
     save_in_downloads(&app_handle, &file_name, &data_base64, None, "Archivo", true)
 }
 
-/// «Tu paquete» de la Biblioteca (1.9.9): cada archivo va a su carpeta dentro de Descargas
-/// («Biblioteca de Frame/Física»), no suelto. Llega por trozos: el primero crea el archivo y los
-/// siguientes (`append`) se añaden.
+/// «Tu paquete» de la Biblioteca (1.9.9): cada archivo va a `Descargas/Biblioteca de Frame/<asignatura>/`,
+/// no suelto. Llega por trozos: el primero crea el archivo (o reemplaza el de una bajada anterior) y los
+/// siguientes (`append`) se añaden, solo a un archivo que esta misma sesión creó.
 #[tauri::command]
 fn save_file_in_folder(
     app_handle: tauri::AppHandle,
-    folder: String,
+    subject: String,
     file_name: String,
     data_base64: String,
     append: Option<bool>,
 ) -> Result<String, String> {
-    save_in_downloads_at(&app_handle, Some(&folder), &file_name, &data_base64, None, "Archivo", true, append.unwrap_or(false))
+    // Solo lo que la Biblioteca sirve: documentos, imágenes, audio y vídeo. Nada que se ejecute.
+    const LIBRARY_EXTENSIONS: &[&str] = &[
+        ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".ods", ".odp", ".epub", ".txt", ".md", ".csv", ".json", ".jpg", ".jpeg",
+        ".png", ".webp", ".gif", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".mp4", ".webm", ".mov",
+    ];
+    // La carpeta la fija el núcleo: la página solo dice la asignatura, y de ella no sale una ruta.
+    let folder = format!("Biblioteca de Frame/{}", subject.replace(['/', '\\'], " "));
+    save_in_downloads_at(&app_handle, Some(&folder), &file_name, &data_base64, Some(LIBRARY_EXTENSIONS), "Archivo.pdf", true, append.unwrap_or(false))
 }
 
 // ============================================================

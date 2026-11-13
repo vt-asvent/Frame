@@ -18,7 +18,7 @@ import { AKLORE, demoOn, fromCloud } from './source';
 // red o llega al tope del día, al volver a pulsar sigue donde quedó.
 // ============================================================
 
-/** Carpeta de Descargas donde queda el paquete. */
+/** Carpeta de Descargas donde queda el paquete (la fija el núcleo nativo, `save_file_in_folder`; aquí, para decirla). */
 export const CARPETA = 'Biblioteca de Frame';
 
 export interface PackState {
@@ -84,7 +84,7 @@ async function saveOne(item: BibItem, signal: AbortSignal): Promise<number> {
     // El primer trozo crea el archivo (o reemplaza el de una bajada anterior); los demás se añaden.
     for (let from = 0; from === 0 || from < blob.size; from += TROZO) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      await invoke('save_file_in_folder', { folder: `${CARPETA}/${item.subject}`, fileName: fileNameOf(item), dataBase64: await blobToBase64(blob.slice(from, from + TROZO)), append: from > 0 });
+      await invoke('save_file_in_folder', { subject: item.subject, fileName: fileNameOf(item), dataBase64: await blobToBase64(blob.slice(from, from + TROZO)), append: from > 0 });
     }
   }
   return blob.size;

@@ -169,8 +169,8 @@ async function contarLote(env: Env, owner: string, day: string, tamano: number):
   if (azar() >= p) return { cabe: true, devolver: nada };
   const n = 1 / p;
   const bytes = Math.round(tamano / p);
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (owner, day) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes').bind(owner, day, n, bytes),
+  const [used] = await env.DB.batch<{ n: number; bytes: number }>([
+    env.DB.prepare('INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (owner, day) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes RETURNING n, bytes').bind(owner, day, n, bytes),
     env.DB.prepare('INSERT INTO lore_estado (k, v) VALUES (?1, ?2) ON CONFLICT (k) DO UPDATE SET v = CAST(v AS REAL) + CAST(excluded.v AS REAL)').bind(k, String(n)),
   ]);
   const devolver = () =>
@@ -178,6 +178,12 @@ async function contarLote(env: Env, owner: string, day: string, tamano: number):
       env.DB.prepare('UPDATE lore_descargas SET n = n - ?, bytes = bytes - ? WHERE owner = ? AND day = ?').bind(n, bytes, owner, day),
       env.DB.prepare('UPDATE lore_estado SET v = CAST(v AS REAL) - ? WHERE k = ?').bind(n, k),
     ]).then(nada, nada);
+  // Como en las descargas sueltas: si con esta anotación la cuenta pasa su tope, no se sirve y se devuelve lo anotado.
+  const now = used?.results[0];
+  if (now && (now.n > DAILY_FILES || now.bytes > DAILY_BYTES)) {
+    await devolver();
+    return { cabe: false, devolver: nada };
+  }
   return { cabe: true, devolver };
 }
 

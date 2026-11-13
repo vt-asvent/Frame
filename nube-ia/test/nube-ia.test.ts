@@ -914,8 +914,15 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     const tope = await a.pedir(lote, { token: sesion(ALUMNA) });
     expect(tope.estado).toBe(429);
     expect(tope.datos).toEqual({ error: 'quota', files: 2000 });
+    // …que se vuelve a mirar tras anotar: un archivo de 70 MB se anota siempre, y con él la cuenta pasaría sus bytes del día.
+    await a.sql('UPDATE lore_descargas SET n = 0, bytes = 4999999999 WHERE owner=?', ALUMNA);
+    const [{ tamano }] = (await a.sql("SELECT tamano FROM lore_nodos WHERE id='guia-fisica-001'")) as { tamano: number }[];
+    await a.sql("UPDATE lore_nodos SET tamano = 70000000 WHERE id='guia-fisica-001'");
+    expect((await a.pedir(lote, { token: sesion(ALUMNA) })).estado).toBe(429);
+    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 0, bytes: 4999999999 }]);
+    await a.sql("UPDATE lore_nodos SET tamano = ? WHERE id='guia-fisica-001'", tamano);
     // …y el del día de todas: corta los paquetes, no las descargas sueltas ni hojear un archivo.
-    await a.sql('UPDATE lore_descargas SET n = 0 WHERE owner=?', ALUMNA);
+    await a.sql('UPDATE lore_descargas SET n = 0, bytes = 0 WHERE owner=?', ALUMNA);
     await a.sql("INSERT OR REPLACE INTO lore_estado (k, v) VALUES (?, '40001')", `lote:${hoy()}`);
     const lleno = await a.pedir(lote, { token: sesion(ALUMNA) });
     expect(lleno.estado).toBe(429);
