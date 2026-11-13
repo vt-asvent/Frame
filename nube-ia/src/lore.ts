@@ -122,34 +122,83 @@ export async function loreView(env: Env, user: AppUser, id: string): Promise<Res
   return new Response(bytes, { status: 200, headers: { 'content-type': /^image\/(jpeg|png|webp)$/.test(row.mime) ? row.mime : 'application/octet-stream', 'cache-control': 'private, max-age=604800' } });
 }
 
-/** Tramos de un archivo ya abierto más pequeños que esto no se anotan: hojear un PDF no escribe en la base a cada paso. */
-export const TRAMO_LIBRE = 1_048_576;
+/** De los tramos pequeños de un archivo ya abierto se anota, en promedio, una vez cada tantos bytes (y de golpe). */
+export const UNIDAD_DE_TRAMOS = 4 * 1_048_576;
 
 /**
- * Anota una descarga en la cuenta del día de `owner` y dice si cabe en el tope. Sin `anotar`, solo mira lo que lleva.
+ * Los bytes que se anotan por una petición. Exactos si abre el archivo, si lo pide entero o si el tramo es grande.
+ * Un tramo pequeño (hojear un PDF son decenas, de 256 KB) se anota por muestreo: con probabilidad `bytes / UNIDAD`
+ * se anota una UNIDAD entera. En promedio es lo mismo que anotarlos todos, sin una escritura por tramo, y nadie puede
+ * esquivarlo partiendo la descarga en trozos. `azar`: un número en [0, 1).
+ */
+export function bytesACobrar(bytes: number, exacto: boolean, azar: number): number {
+  if (exacto || bytes >= UNIDAD_DE_TRAMOS) return bytes;
+  return azar < bytes / UNIDAD_DE_TRAMOS ? UNIDAD_DE_TRAMOS : 0;
+}
+
+const azar = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+
+/**
+ * La lista de archivos abiertos hoy (la misma tabla que la migración 0010). Esa migración no pudo aplicarse el día
+ * que hizo falta, con las escrituras de la base cortadas; por eso la nube la crea sola, en cuanto la base la deja,
+ * la primera vez que la echa en falta.
+ */
+export const asegurarAbiertos = (env: Env): Promise<void> =>
+  env.DB.prepare('CREATE TABLE IF NOT EXISTS lore_abiertos (owner TEXT NOT NULL, day TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (owner, day, id)) WITHOUT ROWID')
+    .run()
+    .then(
+      () => undefined,
+      () => undefined,
+    );
+
+/**
+ * Anota una petición en la cuenta del día de `owner` y dice si cabe en el tope.
+ *
+ * - Con `id` (Biblioteca 2): el archivo cuenta una vez al día por cuenta, en su primera petición, empiece por el byte
+ *   que empiece (`lore_abiertos`): pedirlo sin su primer tramo no lo deja fuera de la cuenta de archivos.
+ * - Sin `id` (la Biblioteca de las apps 1.9.2 a 1.9.6, que siempre baja el archivo entero): cada descarga cuenta.
  *
  * Nunca impide servir un archivo por un fallo propio: si la base no deja anotar (el plan gratis corta las escrituras
  * de toda la cuenta al llegar a su tope diario, y eso dejó la Biblioteca sin descargas el 13-nov-2026) o no responde,
  * se sirve igual y queda dicho en el registro.
  */
-export async function contarDescarga(env: Env, owner: string, archivos: number, bytes: number, anotar: boolean): Promise<{ cabe: boolean; devolver: () => Promise<void> }> {
+export async function contarDescarga(
+  env: Env,
+  owner: string,
+  pedido: { id?: string; bytes: number; entero: boolean },
+): Promise<{ cabe: boolean; devolver: () => Promise<void> }> {
   const day = new Date().toISOString().slice(0, 10);
   const nada = async () => undefined;
   try {
-    if (!anotar) {
-      const lleva = await env.DB.prepare('SELECT n, bytes FROM lore_descargas WHERE owner = ? AND day = ?').bind(owner, day).first<{ n: number; bytes: number }>();
-      return { cabe: !lleva || (lleva.n <= DAILY_FILES && lleva.bytes <= DAILY_BYTES), devolver: nada };
+    let abre = !pedido.id;
+    let lleva: { n: number; bytes: number } | undefined;
+    if (pedido.id) {
+      const [abierto, cuenta] = await env.DB.batch<{ n: number; bytes: number }>([
+        env.DB.prepare('SELECT 1 AS n, 0 AS bytes FROM lore_abiertos WHERE owner = ?1 AND day = ?2 AND id = ?3').bind(owner, day, pedido.id),
+        env.DB.prepare('SELECT n, bytes FROM lore_descargas WHERE owner = ?1 AND day = ?2').bind(owner, day),
+      ]);
+      lleva = cuenta?.results[0];
+      // La primera petición de este archivo hoy lo abre. Si llegan dos a la vez, solo una lo cuenta.
+      if (!abierto?.results.length) {
+        abre = !!(await env.DB.prepare('INSERT OR IGNORE INTO lore_abiertos (owner, day, id) VALUES (?1, ?2, ?3) RETURNING id').bind(owner, day, pedido.id).first());
+      }
     }
+    const bytes = bytesACobrar(pedido.bytes, abre || pedido.entero, azar());
+    // Nada que anotar esta vez: basta con mirar lo que lleva.
+    if (!abre && !bytes) return { cabe: !lleva || (lleva.n <= DAILY_FILES && lleva.bytes <= DAILY_BYTES), devolver: nada };
+
+    const archivos = abre ? 1 : 0;
     const used = await env.DB.prepare(
       'INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (owner, day) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes RETURNING n, bytes',
     )
       .bind(owner, day, archivos, bytes)
       .first<{ n: number; bytes: number }>();
     const devolver = () =>
-      env.DB.prepare('UPDATE lore_descargas SET n = n - ?, bytes = bytes - ? WHERE owner = ? AND day = ?')
-        .bind(archivos, bytes, owner, day)
-        .run()
-        .then(nada, nada);
+      env.DB.batch([
+        env.DB.prepare('UPDATE lore_descargas SET n = n - ?, bytes = bytes - ? WHERE owner = ? AND day = ?').bind(archivos, bytes, owner, day),
+        // Si el archivo no llegó a servirse, tampoco quedó abierto: el siguiente intento vuelve a contarlo.
+        ...(abre && pedido.id ? [env.DB.prepare('DELETE FROM lore_abiertos WHERE owner = ? AND day = ? AND id = ?').bind(owner, day, pedido.id)] : []),
+      ]).then(nada, nada);
     if (used && (used.n > DAILY_FILES || used.bytes > DAILY_BYTES)) {
       await devolver();
       return { cabe: false, devolver: nada };
@@ -157,6 +206,7 @@ export async function contarDescarga(env: Env, owner: string, archivos: number, 
     return { cabe: true, devolver };
   } catch (e) {
     console.error('biblioteca: la descarga se sirve sin anotar', String(e).slice(0, 160));
+    if (/no such table: lore_abiertos/i.test(String(e))) await asegurarAbiertos(env);
     return { cabe: true, devolver: nada };
   }
 }
@@ -168,7 +218,7 @@ export async function loreFile(env: Env, user: AppUser, id: string): Promise<Res
   const row = await env.DB.prepare('SELECT id, drive_id, title, size, format FROM lore WHERE id = ?').bind(id).first<Pick<LoreRow, 'id' | 'drive_id' | 'title' | 'size' | 'format'>>();
   if (!row) return json({ error: 'not_found' }, 404);
 
-  const cuenta = await contarDescarga(env, user.owner, 1, row.size, true);
+  const cuenta = await contarDescarga(env, user.owner, { bytes: row.size, entero: true });
   if (!cuenta.cabe) return json({ error: 'quota', files: DAILY_FILES }, 429);
   const refund = cuenta.devolver;
 

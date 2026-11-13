@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, createVerify } from 'node:crypto';
 import { firmarJwt } from '../src/biblioteca';
+import { UNIDAD_DE_TRAMOS, bytesACobrar } from '../src/lore';
 import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, DRIVE, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, PREGUNTAS, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
 
 let a: Arnes;
@@ -823,31 +824,73 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
   });
 
   it('pasa el archivo de la carpeta, entero o por tramos, y lo cuenta', async () => {
-    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    const limpiar = async () => {
+      await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+      await a.sql('DELETE FROM lore_abiertos WHERE owner=?', ALUMNA);
+    };
+    const cuenta = () => a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy());
+    await limpiar();
     const tam = pdfDe('guia-fisica-001').length;
     const r = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) });
     expect(r.estado).toBe(200);
     expect(r.texto).toBe(pdfDe('guia-fisica-001'));
     expect(r.r.headers.get('content-disposition')).toContain(encodeURIComponent('Guía de Física (nueva)'));
     expect(r.r.headers.get('accept-ranges')).toBe('bytes');
-    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: tam }]);
+    expect(await cuenta()).toEqual([{ n: 1, bytes: tam }]);
     const t = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } });
     expect(t.estado).toBe(206);
     expect(t.texto).toBe(pdfDe('guia-fisica-001').slice(5, 10));
     expect(t.r.headers.get('content-range')).toBe(`bytes 5-9/${tam}`);
-    // Un tramo pequeño de un archivo ya abierto no se anota (hojear un PDF son decenas de tramos)…
-    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: tam }]);
-    // …y abrirlo por tramos (desde el principio) cuenta un archivo, con lo pedido.
-    const abre = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=0-4' } });
-    expect(abre.estado).toBe(206);
-    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 2, bytes: tam + 5 }]);
-    // Con el tope del día alcanzado, ni abrir otro ni seguir hojeando.
+    // Un tramo pequeño de un archivo ya abierto no escribe en la base (se anota por muestreo: 5 bytes, casi nunca)…
+    expect(await cuenta()).toEqual([{ n: 1, bytes: tam }]);
+    // …volver a bajarlo entero el mismo día suma sus bytes, pero es el mismo archivo…
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) })).estado).toBe(200);
+    expect(await cuenta()).toEqual([{ n: 1, bytes: 2 * tam }]);
+    // …y un tramo de un archivo SIN abrir lo abre, aunque no empiece por el principio: no hay forma de no contarlo.
+    const otro = await a.pedir('/app/biblioteca/archivo/examen-fis-0001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } });
+    expect(otro.estado).toBe(206);
+    expect(await cuenta()).toEqual([{ n: 2, bytes: 2 * tam + 5 }]);
+    expect((await a.pedir('/app/biblioteca/archivo/examen-fis-0001', { token: sesion(ALUMNA), headers: { range: 'bytes=10-14' } })).estado).toBe(206);
+    expect(await cuenta()).toEqual([{ n: 2, bytes: 2 * tam + 5 }]);
+    expect(await a.sql('SELECT id FROM lore_abiertos WHERE owner=? ORDER BY id', ALUMNA)).toEqual([{ id: 'examen-fis-0001' }, { id: 'guia-fisica-001' }]);
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: `bytes=${tam + 5}-` } })).estado).toBe(416);
+    // Dos tramos del mismo archivo nuevo a la vez (así abre un PDF la vista previa): cuenta un archivo, no dos.
+    await limpiar();
+    const dos = await Promise.all(['bytes=0-4', 'bytes=5-9'].map((range) => a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range } })));
+    expect(dos.map((x) => x.estado)).toEqual([206, 206]);
+    expect((await cuenta())[0]).toMatchObject({ n: 1 });
+    // Con el tope del día pasado, ni abrir otro ni seguir hojeando; y lo rechazado no queda abierto ni anotado.
     await a.sql('UPDATE lore_descargas SET n = 301 WHERE owner=?', ALUMNA);
     expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } })).estado).toBe(429);
     expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) })).estado).toBe(429);
+    expect((await a.pedir('/app/biblioteca/archivo/examen-fis-0001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } })).estado).toBe(429);
     expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 301 }]);
-    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
-    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: `bytes=${tam + 5}-` } })).estado).toBe(416);
+    expect(await a.sql('SELECT id FROM lore_abiertos WHERE owner=?', ALUMNA)).toEqual([{ id: 'guia-fisica-001' }]);
+    await limpiar();
+  });
+
+  it('los bytes de los tramos pequeños se anotan por muestreo y, en promedio, son los mismos', () => {
+    // Exacto si abre el archivo, si se pide entero o si el tramo es grande.
+    expect(bytesACobrar(262_144, true, 0.99)).toBe(262_144);
+    expect(bytesACobrar(UNIDAD_DE_TRAMOS, false, 0.99)).toBe(UNIDAD_DE_TRAMOS);
+    expect(bytesACobrar(9_000_000, false, 0.99)).toBe(9_000_000);
+    // Un tramo de 256 KB: una vez de cada 16 se anota una unidad entera (4 MB); las demás, nada.
+    expect(bytesACobrar(262_144, false, 0.99)).toBe(0);
+    expect(bytesACobrar(262_144, false, 0)).toBe(UNIDAD_DE_TRAMOS);
+    for (const tramo of [1_000, 65_536, 262_144, 1_048_576, 3_000_000]) {
+      // Suficientes muestras para que el tramo más pequeño también acierte muchas veces.
+      const veces = 400_000;
+      let total = 0;
+      for (let i = 0; i < veces; i++) total += bytesACobrar(tramo, false, (i + 0.5) / veces);
+      expect(Math.abs(total / veces - tramo) / tramo, String(tramo)).toBeLessThan(0.01);
+    }
+  });
+
+  it('la limpieza diaria olvida los archivos abiertos de días pasados', async () => {
+    await a.sql("INSERT INTO lore_abiertos (owner, day, id) VALUES (?, '2026-01-01', 'viejo'), (?, ?, 'de-hoy')", ALUMNA, ALUMNA, hoy());
+    await a.cron();
+    expect(await a.sql("SELECT id FROM lore_abiertos WHERE owner=? AND id IN ('viejo', 'de-hoy')", ALUMNA)).toEqual([{ id: 'de-hoy' }]);
+    await a.sql('DELETE FROM lore_abiertos WHERE owner=?', ALUMNA);
   });
 
   it('nada fuera de la raíz, apartado, carpeta o de Google', async () => {
@@ -856,6 +899,7 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
       expect((await a.pedir(`/app/biblioteca/archivo/${id}`, { token: sesion(ALUMNA) })).estado, id).toBe(404);
     }
     expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([]);
+    expect(await a.sql('SELECT id FROM lore_abiertos WHERE owner=?', ALUMNA)).toEqual([]);
     expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(LUIS) })).estado).toBe(403);
   });
 
@@ -900,6 +944,17 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     } finally {
       await a.sql('ALTER TABLE lore_descargas_fuera RENAME TO lore_descargas');
     }
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    // Si lo que falta es la lista de archivos abiertos (su migración no pudo aplicarse el día del fallo): el archivo
+    // se sirve, la nube crea la lista sola y la siguiente petición ya cuenta como siempre.
+    await a.sql('DROP TABLE lore_abiertos');
+    expect((await a.pedir('/app/biblioteca/archivo/examen-fis-0001', { token: sesion(ALUMNA), headers: { range: 'bytes=3-7' } })).estado).toBe(206);
+    expect(await a.sql("SELECT name FROM sqlite_master WHERE name = 'lore_abiertos'")).toEqual([{ name: 'lore_abiertos' }]);
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([]);
+    expect((await a.pedir('/app/biblioteca/archivo/examen-fis-0001', { token: sesion(ALUMNA) })).texto).toBe(pdfDe('examen-fis-0001'));
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1 }]);
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+    await a.sql('DELETE FROM lore_abiertos WHERE owner=?', ALUMNA);
   });
 
   it('sin cambios en Drive no se lee la carpeta ni se escribe nada', async () => {

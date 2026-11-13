@@ -7,7 +7,7 @@ import { readTimetable } from './horario';
 import { accessFrom, authorize, metadata, newPairing, ownerStatus, register, revokeOwner, token } from './oauth';
 import { translateLyrics } from './letras';
 import { bibliotecaArchivo, bibliotecaIndice, bibliotecaTarjetas, bibliotecaVista, sincronizar } from './biblioteca';
-import { loreFile, loreIndex, loreView } from './lore';
+import { asegurarAbiertos, loreFile, loreIndex, loreView } from './lore';
 import { loreAccess, loreAccessCleanup, loreActivate, loreSendCode } from './lore-acceso';
 import { callerFromApp } from './supabase';
 import { type Env, json, random, relayOf, signToken, verifyToken } from './util';
@@ -155,6 +155,18 @@ export default {
         env.DB.prepare('DELETE FROM lore_descargas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
         ...loreAccessCleanup(env, now),
       ]).then(() => undefined),
+    );
+    // Aparte del lote: si esta tabla faltara, no debe llevarse por delante el resto de la limpieza.
+    wait.waitUntil(
+      asegurarAbiertos(env).then(() =>
+        env.DB.prepare('DELETE FROM lore_abiertos WHERE day<?')
+          .bind(new Date(now).toISOString().slice(0, 10))
+          .run()
+          .then(
+            () => undefined,
+            () => undefined,
+          ),
+      ),
     );
   },
 };

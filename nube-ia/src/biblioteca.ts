@@ -25,7 +25,8 @@
 //     portadas que se copian en esa vuelta;
 //   · la lectura lleva la cuenta de lo que gasta y se detiene sola, hasta el
 //     día siguiente, mucho antes de acercarse al tope de la cuenta;
-//   · servir un archivo no depende de poder anotarlo (lore.ts, `contarDescarga`).
+//   · servir un archivo no depende de poder anotarlo, y anotarlo no es una
+//     escritura por tramo (lore.ts, `contarDescarga`).
 //
 // Rutas (con la sesión de Frame y la Biblioteca activada, ver lore-acceso.ts):
 //   GET /app/biblioteca?parte=N&si=<actualizado> → el índice, por partes
@@ -33,7 +34,7 @@
 //   GET /app/biblioteca/vista/<id> → su portada (no cuenta para el tope)
 //   GET /app/biblioteca/tarjetas/<clave> → sus tarjetas de estudio (JSON)
 import { hasLoreAccess } from './lore-acceso';
-import { DAILY_FILES, TRAMO_LIBRE, contarDescarga, driveToken, resetDriveAccess } from './lore';
+import { DAILY_FILES, contarDescarga, driveToken, resetDriveAccess } from './lore';
 import { type AppUser } from './supabase';
 import { type Env, b64url, json } from './util';
 
@@ -497,12 +498,11 @@ export async function bibliotecaArchivo(req: Request, env: Env, user: AppUser, i
     fin = m[2] ? Math.min(Number(m[2]), tamano - 1) : tamano - 1;
     if (tamano && inicio > fin) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${tamano}` } });
   }
-  // Un archivo cuenta una vez, al abrirlo (cuando se pide desde el principio), con los bytes de esa petición. Los
-  // tramos siguientes de hojearlo solo consultan la cuenta (salvo los grandes, que sí se anotan): una vista previa son
-  // decenas de peticiones y las escrituras de la base están contadas. Si la cuenta falla, el archivo se sirve igual.
+  // Un archivo cuenta una vez al día, en su primera petición (empiece por donde empiece). Los bytes de los tramos
+  // pequeños de hojearlo se anotan por muestreo (lore.ts): una vista previa son decenas de peticiones y las
+  // escrituras de la base están contadas. Si la cuenta falla, el archivo se sirve igual.
   const bytes = Math.max(0, fin - inicio + 1);
-  const abre = inicio === 0;
-  const cuenta = await contarDescarga(env, user.owner, abre ? 1 : 0, bytes, abre || bytes > TRAMO_LIBRE);
+  const cuenta = await contarDescarga(env, user.owner, { id: nodo.id, bytes, entero: !m });
   if (!cuenta.cabe) return json({ error: 'quota', files: DAILY_FILES }, 429);
   const devolver = cuenta.devolver;
 
