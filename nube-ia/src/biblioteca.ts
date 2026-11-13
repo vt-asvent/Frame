@@ -15,13 +15,25 @@
 // interpreta el JSON de Drive. El texto de cada página va tal cual a D1, que lo
 // recorre con sus funciones JSON, y el índice sale de D1 ya armado.
 //
+// Y da a TODA la cuenta 100 000 filas escritas y 5 millones leídas al día en D1:
+// al pasarse, la base rechaza las escrituras hasta medianoche (UTC). El
+// 13-nov-2026 una recopia de portadas las agotó en tres horas y dejó sin
+// descargas a la Biblioteca. Desde entonces (ver `sincronizar`):
+//   · sin cambios en Drive (lo dice su registro de cambios) no se lee la
+//     carpeta ni se escribe nada; se relee igual cada 6 horas, por si acaso;
+//   · una fila solo se reescribe si cambió de verdad, o si es una de las pocas
+//     portadas que se copian en esa vuelta;
+//   · la lectura lleva la cuenta de lo que gasta y se detiene sola, hasta el
+//     día siguiente, mucho antes de acercarse al tope de la cuenta;
+//   · servir un archivo no depende de poder anotarlo (lore.ts, `contarDescarga`).
+//
 // Rutas (con la sesión de Frame y la Biblioteca activada, ver lore-acceso.ts):
 //   GET /app/biblioteca?parte=N&si=<actualizado> → el índice, por partes
 //   GET /app/biblioteca/archivo/<id> → el archivo (admite Range, para hojear un PDF)
 //   GET /app/biblioteca/vista/<id> → su portada (no cuenta para el tope)
 //   GET /app/biblioteca/tarjetas/<clave> → sus tarjetas de estudio (JSON)
 import { hasLoreAccess } from './lore-acceso';
-import { DAILY_BYTES, DAILY_FILES, driveToken, resetDriveAccess } from './lore';
+import { DAILY_FILES, TRAMO_LIBRE, contarDescarga, driveToken, resetDriveAccess } from './lore';
 import { type AppUser } from './supabase';
 import { type Env, b64url, json } from './util';
 
@@ -32,8 +44,15 @@ const VISTA_ID = /^[A-Za-z0-9_-]{3,100}$/;
 const CLAVE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const POR_PAGINA = 500;
 const MAX_PAGINAS = 16;
-/** Con las páginas de la lectura, el token y la configuración, por debajo de las 50 peticiones que da el plan gratis por ejecución. */
+/** Con las páginas de la lectura, el token, los cambios y la configuración, por debajo de las 50 peticiones que da el plan gratis por ejecución. */
 const VISTAS_POR_VUELTA = 36;
+/** Sin cambios en Drive, cada cuánto se relee igual la carpeta entera (por si su registro de cambios se dejó algo). */
+const RELEER_CADA_MS = 6 * 3_600_000;
+/** Páginas del registro de cambios que se miran por vuelta; con más, se relee la carpeta y se estrena marca. */
+const MAX_PAGINAS_CAMBIOS = 5;
+/** Lo más que la lectura puede gastar al día de la base: bien por debajo de lo que el plan da a toda la cuenta. */
+const MAX_ESCRITAS_DIA = 40_000;
+const MAX_LEIDAS_DIA = 2_000_000;
 const NODOS_POR_PARTE = 400;
 const MAX_TARJETAS = 1_000_000;
 const MAX_CONFIG = 500_000;
@@ -142,8 +161,10 @@ ON CONFLICT (id) DO UPDATE SET padre = excluded.padre, nombre = excluded.nombre,
   pendiente = CASE WHEN lore_nodos.version IS excluded.version AND lore_nodos.miniatura IS NOT NULL THEN lore_nodos.pendiente ELSE excluded.miniatura IS NOT NULL END,
   intentos = CASE WHEN lore_nodos.version IS excluded.version AND lore_nodos.miniatura IS NOT NULL THEN lore_nodos.intentos ELSE 0 END
 WHERE lore_nodos.version IS NOT excluded.version OR lore_nodos.padre IS NOT excluded.padre OR lore_nodos.nombre IS NOT excluded.nombre
-  OR (lore_nodos.pendiente = 1 AND lore_nodos.miniatura IS NOT excluded.miniatura)
+  OR (lore_nodos.pendiente = 1 AND lore_nodos.miniatura IS NOT excluded.miniatura AND lore_nodos.id IN (SELECT value FROM json_each(?2)))
   OR (lore_nodos.miniatura IS NULL AND excluded.miniatura IS NOT NULL)`;
+// `?2` son las portadas que se copian en esta vuelta: el enlace de Drive cambia en cada lectura, y renovarlo en todas
+// las pendientes reescribía cientos de filas cada 5 minutos (así se agotó el cupo de la base el 13-nov-2026).
 
 /** Los nodos que se ven: los de la raíz para abajo, sin carpetas ni archivos que empiecen por «_» o «.» (salvo `_Biblioteca`). */
 const ARBOL = `arbol(id) AS (
@@ -186,13 +207,117 @@ export interface Vuelta {
   vistas: number;
   config: boolean;
   indice: boolean;
+  /** Filas de la base escritas y leídas en esta vuelta: lo que cuenta para los topes diarios del plan. */
+  escritas: number;
+  leidas: number;
+  /** Drive dice que nada cambió y no quedan portadas por copiar: no se leyó la carpeta. */
+  omitida?: boolean;
   error?: string;
 }
 
-/** Una vuelta: lee todo, guarda lo cambiado, quita lo que ya no está, copia portadas y rearma el índice si algo cambió. */
-export async function sincronizar(env: Env): Promise<Vuelta> {
-  const v: Vuelta = { paginas: 0, cambios: 0, borrados: 0, vistas: 0, config: false, indice: false };
+type Meta = { rows_written?: number; rows_read?: number } | undefined;
+
+/** ¿Cambió algo en Drive desde la marca? Si no, dice la marca nueva. Ante la duda (Drive no responde, demasiadas páginas), sí. */
+async function cambiosDesde(env: Env, marca: string): Promise<{ hay: boolean; marca?: string }> {
+  let token = marca;
+  for (let i = 0; i < MAX_PAGINAS_CAMBIOS; i++) {
+    const q = new URLSearchParams({ pageToken: token, pageSize: '100', spaces: 'drive', includeRemoved: 'true', fields: 'newStartPageToken,nextPageToken,changes(fileId)' });
+    const r = await drive(env, `changes?${q}`);
+    const j = r?.ok ? ((await r.json().catch(() => null)) as { newStartPageToken?: string; nextPageToken?: string; changes?: unknown[] } | null) : null;
+    if (!j || j.changes?.length) return { hay: true };
+    // Una página vacía con continuación: cambios de otros archivos del Drive, que este permiso no ve.
+    if (j.newStartPageToken) return { hay: false, marca: j.newStartPageToken };
+    if (!j.nextPageToken) return { hay: true };
+    token = j.nextPageToken;
+  }
+  return { hay: true };
+}
+
+/** La marca desde la que se preguntará la próxima vez qué cambió. */
+async function marcaDeCambios(env: Env): Promise<string | null> {
+  const r = await drive(env, 'changes/startPageToken');
+  const j = r?.ok ? ((await r.json().catch(() => null)) as { startPageToken?: string } | null) : null;
+  return j?.startPageToken && /^[A-Za-z0-9_-]{1,200}$/.test(j.startPageToken) ? j.startPageToken : null;
+}
+
+/** La base dijo que la cuenta agotó su tope diario: hasta medianoche (UTC) no tiene sentido volver a leer la carpeta. */
+let baseAgotadaHasta = 0;
+const TOPE_DE_LA_BASE = /daily row (write|read) limit/i;
+
+interface Gasto {
+  d: string;
+  w: number;
+  r: number;
+}
+
+/** Lo que la lectura lleva gastado hoy (UTC, como cuenta Cloudflare); otro día empieza de cero. */
+function gastoDe(texto: string | undefined, dia: string): Gasto {
+  try {
+    const g = JSON.parse(texto ?? '') as Gasto;
+    if (g?.d === dia && Number.isFinite(g.w) && Number.isFinite(g.r)) return g;
+  } catch {
+    /* sin anotar aún */
+  }
+  return { d: dia, w: 0, r: 0 };
+}
+
+/**
+ * Una vuelta. Si Drive dice que nada cambió, no quedan portadas y no toca releer, no hace nada más. Si no: lee todo,
+ * guarda lo cambiado, quita lo que ya no está, copia unas portadas y rearma el índice si algo cambió.
+ */
+export async function sincronizar(env: Env, ahora = Date.now()): Promise<Vuelta> {
+  const v: Vuelta = { paginas: 0, cambios: 0, borrados: 0, vistas: 0, config: false, indice: false, escritas: 0, leidas: 0 };
   if (!env.LORE_SA_JSON && !env.LORE_DRIVE_REFRESH) return { ...v, error: 'sin-drive' };
+  if (ahora < baseAgotadaHasta) return { ...v, error: 'la base agotó su tope de hoy: la lectura sigue mañana (UTC)' };
+  const gasta = (meta: Meta) => {
+    v.escritas += meta?.rows_written ?? 0;
+    v.leidas += meta?.rows_read ?? 0;
+  };
+
+  // 0. Lo que quedó de la vuelta anterior y lo gastado hoy: con el cupo propio agotado, se espera a mañana.
+  const antes = await env.DB.prepare("SELECT k, v FROM lore_estado WHERE k IN ('raiz', 'config_version', 'partes', 'cambios', 'releida', 'gasto')").all<{ k: string; v: string }>();
+  gasta(antes.meta);
+  const estado = Object.fromEntries(antes.results.map((r) => [r.k, r.v]));
+  const gasto = gastoDe(estado.gasto, new Date(ahora).toISOString().slice(0, 10));
+  if (gasto.w >= MAX_ESCRITAS_DIA || gasto.r >= MAX_LEIDAS_DIA) return { ...v, error: `presupuesto (${gasto.w} escritas, ${gasto.r} leídas hoy)` };
+
+  // 1. Las portadas que se copian en esta vuelta: solo a ellas se les renueva el enlace.
+  const toca = await env.DB.prepare('SELECT id FROM lore_nodos WHERE pendiente = 1 ORDER BY intentos, id LIMIT ?').bind(VISTAS_POR_VUELTA).all<{ id: string }>();
+  gasta(toca.meta);
+  const elegidas = JSON.stringify(toca.results.map((r) => r.id));
+
+  // 2. ¿Hay que leer la carpeta? Solo si falta algo, quedan portadas, toca releer o Drive dice que algo cambió.
+  const releer = !estado.raiz || !estado.partes || !estado.cambios || toca.results.length > 0 || ahora - Number(estado.releida ?? 0) >= RELEER_CADA_MS;
+  if (!releer) {
+    const c = await cambiosDesde(env, estado.cambios!);
+    if (!c.hay) {
+      // La marca avanza aunque los cambios fueran de otros archivos: la próxima pregunta vuelve a ser de una página.
+      if (c.marca && c.marca !== estado.cambios) await env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('cambios', ?)").bind(c.marca).run();
+      return { ...v, omitida: true };
+    }
+  }
+
+  let error: string | undefined;
+  try {
+    error = await leerCarpeta(env, v, estado, elegidas, gasta, ahora);
+  } catch (e) {
+    error = String(e).slice(0, 200);
+    if (TOPE_DE_LA_BASE.test(error)) baseAgotadaHasta = Math.floor(ahora / 86_400_000 + 1) * 86_400_000;
+  }
+  // Lo gastado se anota pase lo que pase. Si la base ya no deja escribir, esto falla también, y ya no hay nada que cuidar.
+  gasto.w += v.escritas + 2;
+  gasto.r += v.leidas;
+  await env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('gasto', ?)")
+    .bind(JSON.stringify(gasto))
+    .run()
+    .catch(() => undefined);
+  return error ? { ...v, error } : v;
+}
+
+/** La lectura completa. Devuelve el error, si lo hubo; lo hecho queda en `v`. */
+async function leerCarpeta(env: Env, v: Vuelta, estado: Record<string, string>, elegidas: string, gasta: (meta: Meta) => void, ahora: number): Promise<string | undefined> {
+  // La marca se pide ANTES de leer: lo que cambie durante la lectura saldrá en la siguiente pregunta.
+  const marca = await marcaDeCambios(env);
 
   // 1. Todo lo que ve el lector, por páginas, tal cual a D1.
   const ids: string[] = [];
@@ -201,44 +326,47 @@ export async function sincronizar(env: Env): Promise<Vuelta> {
     const q = new URLSearchParams({ q: 'trashed = false', pageSize: String(POR_PAGINA), fields: CAMPOS, spaces: 'drive' });
     if (pagina) q.set('pageToken', pagina);
     const r = await drive(env, `files?${q}`);
-    if (!r?.ok) return { ...v, error: `drive ${r?.status ?? 'red'}` };
+    if (!r?.ok) return `drive ${r?.status ?? 'red'}`;
     const texto = await r.text();
-    const hecho = await env.DB.prepare(GUARDAR_PAGINA).bind(texto).run();
+    const hecho = await env.DB.prepare(GUARDAR_PAGINA).bind(texto, elegidas).run();
+    gasta(hecho.meta);
     v.cambios += hecho.meta.changes ?? 0;
     for (const m of texto.matchAll(/"id"\s*:\s*"([A-Za-z0-9_-]+)"/g)) ids.push(m[1]!);
     pagina = campo(texto, 'nextPageToken');
     v.paginas++;
   } while (pagina && v.paginas < MAX_PAGINAS);
-  if (pagina) return { ...v, error: 'demasiadas-paginas' };
+  if (pagina) return 'demasiadas-paginas';
 
   // 2. Lo que ya no está (borrado, a la papelera o fuera del alcance del lector).
   const fuera = await env.DB.prepare('DELETE FROM lore_nodos WHERE id NOT IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(ids)).run();
+  gasta(fuera.meta);
   v.borrados = fuera.meta.changes ?? 0;
-  if (v.borrados) await env.DB.prepare('DELETE FROM lore_vistas WHERE version IS NOT NULL AND id NOT IN (SELECT id FROM lore_nodos)').run();
+  if (v.borrados) gasta((await env.DB.prepare('DELETE FROM lore_vistas WHERE version IS NOT NULL AND id NOT IN (SELECT id FROM lore_nodos)').run()).meta);
 
   // 3. La raíz y la configuración.
-  const antes = await env.DB.prepare("SELECT k, v FROM lore_estado WHERE k IN ('raiz', 'config_version', 'partes')").all<{ k: string; v: string }>();
-  const estado = Object.fromEntries(antes.results.map((r) => [r.k, r.v]));
   if (v.cambios || v.borrados || !estado.raiz || !estado.partes) {
-    await env.DB.batch([env.DB.prepare("DELETE FROM lore_estado WHERE k = 'raiz'"), env.DB.prepare(RAIZ).bind(env.LORE_ROOT ?? null)]);
+    for (const h of await env.DB.batch([env.DB.prepare("DELETE FROM lore_estado WHERE k = 'raiz'"), env.DB.prepare(RAIZ).bind(env.LORE_ROOT ?? null)])) gasta(h.meta);
   }
-  const cfg = await env.DB.prepare(
+  const cfgs = await env.DB.prepare(
     "SELECT n.id, n.version, n.tamano FROM lore_nodos n JOIN lore_nodos b ON b.id = n.padre WHERE n.nombre = 'biblioteca.json' AND b.nombre = '_Biblioteca' AND b.padre = (SELECT v FROM lore_estado WHERE k = 'raiz') LIMIT 1",
-  ).first<{ id: string; version: string | null; tamano: number | null }>();
+  ).all<{ id: string; version: string | null; tamano: number | null }>();
+  gasta(cfgs.meta);
+  const cfg = cfgs.results[0];
   const versionCfg = cfg ? `${cfg.id}:${cfg.version ?? ''}` : '';
   if (versionCfg !== (estado.config_version ?? '')) {
     if (!cfg) {
-      await env.DB.prepare("DELETE FROM lore_estado WHERE k IN ('config', 'config_version')").run();
+      gasta((await env.DB.prepare("DELETE FROM lore_estado WHERE k IN ('config', 'config_version')").run()).meta);
       v.config = true;
     } else if ((cfg.tamano ?? 0) <= MAX_CONFIG) {
       const r = await drive(env, `files/${encodeURIComponent(cfg.id)}?alt=media`);
       const texto = r?.ok ? await r.text() : null;
       if (texto !== null && texto.length <= MAX_CONFIG) {
         // Si no es JSON válido, se queda la anterior; el validador lo dice.
-        await env.DB.batch([
+        const hechos = await env.DB.batch([
           env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) SELECT 'config', json(?1) WHERE json_valid(?1) AND json_type(?1) = 'object'").bind(texto),
           env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('config_version', ?)").bind(versionCfg),
         ]);
+        for (const h of hechos) gasta(h.meta);
         v.config = true;
       }
     }
@@ -246,28 +374,41 @@ export async function sincronizar(env: Env): Promise<Vuelta> {
 
   // 4. Portadas: la primera página de todo lo que se ve (1.9.8: también exámenes, esquemas y bancos).
   if (v.cambios || v.borrados) {
-    await env.DB.prepare(`WITH RECURSIVE ${ARBOL} UPDATE lore_nodos SET pendiente = 0 WHERE pendiente = 1 AND id NOT IN (SELECT id FROM arbol)`).run();
+    gasta((await env.DB.prepare(`WITH RECURSIVE ${ARBOL} UPDATE lore_nodos SET pendiente = 0 WHERE pendiente = 1 AND id NOT IN (SELECT id FROM arbol)`).run()).meta);
   }
-  v.vistas = await copiarPortadas(env);
+  v.vistas = await copiarPortadas(env, elegidas, gasta);
 
   // 5. El índice, solo si algo cambió.
   if (v.cambios || v.borrados || v.vistas || v.config || !estado.partes) {
-    await env.DB.batch([
+    const hechos = await env.DB.batch([
       env.DB.prepare("DELETE FROM lore_estado WHERE k GLOB 'indice:*'"),
       env.DB.prepare(INDICE),
       env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) SELECT 'partes', count(*) FROM lore_estado WHERE k GLOB 'indice:*'"),
       env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('actualizado', ?)").bind(new Date().toISOString()),
     ]);
+    for (const h of hechos) gasta(h.meta);
     v.indice = true;
   }
-  return v;
+
+  // 6. Desde dónde preguntar la próxima vez y cuándo se leyó todo por última vez.
+  const hechos = await env.DB.batch([
+    ...(marca ? [env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('cambios', ?)").bind(marca)] : []),
+    env.DB.prepare("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('releida', ?)").bind(String(ahora)),
+  ]);
+  for (const h of hechos) gasta(h.meta);
+  return undefined;
 }
 
-/** Copia a D1 unas cuantas portadas por vuelta (el enlace de Drive caduca en horas y pide permiso: la app no puede usarlo). */
-async function copiarPortadas(env: Env): Promise<number> {
-  const { results } = await env.DB.prepare('SELECT id, miniatura, version FROM lore_nodos WHERE pendiente = 1 LIMIT ?')
-    .bind(VISTAS_POR_VUELTA)
+/**
+ * Copia a D1 las portadas elegidas en esta vuelta (el enlace de Drive caduca en horas y pide permiso: la app no puede
+ * usarlo). Solo esas: son las que tienen el enlace recién renovado.
+ */
+async function copiarPortadas(env: Env, elegidas: string, gasta: (meta: Meta) => void): Promise<number> {
+  const lista = await env.DB.prepare('SELECT id, miniatura, version FROM lore_nodos WHERE pendiente = 1 AND id IN (SELECT value FROM json_each(?1))')
+    .bind(elegidas)
     .all<{ id: string; miniatura: string | null; version: string | null }>();
+  gasta(lista.meta);
+  const { results } = lista;
   if (!results.length) return 0;
   const token = await tokenLector(env);
   if (!token) return 0;
@@ -288,10 +429,10 @@ async function copiarPortadas(env: Env): Promise<number> {
           env.DB.prepare('INSERT OR REPLACE INTO lore_vistas (id, mime, datos, version) VALUES (?, ?, ?, ?)').bind(n.id, ok.mime, ok.datos, `${n.version ?? '0'}.${LADO_VISTA}`),
           env.DB.prepare('UPDATE lore_nodos SET pendiente = 0 WHERE id = ? AND version IS ?').bind(n.id, n.version),
         ]
-      : // Tres intentos (el enlace se renueva en cada lectura); sin portada, la app enseña una hoja en blanco.
+      : // Tres intentos (el enlace se renueva en cada vuelta); sin portada, la app enseña una hoja en blanco.
         [env.DB.prepare('UPDATE lore_nodos SET intentos = intentos + 1, pendiente = intentos + 1 < 3 WHERE id = ?').bind(n.id)],
   );
-  await env.DB.batch(pasos);
+  for (const h of await env.DB.batch(pasos)) gasta(h.meta);
   return hechos.filter((h) => h.ok).length;
 }
 
@@ -356,20 +497,14 @@ export async function bibliotecaArchivo(req: Request, env: Env, user: AppUser, i
     fin = m[2] ? Math.min(Number(m[2]), tamano - 1) : tamano - 1;
     if (tamano && inicio > fin) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${tamano}` } });
   }
-  // Un archivo cuenta una vez (cuando se pide desde el principio); los bytes, siempre.
+  // Un archivo cuenta una vez, al abrirlo (cuando se pide desde el principio), con los bytes de esa petición. Los
+  // tramos siguientes de hojearlo solo consultan la cuenta (salvo los grandes, que sí se anotan): una vista previa son
+  // decenas de peticiones y las escrituras de la base están contadas. Si la cuenta falla, el archivo se sirve igual.
   const bytes = Math.max(0, fin - inicio + 1);
-  const uno = inicio === 0 ? 1 : 0;
-  const day = new Date().toISOString().slice(0, 10);
-  const used = await env.DB.prepare(
-    'INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (owner, day) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes RETURNING n, bytes',
-  )
-    .bind(user.owner, day, uno, bytes)
-    .first<{ n: number; bytes: number }>();
-  const devolver = () => env.DB.prepare('UPDATE lore_descargas SET n = n - ?, bytes = bytes - ? WHERE owner = ? AND day = ?').bind(uno, bytes, user.owner, day).run();
-  if (!used || used.n > DAILY_FILES || used.bytes > DAILY_BYTES) {
-    await devolver();
-    return json({ error: 'quota', files: DAILY_FILES }, 429);
-  }
+  const abre = inicio === 0;
+  const cuenta = await contarDescarga(env, user.owner, abre ? 1 : 0, bytes, abre || bytes > TRAMO_LIBRE);
+  if (!cuenta.cabe) return json({ error: 'quota', files: DAILY_FILES }, 429);
+  const devolver = cuenta.devolver;
 
   const r = await drive(env, `files/${encodeURIComponent(nodo.id)}?alt=media`, m ? { range: rango } : {});
   if (!r || !(r.status === 200 || r.status === 206) || !r.body) {

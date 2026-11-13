@@ -122,6 +122,45 @@ export async function loreView(env: Env, user: AppUser, id: string): Promise<Res
   return new Response(bytes, { status: 200, headers: { 'content-type': /^image\/(jpeg|png|webp)$/.test(row.mime) ? row.mime : 'application/octet-stream', 'cache-control': 'private, max-age=604800' } });
 }
 
+/** Tramos de un archivo ya abierto más pequeños que esto no se anotan: hojear un PDF no escribe en la base a cada paso. */
+export const TRAMO_LIBRE = 1_048_576;
+
+/**
+ * Anota una descarga en la cuenta del día de `owner` y dice si cabe en el tope. Sin `anotar`, solo mira lo que lleva.
+ *
+ * Nunca impide servir un archivo por un fallo propio: si la base no deja anotar (el plan gratis corta las escrituras
+ * de toda la cuenta al llegar a su tope diario, y eso dejó la Biblioteca sin descargas el 13-nov-2026) o no responde,
+ * se sirve igual y queda dicho en el registro.
+ */
+export async function contarDescarga(env: Env, owner: string, archivos: number, bytes: number, anotar: boolean): Promise<{ cabe: boolean; devolver: () => Promise<void> }> {
+  const day = new Date().toISOString().slice(0, 10);
+  const nada = async () => undefined;
+  try {
+    if (!anotar) {
+      const lleva = await env.DB.prepare('SELECT n, bytes FROM lore_descargas WHERE owner = ? AND day = ?').bind(owner, day).first<{ n: number; bytes: number }>();
+      return { cabe: !lleva || (lleva.n <= DAILY_FILES && lleva.bytes <= DAILY_BYTES), devolver: nada };
+    }
+    const used = await env.DB.prepare(
+      'INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (owner, day) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes RETURNING n, bytes',
+    )
+      .bind(owner, day, archivos, bytes)
+      .first<{ n: number; bytes: number }>();
+    const devolver = () =>
+      env.DB.prepare('UPDATE lore_descargas SET n = n - ?, bytes = bytes - ? WHERE owner = ? AND day = ?')
+        .bind(archivos, bytes, owner, day)
+        .run()
+        .then(nada, nada);
+    if (used && (used.n > DAILY_FILES || used.bytes > DAILY_BYTES)) {
+      await devolver();
+      return { cabe: false, devolver: nada };
+    }
+    return { cabe: true, devolver };
+  } catch (e) {
+    console.error('biblioteca: la descarga se sirve sin anotar', String(e).slice(0, 160));
+    return { cabe: true, devolver: nada };
+  }
+}
+
 /** Un archivo: se cuenta, se trae de Drive y se pasa sin guardarlo. */
 export async function loreFile(env: Env, user: AppUser, id: string): Promise<Response> {
   if (!(await hasLoreAccess(env, user))) return json({ error: 'school' }, 403);
@@ -129,17 +168,9 @@ export async function loreFile(env: Env, user: AppUser, id: string): Promise<Res
   const row = await env.DB.prepare('SELECT id, drive_id, title, size, format FROM lore WHERE id = ?').bind(id).first<Pick<LoreRow, 'id' | 'drive_id' | 'title' | 'size' | 'format'>>();
   if (!row) return json({ error: 'not_found' }, 404);
 
-  const day = new Date().toISOString().slice(0, 10);
-  const used = await env.DB.prepare(
-    'INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?, ?, 1, ?) ON CONFLICT (owner, day) DO UPDATE SET n = n + 1, bytes = bytes + excluded.bytes RETURNING n, bytes',
-  )
-    .bind(user.owner, day, row.size)
-    .first<{ n: number; bytes: number }>();
-  const refund = () => env.DB.prepare('UPDATE lore_descargas SET n = n - 1, bytes = bytes - ? WHERE owner = ? AND day = ?').bind(row.size, user.owner, day).run();
-  if (!used || used.n > DAILY_FILES || used.bytes > DAILY_BYTES) {
-    await refund();
-    return json({ error: 'quota', files: DAILY_FILES }, 429);
-  }
+  const cuenta = await contarDescarga(env, user.owner, 1, row.size, true);
+  if (!cuenta.cabe) return json({ error: 'quota', files: DAILY_FILES }, 429);
+  const refund = cuenta.devolver;
 
   const token = await driveToken(env);
   if (!token) {

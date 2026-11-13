@@ -545,6 +545,17 @@ describe('AK Lore: la Biblioteca', () => {
     expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: 1000 }]);
   });
 
+  it('si la base no deja anotar la descarga, el archivo se sirve igual', async () => {
+    await a.sql('ALTER TABLE lore_descargas RENAME TO lore_descargas_fuera');
+    try {
+      const r = await a.pedir('/app/lore/archivo/guia-fisica', { token: sesion(ALUMNA) });
+      expect(r.estado).toBe(200);
+      expect(r.texto).toBe(pdfDe('drive-2'));
+    } finally {
+      await a.sql('ALTER TABLE lore_descargas_fuera RENAME TO lore_descargas');
+    }
+  });
+
   it('un archivo que falta o un tope agotado no cuentan', async () => {
     await fila('guia-perdida', 'falta');
     await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
@@ -798,7 +809,8 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     expect(r.nodos.find((n) => n.i === 'guia-fisica-001')).toMatchObject({ p: 'carpeta-exam-01', n: 'Guía de Física (nueva)' });
     expect(r.nodos.find((n) => n.i === 'relleno-000001')).toBeUndefined();
     expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE id = 'relleno-000001'")).toEqual([{ n: 0 }]);
-    // La portada se renueva con la versión.
+    // La portada se renueva con la versión, en la vuelta siguiente (cada vuelta copia las que ya esperaban).
+    await a.sincronizar();
     expect(await a.sql("SELECT version FROM lore_vistas WHERE id = 'guia-fisica-001'")).toEqual([{ version: '2.640' }]);
   });
 
@@ -823,7 +835,18 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     expect(t.estado).toBe(206);
     expect(t.texto).toBe(pdfDe('guia-fisica-001').slice(5, 10));
     expect(t.r.headers.get('content-range')).toBe(`bytes 5-9/${tam}`);
-    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: tam + 5 }]);
+    // Un tramo pequeño de un archivo ya abierto no se anota (hojear un PDF son decenas de tramos)…
+    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 1, bytes: tam }]);
+    // …y abrirlo por tramos (desde el principio) cuenta un archivo, con lo pedido.
+    const abre = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=0-4' } });
+    expect(abre.estado).toBe(206);
+    expect(await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())).toEqual([{ n: 2, bytes: tam + 5 }]);
+    // Con el tope del día alcanzado, ni abrir otro ni seguir hojeando.
+    await a.sql('UPDATE lore_descargas SET n = 301 WHERE owner=?', ALUMNA);
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } })).estado).toBe(429);
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) })).estado).toBe(429);
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 301 }]);
+    await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
     expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: `bytes=${tam + 5}-` } })).estado).toBe(416);
   });
 
@@ -857,6 +880,93 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     DRIVE.archivos.find((f) => f.id === 'config-json-01')!.version = '2';
     await a.sincronizar();
     expect((await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.config).toEqual(CONFIG);
+  });
+
+  // ---- Blindaje del 13-nov-2026: el cupo diario de la base (plan gratis) no puede dejar la Biblioteca sin descargas.
+  const gasto = async () => JSON.parse(((await a.sql("SELECT v FROM lore_estado WHERE k = 'gasto'"))[0]?.v as string) ?? '{"w":0,"r":0}') as { d: string; w: number; r: number };
+
+  it('si la base no deja escribir, el archivo se descarga y se hojea igual', async () => {
+    await a.sql('ALTER TABLE lore_descargas RENAME TO lore_descargas_fuera');
+    try {
+      const r = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) });
+      expect(r.estado).toBe(200);
+      expect(r.texto).toBe(pdfDe('guia-fisica-001'));
+      const primero = await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=0-4' } });
+      expect(primero.estado).toBe(206);
+      expect(primero.texto).toBe(pdfDe('guia-fisica-001').slice(0, 5));
+      expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } })).estado).toBe(206);
+      // Lo que no depende de anotar sigue igual: quien no la tiene activada, no pasa.
+      expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(LUIS) })).estado).toBe(403);
+    } finally {
+      await a.sql('ALTER TABLE lore_descargas_fuera RENAME TO lore_descargas');
+    }
+  });
+
+  it('sin cambios en Drive no se lee la carpeta ni se escribe nada', async () => {
+    for (let i = 0; i < 3; i++) await a.sincronizar();
+    const antes = { listados: DRIVE.listados, preguntas: DRIVE.preguntas, gasto: await gasto(), indice: (await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.actualizado };
+    for (let i = 0; i < 6; i++) await a.sincronizar();
+    expect(DRIVE.listados).toBe(antes.listados);
+    expect(DRIVE.preguntas).toBe(antes.preguntas + 6);
+    expect(await gasto()).toEqual(antes.gasto);
+    expect((await a.pedir('/app/biblioteca', { token: sesion(ALUMNA) })).datos.actualizado).toBe(antes.indice);
+  });
+
+  it('se relee igual cada seis horas, y cuando el registro de cambios no responde', async () => {
+    const paginas = DRIVE.listados;
+    await a.sql("UPDATE lore_estado SET v = ? WHERE k = 'releida'", String(Date.now() - 7 * 3_600_000));
+    await a.sincronizar();
+    expect(DRIVE.listados).toBe(paginas + 2);
+    await a.sincronizar();
+    expect(DRIVE.listados).toBe(paginas + 2);
+    DRIVE.sinRegistro = true;
+    await a.sincronizar();
+    DRIVE.sinRegistro = false;
+    expect(DRIVE.listados).toBe(paginas + 4);
+  });
+
+  it('con cientos de portadas por copiar, cada vuelta escribe pocas filas', async () => {
+    // Todos los apuntes cambian de versión: sus portadas (más de 500) vuelven a la cola.
+    for (const f of DRIVE.archivos) if (String(f.id).startsWith('relleno-')) f.version = '9';
+    await a.sincronizar();
+    const cola = ((await a.sql('SELECT count(*) AS n FROM lore_nodos WHERE pendiente = 1'))[0] as { n: number }).n;
+    expect(cola).toBeGreaterThan(500);
+    const antes = await gasto();
+    await a.sincronizar();
+    const una = (await gasto()).w - antes.w;
+    // Una vuelta renueva y copia 36 portadas y rearma el índice: unos cientos de filas, no miles (el enlace de las
+    // otras 470 también cambió en Drive, y no se toca).
+    expect(una).toBeGreaterThan(36);
+    expect(una).toBeLessThan(500);
+    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE version = '9.640'")).toEqual([{ n: 36 }]);
+    for (let i = 0; i < 20; i++) await a.sincronizar();
+    expect(await a.sql('SELECT count(*) AS n FROM lore_nodos WHERE pendiente = 1')).toEqual([{ n: 0 }]);
+    expect(await a.sql("SELECT count(*) AS n FROM lore_vistas WHERE version = '9.640'")).toEqual([{ n: cola }]);
+  });
+
+  it('con su cupo del día gastado, la lectura espera al día siguiente', async () => {
+    const guia = DRIVE.archivos.find((f) => f.id === 'guia-fisica-001')!;
+    const nombre = guia.name;
+    await a.sql("INSERT OR REPLACE INTO lore_estado (k, v) VALUES ('gasto', ?)", JSON.stringify({ d: hoy(), w: 40_000, r: 0 }));
+    guia.name = 'Guía de Física (con el cupo gastado)';
+    guia.version = '7';
+    const paginas = DRIVE.listados;
+    await a.sincronizar();
+    expect(DRIVE.listados).toBe(paginas);
+    expect((await indice()).nodos.find((n) => n.i === 'guia-fisica-001')!.n).toBe(nombre);
+    // Lo mismo con las lecturas.
+    await a.sql("UPDATE lore_estado SET v = ? WHERE k = 'gasto'", JSON.stringify({ d: hoy(), w: 0, r: 2_000_000 }));
+    await a.sincronizar();
+    expect(DRIVE.listados).toBe(paginas);
+    // Otro día (UTC), la cuenta empieza de cero y la lectura sigue sola.
+    await a.sql("UPDATE lore_estado SET v = ? WHERE k = 'gasto'", JSON.stringify({ d: '2026-01-01', w: 99_999, r: 9_999_999 }));
+    await a.sincronizar();
+    expect((await indice()).nodos.find((n) => n.i === 'guia-fisica-001')!.n).toBe('Guía de Física (con el cupo gastado)');
+    expect((await gasto()).d).toBe(hoy());
+    guia.name = nombre;
+    guia.version = '8';
+    await a.sincronizar();
+    await a.sincronizar();
   });
 
   it('la cuenta de servicio firma su JWT con RS256', async () => {

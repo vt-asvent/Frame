@@ -45,15 +45,20 @@ export const pdfDe = (id: string) => `%PDF-1.7 archivo ${id}`;
 /**
  * Biblioteca 2: la carpeta «AK Lore» de mentira. `archivos` es lo que lista Drive (como lo
  * devuelve la API), `contenido` lo que tiene cada uno (si no, `pdfDe`), `sinMiniatura` los
- * que no dan portada y `listados` cuántas páginas se pidieron.
+ * que no dan portada, `listados` cuántas páginas de la carpeta se pidieron y `preguntas`
+ * cuántas veces se consultó el registro de cambios (`sinRegistro`: ese registro no responde).
  */
-export const DRIVE: { archivos: Record<string, unknown>[]; contenido: Record<string, string>; sinMiniatura: Set<string>; listados: number; caido: boolean } = {
+export const DRIVE: { archivos: Record<string, unknown>[]; contenido: Record<string, string>; sinMiniatura: Set<string>; listados: number; preguntas: number; caido: boolean; sinRegistro: boolean } = {
   archivos: [],
   contenido: {},
   sinMiniatura: new Set(),
   listados: 0,
+  preguntas: 0,
   caido: false,
+  sinRegistro: false,
 };
+/** La marca del registro de cambios de mentira: es otra en cuanto cambia algo de lo que hay en Drive. */
+const marcaDrive = () => createHash('sha1').update(JSON.stringify([DRIVE.archivos, DRIVE.contenido])).digest('hex').slice(0, 16);
 /** Una imagen JPEG mínima: la portada que da Drive. */
 export const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9]);
 
@@ -237,16 +242,25 @@ export async function crearArnes(): Promise<Arnes> {
             const ok = form.get('refresh_token') === 'renovacion-de-prueba' && form.get('client_id') === 'cliente-de-prueba' && form.get('client_secret') === 'secreto-de-prueba';
             return new Response(JSON.stringify(ok ? { access_token: 'acceso-drive', expires_in: 3600 } : { error: 'invalid_grant' }), { status: ok ? 200 : 400 }) as never;
           }
+          if (url.hostname === 'www.googleapis.com' && url.pathname.startsWith('/drive/v3/changes')) {
+            if (auth !== 'Bearer acceso-drive') return new Response('{}', { status: 401 }) as never;
+            if (DRIVE.caido || DRIVE.sinRegistro) return new Response('{}', { status: 500 }) as never;
+            const marca = marcaDrive();
+            if (url.pathname.endsWith('/startPageToken')) return new Response(JSON.stringify({ startPageToken: marca })) as never;
+            DRIVE.preguntas++;
+            return new Response(JSON.stringify({ newStartPageToken: marca, changes: url.searchParams.get('pageToken') === marca ? [] : [{ fileId: 'algo-cambio' }] })) as never;
+          }
           if (url.hostname === 'www.googleapis.com' && url.pathname === '/drive/v3/files') {
             if (auth !== 'Bearer acceso-drive') return new Response('{}', { status: 401 }) as never;
             if (DRIVE.caido) return new Response('{}', { status: 500 }) as never;
+            // El enlace de cada miniatura cambia en cada lectura, como en el Drive real (lleva la cuenta de lecturas).
             DRIVE.listados++;
             const desde = Number(url.searchParams.get('pageToken') ?? 0);
             const tam = Number(url.searchParams.get('pageSize') ?? 100);
             const vivos = DRIVE.archivos.filter((f) => !f.trashed);
             const pagina = vivos.slice(desde, desde + tam).map((f) => ({
               ...f,
-              ...(DRIVE.sinMiniatura.has(String(f.id)) || f.mimeType === 'application/vnd.google-apps.folder' ? {} : { thumbnailLink: `https://lh3.googleusercontent.com/prueba/${f.id}=s220` }),
+              ...(DRIVE.sinMiniatura.has(String(f.id)) || f.mimeType === 'application/vnd.google-apps.folder' ? {} : { thumbnailLink: `https://lh3.googleusercontent.com/prueba/${f.id}/lectura-${DRIVE.listados}=s220` }),
             }));
             const sigue = desde + tam < vivos.length ? { nextPageToken: String(desde + tam) } : {};
             return new Response(JSON.stringify({ ...sigue, files: pagina }, null, 1), { headers: { 'content-type': 'application/json' } }) as never;
