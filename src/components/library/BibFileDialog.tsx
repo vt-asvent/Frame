@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { Download, Layers, LoaderCircle, Minus, Play, Plus, Sparkles, Star, X } from 'lucide-react';
+import { Download, Heart, Layers, LoaderCircle, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Cover, Tag, useVisible } from '@/components/library/BibParts';
@@ -31,7 +31,6 @@ interface Props {
   item: BibItem | null;
   color: string;
   conf?: BibSubjectConf;
-  convocatoria: string | null;
   favorite: boolean;
   downloading: boolean;
   onClose: () => void;
@@ -43,12 +42,12 @@ interface Props {
   isSubject: (name: string) => boolean;
 }
 
-export default function BibFileDialog({ item, color, conf, convocatoria, favorite, downloading, onClose, onToggleFavorite, onDownload, onCards, onSubject, isSubject }: Props) {
+export default function BibFileDialog({ item, color, conf, favorite, downloading, onClose, onToggleFavorite, onDownload, onCards, onSubject, isSubject }: Props) {
   const [enlarged, setEnlarged] = useState<number | null>(null);
   useEffect(() => setEnlarged(null), [item]);
   if (!item) return null;
 
-  const programa = programaDe(item, conf, convocatoria);
+  const programa = programaDe(item, conf);
   const links: { label: string; subject?: string }[] = [{ label: item.subject, subject: item.subject }];
   if (item.props.componente) links.push({ label: item.props.componente });
   for (const t of temasDe(item)) links.push({ label: t });
@@ -86,7 +85,7 @@ export default function BibFileDialog({ item, color, conf, convocatoria, favorit
             </span>
             <DialogTitle className="text-lg leading-snug">{item.title}</DialogTitle>
           </div>
-          <DialogDescription className="whitespace-pre-line text-sm leading-relaxed text-foreground/85">{item.description || tr('Sin descripción.')}</DialogDescription>
+          <DialogDescription className="hyphens-auto whitespace-pre-line text-justify text-sm leading-relaxed text-foreground/85">{item.description || tr('Sin descripción.')}</DialogDescription>
           {(item.props.origen === 'IA' || programa === 'anterior' || programa === 'siguiente') && (
             <div className="flex flex-col gap-1.5">
               {item.props.origen === 'IA' && (
@@ -96,7 +95,7 @@ export default function BibFileDialog({ item, color, conf, convocatoria, favorit
                 </p>
               )}
               {programa === 'anterior' && <Tag tone="warn">{tr('Es del programa anterior: puede incluir temas que ya no entran.')}</Tag>}
-              {programa === 'siguiente' && <Tag tone="info">{tr('Es de un programa más nuevo que el de tus exámenes.')}</Tag>}
+              {programa === 'siguiente' && <Tag tone="info">{tr('Es de un programa más nuevo que el vigente.')}</Tag>}
             </div>
           )}
           <div className="flex flex-wrap gap-1.5">
@@ -131,7 +130,7 @@ export default function BibFileDialog({ item, color, conf, convocatoria, favorit
               </Button>
             )}
             <Button variant="outline" onClick={onToggleFavorite} aria-pressed={favorite}>
-              <Star className={cn('mr-2 h-4 w-4', favorite && 'fill-yellow-400 text-yellow-400')} />
+              <Heart className={cn('mr-2 h-4 w-4', favorite && 'fill-rose-500 text-rose-500')} />
               {favorite ? tr('En favoritos') : tr('Favorito')}
             </Button>
           </div>

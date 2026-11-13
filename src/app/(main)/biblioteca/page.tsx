@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarClock, Check, ChevronDown, FlaskConical, KeyRound, LoaderCircle, Lock, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, FlaskConical, Heart, KeyRound, LoaderCircle, Lock, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
 import { addDays, format, isAfter, isBefore, parseISO, startOfDay } from 'date-fns';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import LibraryActivateDialog from '@/components/extensions/LibraryActivateDialog';
 import BibFileDialog from '@/components/library/BibFileDialog';
+import { AdvancedFilters, FILTER_BUTTON, LevelPicker, SQUARE_BUTTON, YearPicker } from '@/components/library/BibFilters';
+import PackButton from '@/components/library/BibPack';
 import { ItemCard, ItemGrid, SectionHeading, Shelf, ShelfItem, subjectColor } from '@/components/library/BibParts';
 import StudyCardsDialog from '@/components/library/StudyCardsDialog';
 import { useCourse } from '@/context/CourseContext';
@@ -14,22 +15,24 @@ import { useSaveCopy } from '@/hooks/use-save-copy';
 import { useToast } from '@/hooks/use-toast';
 import { useAkLoreAccess } from '@/lib/extensions/aklore/access';
 import {
+  SIN_FILTROS,
+  anioDe,
+  avanzadosPuestos,
   convocatoriaLabel,
-  convocatoriaOf,
   deComponente,
   deNivel,
   fileNameOf,
   forgetBibFiles,
   openItem,
+  pasaFiltros,
   programaDe,
   searchItems,
-  setConvocatoria,
   subjectsIn,
   temasDe,
   useBiblioteca,
-  useStudy,
+  vigenteDe,
+  type BibFiltros,
   type BibItem,
-  type BibModel,
   type BibSubject,
 } from '@/lib/extensions/aklore/biblioteca';
 import { forgetPdfs } from '@/lib/extensions/aklore/pdf';
@@ -40,22 +43,26 @@ import { dateLocale, errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 // ============================================================
-// Biblioteca (1.9.7; 1.9.8): la carpeta «AK Lore» del Drive de Asvent, para
-// personas.
+// Biblioteca (1.9.7; 1.9.8; 1.9.9): la carpeta «AK Lore» del Drive de Asvent,
+// para personas.
 //
-//   [ 🔍 Buscar…              1 204 archivos · IB ▾ ]  [ Nivel ▾ ]  [ Prueba ▾ ]
-//   Destacados  ▸ ▸ ▸ ▸ ▸ ▹        (un carrusel: cinco tarjetas y asoma la sexta)
+//   [ 🔍 Buscar…   1 204 archivos · IB ▾ ] [ Nivel ▾ ] [ Tipo ▾ ] [ Año ▾ ] [⚙] [♥] [✦]
+//   Destacados  ▸ ▸ ▸ ▸ ▹           (un carrusel: cuatro tarjetas y asoma la quinta)
 //   Física · 249                                              Ver todo
-//   ▸ ▸ ▸ ▸ ▸ ▹
+//   ▸ ▸ ▸ ▸ ▹
 //
-// Los tres filtros salen de la configuración de la carpeta (1.9.8, Diego): el
-// programa (IB o CNEB: con uno no se ve nada del otro), sus grupos de
-// asignaturas (Core, NM, NS; o cada curso) y sus pruebas (Prueba 1, 2, 3, IA).
-// Inicio: Destacados, lo que sirve para tus próximos exámenes (los de Tareas),
-// Favoritos y una fila por asignatura. Asignatura: «Guía y programa» arriba y
-// luego Temas, Exámenes y Trabajos. Cada archivo se abre en un diálogo con su
-// descripción y su vista previa (BibFileDialog). Lo que se sube o se mueve en
-// Drive aparece en unos minutos, sin actualizar.
+// El buscador ocupa media barra. Dentro lleva el programa (IB o CNEB: con uno
+// no se ve nada del otro). A su derecha, los filtros: «Nivel» (el grupo y,
+// enseguida, una de sus asignaturas: «NS / Historia»), «Tipo» (Prueba 1, 2, 3,
+// IA), «Año» (convocatoria y años), los avanzados (recuadro grande), solo
+// favoritos y «Tu paquete» (bajar asignaturas enteras). Los grupos, las pruebas
+// y el paquete salen de la configuración de la carpeta, no de la app.
+//
+// Inicio: Destacados, lo que sirve para tus próximos exámenes (los de Tareas) y
+// una fila por asignatura. Asignatura: «Guía y programa» arriba y luego Temas,
+// Exámenes y Trabajos. Cada archivo se abre en un diálogo con su descripción y
+// su vista previa (BibFileDialog). Lo que se sube o se mueve en Drive aparece
+// en unos minutos, sin actualizar.
 // ============================================================
 
 type Tab = 'temas' | 'examenes' | 'trabajos' | 'otros';
@@ -132,8 +139,12 @@ function Choice({ label, value, options, all, onChoose, className }: { label: st
   );
 }
 
-const FILTER_BUTTON =
-  'inline-flex h-10 max-w-[14rem] items-center gap-1.5 rounded-md border border-input bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+/** Lo que se recuerda en este equipo: el programa, su grupo y la asignatura abierta. */
+interface Chosen {
+  programa: string | null;
+  grupo: string | null;
+  asignatura?: string | null;
+}
 
 export default function BibliotecaPage() {
   const { userProfile, tasks } = useCourse();
@@ -143,19 +154,17 @@ export default function BibliotecaPage() {
   useDemo(); // se vuelve a pintar al cambiar los datos de ejemplo
   const bib = useBiblioteca(access === 'allowed');
   const favorites = useLoreFavorites();
-  const study = useStudy();
-  const convocatoria = convocatoriaOf(study);
   const saveCopy = useSaveCopy();
   const { toast } = useToast();
-  const [params, setParams] = useSearchParams();
-  const subjectName = params.get('a');
   const [query, setQuery] = useState('');
   const [opened, setOpened] = useState<BibItem | null>(null);
   const [cardsOf, setCardsOf] = useState<BibItem | null>(null);
   const [downloading, setDownloading] = useState<ReadonlySet<string>>(new Set());
-  // Los filtros: el programa y su grupo se recuerdan en este equipo; la prueba, no.
-  const [chosen, setChosen] = useState(() => extRead<{ programa: string | null; grupo: string | null }>(AKLORE, 'filtro', { programa: null, grupo: null }));
+  // Los filtros: el programa, el grupo y la asignatura se recuerdan en este equipo; los demás, no.
+  const [chosen, setChosen] = useState(() => extRead<Chosen>(AKLORE, 'filtro', { programa: null, grupo: null }));
   const [pruebaName, setPruebaName] = useState<string | null>(null);
+  const [filtros, setFiltros] = useState<BibFiltros>(SIN_FILTROS);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
 
   useEffect(
     () => () => {
@@ -170,39 +179,44 @@ export default function BibliotecaPage() {
   const programa = programas.find((p) => p.nombre === chosen.programa) ?? programas[0] ?? null;
   const grupo = programa?.grupos.find((g) => g.nombre === chosen.grupo) ?? null;
   const prueba = programa?.componentes.find((c) => c.nombre === pruebaName) ?? null;
-
-  /** Las asignaturas que deja ver el filtro, cada una con los archivos de la prueba elegida. */
-  const shown = useMemo(() => {
-    if (!model) return [];
-    return subjectsIn(model, programa, grupo?.nombre ?? null)
-      .map((s) => (prueba ? { ...s, items: s.items.filter((it) => deComponente(it, prueba)) } : s))
-      .filter((s) => s.items.length > 0);
-  }, [model, programa, grupo, prueba]);
-  /** Lo destacado del programa (no depende del grupo ni de la prueba). */
-  const featured = useMemo(() => {
-    if (!model || prueba) return [];
-    const names = new Set(subjectsIn(model, programa, null).map((s) => s.name));
-    return model.featured.filter((it) => names.has(it.subject));
-  }, [model, programa, prueba]);
-
-  // La asignatura abierta: la del enlace (aunque sea de otro grupo) o la única del grupo elegido (un curso).
-  const linked = model && subjectName ? model.subjects.find((s) => s.name === subjectName) ?? null : null;
-  const subject = linked ? { ...linked, items: linked.items.filter((it) => deComponente(it, prueba)) } : grupo && shown.length === 1 ? shown[0]! : null;
-
   const confOf = (item: BibItem) => model?.subjects.find((s) => s.name === item.subject)?.conf;
   const colorOf = (item: BibItem) => subjectColor(item.subject, confOf(item));
 
-  const openSubject = (name: string | null) => {
-    setOpened(null);
-    setQuery('');
-    setParams(name ? { a: name } : {});
-    document.querySelector('main')?.scrollTo({ top: 0 });
-  };
-  const choose = (next: { programa: string | null; grupo: string | null }) => {
+  /** Todo lo del programa, sin filtrar: de aquí salen los años, las clases de material y los destacados. */
+  const inProgram = useMemo(() => (model ? subjectsIn(model, programa, null) : []), [model, programa]);
+  const years = useMemo(() => [...new Set(inProgram.flatMap((s) => s.items.map(anioDe)).filter((y): y is string => !!y))].sort().reverse(), [inProgram]);
+  const tipos = useMemo(() => [...new Set(inProgram.flatMap((s) => s.items.map((it) => it.tipo)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')), [inProgram]);
+  /** ¿Hay algún filtro que deje fuera archivos sueltos (no asignaturas enteras)? */
+  const narrowed = !!prueba || onlyFavorites || filtros.meses.length > 0 || filtros.anios.length > 0 || avanzadosPuestos(filtros) > 0;
+
+  /** Las asignaturas que deja ver el filtro, cada una con los archivos que pasan. */
+  const shown = useMemo(() => {
+    if (!model) return [];
+    const pass = (it: BibItem, s: BibSubject) => deComponente(it, prueba) && pasaFiltros(it, filtros, s.conf) && (!onlyFavorites || favorites.has(it.key));
+    return subjectsIn(model, programa, grupo?.nombre ?? null)
+      .map((s) => (narrowed ? { ...s, items: s.items.filter((it) => pass(it, s)) } : s))
+      .filter((s) => s.items.length > 0);
+  }, [model, programa, grupo, prueba, filtros, onlyFavorites, favorites, narrowed]);
+
+  // La asignatura abierta: la elegida (en «Nivel», en «Ver todo» o en un vínculo) o la única de su grupo (un curso).
+  const subjectName = chosen.asignatura ?? (grupo && grupo.asignaturas.length === 1 ? grupo.asignaturas[0]! : null);
+  const subject = subjectName ? shown.find((s) => s.name === subjectName) ?? null : null;
+
+  const choose = (next: Chosen) => {
     setChosen(next);
     extWrite(AKLORE, 'filtro', next);
     if (next.programa !== programa?.nombre) setPruebaName(null);
-    openSubject(null);
+    setOpened(null);
+    setQuery('');
+    document.querySelector('main')?.scrollTo({ top: 0 });
+  };
+  /** Abre una asignatura, con su programa y su grupo (para que «Nivel» diga dónde está). */
+  const openSubject = (name: string) => {
+    for (const p of programas) {
+      const g = p.grupos.find((x) => x.asignaturas.includes(name));
+      if (g) return choose({ programa: p.nombre, grupo: g.nombre, asignatura: name });
+    }
+    choose({ programa: programa?.nombre ?? null, grupo: null, asignatura: name });
   };
 
   const favoriteFailed = () => toast({ variant: 'destructive', title: tr('No se pudo guardar el favorito'), description: tr('No hay espacio en el equipo para guardarlo.') });
@@ -259,15 +273,7 @@ export default function BibliotecaPage() {
   }
 
   const card = (item: BibItem, showSubject = false) => (
-    <ItemCard
-      item={item}
-      conf={confOf(item)}
-      convocatoria={convocatoria ?? null}
-      favorite={favorites.has(item.key)}
-      showSubject={showSubject}
-      onOpen={() => setOpened(item)}
-      onToggleFavorite={() => toggleFav(item)}
-    />
+    <ItemCard item={item} conf={confOf(item)} favorite={favorites.has(item.key)} showSubject={showSubject} onOpen={() => setOpened(item)} onToggleFavorite={() => toggleFav(item)} />
   );
   const shelf = (label: string, items: BibItem[], showSubject = true) => (
     <Shelf label={label} count={items.length}>
@@ -277,22 +283,26 @@ export default function BibliotecaPage() {
     </Shelf>
   );
 
-  const scope = subject ? subject.items : shown.flatMap((s) => s.items);
+  const scope = subjectName ? subject?.items ?? [] : shown.flatMap((s) => s.items);
   const searching = query.trim().length > 0;
   const found = searching ? searchItems(scope, query) : [];
+  // Lo destacado es del programa entero: no depende del grupo, y con un filtro de archivos puesto no sale.
+  const featured = model && !narrowed ? model.featured.filter((it) => inProgram.some((s) => s.name === it.subject)) : [];
+  const nothing = <p className="py-16 text-center text-sm text-muted-foreground">{tr('No hay archivos con ese filtro.')}</p>;
 
   return (
     <div className="p-6 pt-4 md:p-8 md:pt-4">
-      {/* Buscador (con el total y el programa dentro) · grupo · prueba · convocatoria */}
-      <div className="mt-2 mb-6 flex flex-wrap items-center gap-3">
-        {linked && (
-          <Button variant="ghost" size="sm" className="-ml-2" onClick={() => openSubject(null)}>
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            {tr('Biblioteca')}
-          </Button>
-        )}
-        <div className="flex h-10 w-full min-w-0 items-center gap-2 rounded-md border border-primary bg-card pl-3 pr-1 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 md:w-auto md:min-w-[18rem] md:flex-1 md:basis-0">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      {/* Buscador (media barra; con el total y el programa dentro) · nivel y asignatura · tipo · año · avanzados · favoritos · paquete */}
+      <div className="mt-2 mb-6 flex flex-wrap items-center gap-2">
+        <div className="flex h-10 w-full min-w-0 items-center gap-2 rounded-md border border-primary bg-card pl-3 pr-1 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 md:w-[calc(50%-0.25rem)] md:flex-none">
+          {/* Con una asignatura abierta, la lupa es la flecha de vuelta a toda la Biblioteca (sin grupo: así vuelve también de un curso, que es un grupo de una sola asignatura). */}
+          {chosen.asignatura ? (
+            <button type="button" onClick={() => choose({ programa: chosen.programa, grupo: null })} className="-ml-1 rounded p-1 text-muted-foreground hover:text-foreground" aria-label={tr('Biblioteca')} title={tr('Biblioteca')}>
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          ) : (
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          )}
           <input
             type="text"
             placeholder={subject ? tr('Buscar en {asignatura}…', { asignatura: subject.name }) : tr('Buscar exámenes, guías, temas…')}
@@ -321,20 +331,24 @@ export default function BibliotecaPage() {
             />
           )}
         </div>
-        {programa && programa.grupos.length > 1 && (
-          <Choice
-            label={tr(programa.etiqueta ?? 'Asignaturas')}
-            value={grupo?.nombre ?? null}
-            options={programa.grupos.map((g) => g.nombre)}
-            all={tr('Todo')}
-            onChoose={(name) => choose({ programa: programa.nombre, grupo: name })}
-            className={FILTER_BUTTON}
+        {model && programa && programa.grupos.length > 1 && (
+          <LevelPicker
+            programa={programa}
+            grupo={grupo?.nombre ?? null}
+            asignatura={chosen.asignatura ?? null}
+            subjects={new Set(model.subjects.map((s) => s.name))}
+            onChoose={(next) => choose({ programa: programa.nombre, ...next })}
           />
         )}
         {programa && programa.componentes.length > 0 && (
-          <Choice label={tr('Prueba')} value={prueba?.nombre ?? null} options={programa.componentes.map((c) => c.nombre)} all={tr('Todo')} onChoose={setPruebaName} className={FILTER_BUTTON} />
+          <Choice label={tr('Tipo')} value={prueba?.nombre ?? null} options={programa.componentes.map((c) => c.nombre)} all={tr('Todo')} onChoose={setPruebaName} className={FILTER_BUTTON} />
         )}
-        {model && model.config.convocatorias.length > 0 && convocatoria !== undefined && <ConvocatoriaChip model={model} value={convocatoria} />}
+        {years.length > 0 && <YearPicker filtros={filtros} years={years} onChange={setFiltros} />}
+        {model && <AdvancedFilters filtros={filtros} tipos={tipos} onChange={setFiltros} />}
+        <button type="button" className={SQUARE_BUTTON} aria-pressed={onlyFavorites} aria-label={tr('Solo favoritos')} title={tr('Solo favoritos')} onClick={() => setOnlyFavorites((on) => !on)}>
+          <Heart className={cn('h-4 w-4', onlyFavorites && 'fill-current')} />
+        </button>
+        {model && programa && <PackButton key={programa.nombre} model={model} programa={programa} />}
         {demoAvailable && (
           <Button variant="ghost" size="sm" onClick={() => setDemo(extRead<boolean>(AKLORE, 'demo', false) !== true)}>
             <FlaskConical className="mr-1.5 h-4 w-4" />
@@ -374,10 +388,16 @@ export default function BibliotecaPage() {
         ) : (
           <p className="py-16 text-center text-sm text-muted-foreground">{tr('No hay nada con «{q}».', { q: query.trim() })}</p>
         )
-      ) : subject ? (
-        <SubjectView key={subject.name} subject={subject} convocatoria={convocatoria ?? null} card={card} shelf={shelf} />
+      ) : subjectName ? (
+        subject ? (
+          <SubjectView key={subject.name} subject={subject} card={card} shelf={shelf} />
+        ) : (
+          nothing
+        )
+      ) : shown.length === 0 ? (
+        nothing
       ) : (
-        <HomeView model={model} subjects={shown} featured={featured} convocatoria={convocatoria} tasks={tasks} favorites={favorites} shelf={shelf} onSubject={openSubject} />
+        <HomeView subjects={shown} featured={featured} tasks={tasks} shelf={shelf} onSubject={openSubject} />
       )}
 
       {opened && (
@@ -385,63 +405,17 @@ export default function BibliotecaPage() {
           item={opened}
           color={colorOf(opened)}
           conf={confOf(opened)}
-          convocatoria={convocatoria ?? null}
           favorite={favorites.has(opened.key)}
           downloading={downloading.has(opened.id)}
           onClose={() => setOpened(null)}
           onToggleFavorite={() => toggleFav(opened)}
           onDownload={() => void download(opened)}
           onCards={() => setCardsOf(opened)}
-          onSubject={(name) => openSubject(name)}
+          onSubject={openSubject}
           isSubject={(name) => !!model?.subjects.some((s) => s.name === name)}
         />
       )}
       {cardsOf && <StudyCardsDialog item={cardsOf} color={colorOf(cardsOf)} onClose={() => setCardsOf(null)} />}
-    </div>
-  );
-}
-
-// ------------------------------------------------------------
-// Convocatoria: de ella depende qué programa es el vigente
-// ------------------------------------------------------------
-
-function ConvocatoriaChip({ model, value }: { model: BibModel; value: string | null }) {
-  const [open, setOpen] = useState(false);
-  const name = model.config.convocatorias.find((c) => c.id === value)?.nombre;
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-10">
-          <CalendarClock className="mr-1.5 h-4 w-4" />
-          {name ? tr('Exámenes: {cuando}', { cuando: tr(name) }) : tr('¿Cuándo das los exámenes?')}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-3">
-        <ConvocatoriaChoice model={model} value={value} onDone={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function ConvocatoriaChoice({ model, value, onDone }: { model: BibModel; value: string | null | undefined; onDone?: () => void }) {
-  const choose = (v: string | null) => {
-    setConvocatoria(v);
-    onDone?.();
-  };
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-sm font-semibold">{tr('¿Cuándo das los exámenes del IB?')}</p>
-      <p className="text-xs text-muted-foreground">{tr('Así la Biblioteca te avisa cuando algo es de un programa que ya no es el tuyo.')}</p>
-      <div className="flex flex-wrap gap-2">
-        {model.config.convocatorias.map((c) => (
-          <Button key={c.id} size="sm" variant={value === c.id ? 'default' : 'outline'} onClick={() => choose(c.id)}>
-            {tr(c.nombre)}
-          </Button>
-        ))}
-        <Button size="sm" variant={value === null ? 'default' : 'ghost'} onClick={() => choose(null)}>
-          {tr('Aún no lo sé')}
-        </Button>
-      </div>
     </div>
   );
 }
@@ -476,17 +450,17 @@ function upcomingExams(subjects: BibSubject[], tasks: ExamTask[]): { subject: Bi
 
 /** Para repasar antes de un examen: preguntas por tema, simulacros y exámenes del programa vigente. */
 const PREP_ORDER = ['banco', 'simulacro', 'examen', 'esquema', 'prueba-colegio', 'informe', 'guia', 'cuadernillo'];
-function prepFor(subject: BibSubject, convocatoria: string | null): BibItem[] {
+function prepFor(subject: BibSubject): BibItem[] {
   return subject.items
-    .filter((it) => PREP_ORDER.includes(it.tipo) && programaDe(it, subject.conf, convocatoria) !== 'anterior')
+    .filter((it) => PREP_ORDER.includes(it.tipo) && programaDe(it, subject.conf) !== 'anterior')
     .sort((a, b) => PREP_ORDER.indexOf(a.tipo) - PREP_ORDER.indexOf(b.tipo) || (b.props.convocatoria ?? '').localeCompare(a.props.convocatoria ?? '') || byOrder(a, b))
     .slice(0, ROW);
 }
 
 /** La fila de una asignatura en Inicio: su guía, sus exámenes más recientes y luego lo demás; lo del programa anterior, al final. */
 const APARTADO_RANK = ['guia', 'examenes', 'temas', 'trabajos', 'otros'];
-function rowFor(subject: BibSubject, convocatoria: string | null): BibItem[] {
-  const old = (it: BibItem) => (programaDe(it, subject.conf, convocatoria) === 'anterior' ? 1 : 0);
+function rowFor(subject: BibSubject): BibItem[] {
+  const old = (it: BibItem) => (programaDe(it, subject.conf) === 'anterior' ? 1 : 0);
   return [...subject.items]
     .sort(
       (a, b) =>
@@ -498,32 +472,24 @@ function rowFor(subject: BibSubject, convocatoria: string | null): BibItem[] {
 }
 
 function HomeView({
-  model,
   subjects,
   featured,
-  convocatoria,
   tasks,
-  favorites,
   shelf,
   onSubject,
 }: {
-  model: BibModel;
   subjects: BibSubject[];
   featured: BibItem[];
-  convocatoria: string | null | undefined;
   tasks: ExamTask[];
-  favorites: ReadonlySet<string>;
   shelf: (label: string, items: BibItem[], showSubject?: boolean) => React.ReactNode;
   onSubject: (name: string) => void;
 }) {
   const exams = useMemo(() => upcomingExams(subjects, tasks), [subjects, tasks]);
-  const favoriteItems = useMemo(() => subjects.flatMap((s) => s.items.filter((it) => favorites.has(it.key))).sort(byTitle), [subjects, favorites]);
   const seeAll = (name: string) => (
     <Button variant="ghost" size="sm" onClick={() => onSubject(name)}>
       {tr('Ver todo')}
     </Button>
   );
-  if (subjects.length === 0) return <p className="py-16 text-center text-sm text-muted-foreground">{tr('No hay archivos con ese filtro.')}</p>;
   return (
     <div className="flex flex-col gap-10">
       {featured.length > 0 && (
@@ -532,13 +498,8 @@ function HomeView({
           {shelf(tr('Destacados'), featured)}
         </section>
       )}
-      {convocatoria === undefined && model.config.convocatorias.length > 0 && (
-        <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
-          <ConvocatoriaChoice model={model} value={undefined} />
-        </div>
-      )}
       {exams.map((e) => {
-        const items = prepFor(e.subject, convocatoria ?? null);
+        const items = prepFor(e.subject);
         if (!items.length) return null;
         const title = tr('Para tu examen de {asignatura}', { asignatura: e.subject.name });
         return (
@@ -548,16 +509,10 @@ function HomeView({
           </section>
         );
       })}
-      {favoriteItems.length > 0 && (
-        <section>
-          <SectionHeading title={tr('Favoritos')} />
-          {shelf(tr('Favoritos'), favoriteItems)}
-        </section>
-      )}
       {subjects.map((s) => (
         <section key={s.name}>
           <SectionHeading title={s.name} hint={archivos(s.items.length)} action={seeAll(s.name)} />
-          {shelf(s.name, rowFor(s, convocatoria ?? null), false)}
+          {shelf(s.name, rowFor(s), false)}
         </section>
       ))}
     </div>
@@ -572,12 +527,10 @@ type Nivel = 'NM' | 'NS' | null;
 
 function SubjectView({
   subject,
-  convocatoria,
   card,
   shelf,
 }: {
   subject: BibSubject;
-  convocatoria: string | null;
   card: (item: BibItem, showSubject?: boolean) => React.ReactNode;
   shelf: (label: string, items: BibItem[], showSubject?: boolean) => React.ReactNode;
 }) {
@@ -594,7 +547,7 @@ function SubjectView({
   const present = TABS.filter((t) => items.some((it) => it.apartado === t.id));
   const [tab, setTab] = useState<Tab | null>(null);
   const current = present.find((t) => t.id === tab) ?? present[0];
-  const vigente = convocatoria ? subject.conf.programa?.[convocatoria] : null;
+  const vigente = vigenteDe(subject.conf);
 
   return (
     <div className="flex flex-col gap-8">
@@ -602,7 +555,7 @@ function SubjectView({
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-foreground">{subject.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {[subject.conf.grupo ? tr(subject.conf.grupo) : null, vigente ? tr('Tu programa: guía de {anio}', { anio: vigente }) : null].filter(Boolean).join(' · ')}
+            {[subject.conf.grupo ? tr(subject.conf.grupo) : null, vigente ? tr('Programa vigente: guía de {anio}', { anio: vigente }) : null].filter(Boolean).join(' · ')}
           </p>
         </div>
         {levels.length > 1 && (
@@ -648,7 +601,7 @@ function SubjectView({
               ))}
             </div>
           )}
-          <Groups groups={groupsFor(current.id, items, subject, convocatoria)} card={card} />
+          <Groups groups={groupsFor(current.id, items, subject)} card={card} />
         </section>
       )}
     </div>
@@ -684,7 +637,7 @@ function Groups({ groups, card }: { groups: Group[]; card: (item: BibItem) => Re
   );
 }
 
-function groupsFor(tab: Tab, all: BibItem[], subject: BibSubject, convocatoria: string | null): Group[] {
+function groupsFor(tab: Tab, all: BibItem[], subject: BibSubject): Group[] {
   const items = all.filter((it) => it.apartado === tab);
   const push = (map: Map<string, BibItem[]>, key: string, it: BibItem) => map.set(key, [...(map.get(key) ?? []), it]);
 
@@ -701,7 +654,7 @@ function groupsFor(tab: Tab, all: BibItem[], subject: BibSubject, convocatoria: 
   }
 
   if (tab === 'examenes') {
-    const old = items.filter((it) => programaDe(it, subject.conf, convocatoria) === 'anterior');
+    const old = items.filter((it) => programaDe(it, subject.conf) === 'anterior');
     const byCall = new Map<string, BibItem[]>();
     const school: BibItem[] = [];
     const ai: BibItem[] = [];

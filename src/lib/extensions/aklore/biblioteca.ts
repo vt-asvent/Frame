@@ -22,6 +22,12 @@ import { AKLORE, demoOn, fold, fromCloud } from './source';
 // 1.9.8: la configuración trae los «programas» (IB, CNEB…), cada uno con sus
 // grupos de asignaturas y sus pruebas: de ahí salen los filtros de la pantalla.
 // Nada de eso está escrito en la app.
+//
+// 1.9.9: más filtros (convocatoria y año, procedencia, programa vigente,
+// tarjetas, idioma, formato y clase de material; `pasaFiltros`), y «Tu
+// paquete»: las asignaturas que la configuración da por fijas más las que el
+// alumno elige, para bajarlas enteras (paquete.ts). Ya no se pregunta cuándo
+// se dan los exámenes: rige la guía que la configuración pone primero.
 // ============================================================
 
 export interface BibNode {
@@ -58,10 +64,11 @@ export interface BibPrograma {
   grupos: { nombre: string; asignaturas: string[] }[];
   /** Sus pruebas («Prueba 1», «IA»…): cada una reúne los componentes que le tocan. */
   componentes: { nombre: string; incluye: string[] }[];
+  /** «Tu paquete»: las asignaturas que lleva siempre y cuántas más se eligen. */
+  paquete?: { fijas: string[]; elegir: number };
 }
 
 export interface BibConfig {
-  convocatorias: { id: string; nombre: string }[];
   programas: BibPrograma[];
   asignaturas: Record<string, BibSubjectConf>;
 }
@@ -150,9 +157,12 @@ export function convocatoriaLabel(value: string | undefined): string {
 const LANG_LABEL: Record<string, string> = { es: 'Español', en: 'Inglés', 'es-en': 'Español e inglés', fr: 'Francés', de: 'Alemán', pt: 'Portugués', it: 'Italiano' };
 export const idiomaLabel = (lang: string | undefined) => (!lang ? '' : LANG_LABEL[lang] ? tr(LANG_LABEL[lang]) : lang.toUpperCase());
 
-/** ¿De qué guía es, para la convocatoria del alumno? */
-export function programaDe(item: BibItem, conf: BibSubjectConf | undefined, convocatoria: string | null): 'vigente' | 'anterior' | 'siguiente' | null {
-  const vigente = convocatoria ? conf?.programa?.[convocatoria] : null;
+/** La guía que rige en una asignatura: la de la primera convocatoria que la tenga puesta (van de la más próxima). */
+export const vigenteDe = (conf: BibSubjectConf | undefined): string | null => Object.values(conf?.programa ?? {}).find((v): v is string => !!v) ?? null;
+
+/** ¿De qué guía es, respecto de la que rige? */
+export function programaDe(item: BibItem, conf: BibSubjectConf | undefined): 'vigente' | 'anterior' | 'siguiente' | null {
+  const vigente = vigenteDe(conf);
   const guia = item.props.guia;
   if (!vigente || !guia) return null;
   return guia === vigente ? 'vigente' : guia < vigente ? 'anterior' : 'siguiente';
@@ -168,7 +178,7 @@ export const vinculosDe = (item: BibItem) => (item.props.vinculos ? item.props.v
 // El modelo, a partir de los nodos
 // ------------------------------------------------------------
 
-const EMPTY_CONFIG: BibConfig = { convocatorias: [], programas: [], asignaturas: {} };
+const EMPTY_CONFIG: BibConfig = { programas: [], asignaturas: {} };
 
 export function parseConfig(raw: unknown): BibConfig {
   const c = raw as Partial<BibConfig> | null;
@@ -191,12 +201,12 @@ export function parseConfig(raw: unknown): BibConfig {
     }
   }
   return {
-    convocatorias: list(c.convocatorias, (x): x is { id: string; nombre: string } => !!x && isText((x as { id?: unknown }).id) && isText((x as { nombre?: unknown }).nombre)),
     programas: list(c.programas, (x): x is BibPrograma => !!x && isText((x as BibPrograma).nombre)).map((p) => ({
       nombre: p.nombre,
       etiqueta: isText(p.etiqueta) ? p.etiqueta : undefined,
       grupos: list(p.grupos, (g): g is BibPrograma['grupos'][number] => !!g && isText((g as { nombre?: unknown }).nombre)).map((g) => ({ nombre: g.nombre, asignaturas: list(g.asignaturas, isText) })),
       componentes: list(p.componentes, (k): k is BibPrograma['componentes'][number] => !!k && isText((k as { nombre?: unknown }).nombre)).map((k) => ({ nombre: k.nombre, incluye: list(k.incluye, isText) })),
+      ...(p.paquete && typeof p.paquete === 'object' ? { paquete: { fijas: list(p.paquete.fijas, isText), elegir: Math.max(0, Math.min(10, Math.floor(Number(p.paquete.elegir) || 0))) } } : {}),
     })),
     asignaturas,
   };
@@ -214,6 +224,51 @@ export function subjectsIn(model: BibModel, programa: BibPrograma | null, grupo:
 
 /** ¿Es de esa prueba? (`null`: sin filtro). */
 export const deComponente = (item: BibItem, componente: BibPrograma['componentes'][number] | null) => !componente || componente.incluye.includes(item.props.componente ?? '');
+
+// ------------------------------------------------------------
+// Filtros (1.9.9): cada lista vacía no filtra; con valores, el archivo debe
+// coincidir con alguno. Viven en la pantalla (no se guardan).
+// ------------------------------------------------------------
+
+export interface BibFiltros {
+  /** Convocatoria: '05' (mayo), '11' (noviembre). */
+  meses: string[];
+  anios: string[];
+  /** 'IB' · 'colegio' · 'IA' · 'otros'. */
+  origen: string[];
+  /** 'vigente' · 'anterior'. */
+  programa: string[];
+  /** 'con' · 'sin' tarjetas de estudio. */
+  tarjetas: string[];
+  /** 'es' · 'en'. */
+  idioma: string[];
+  /** 'pdf' · 'audio' · 'video' · 'otros'. */
+  formato: string[];
+  /** Clase de material (`tipo`). */
+  tipos: string[];
+}
+
+export const SIN_FILTROS: BibFiltros = { meses: [], anios: [], origen: [], programa: [], tarjetas: [], idioma: [], formato: [], tipos: [] };
+
+/** El año de un archivo: el de su convocatoria o examen de muestra, o el que dice su ficha. */
+export const anioDe = (item: BibItem): string | null => /^(?:muestra-)?(\d{4})/.exec(item.props.convocatoria ?? '')?.[1] ?? item.props.anio ?? null;
+/** El mes de su convocatoria ('05', '11'), si es de una. */
+export const mesDe = (item: BibItem): string | null => /^\d{4}-(\d{2})$/.exec(item.props.convocatoria ?? '')?.[1] ?? null;
+export const origenDe = (item: BibItem) => (['IB', 'colegio', 'IA'].includes(item.props.origen ?? '') ? item.props.origen! : 'otros');
+export const formatoDe = (item: BibItem) => (item.ext === 'pdf' ? 'pdf' : ['mp3', 'm4a'].includes(item.ext) ? 'audio' : item.ext === 'mp4' ? 'video' : 'otros');
+
+export function pasaFiltros(item: BibItem, f: BibFiltros, conf: BibSubjectConf | undefined): boolean {
+  const en = (lista: string[], valor: string | null) => lista.length === 0 || (valor !== null && lista.includes(valor));
+  if (!en(f.meses, mesDe(item)) || !en(f.anios, anioDe(item)) || !en(f.origen, origenDe(item)) || !en(f.formato, formatoDe(item)) || !en(f.tipos, item.tipo)) return false;
+  if (f.idioma.length > 0 && !f.idioma.some((l) => (item.props.idioma ?? '').split('-').includes(l))) return false;
+  // Con las dos opciones marcadas (o ninguna) no hay nada que filtrar.
+  if (f.tarjetas.length === 1 && (f.tarjetas[0] === 'con') !== item.hasCards) return false;
+  if (f.programa.length === 1 && (f.programa[0] === 'anterior') !== (programaDe(item, conf) === 'anterior')) return false;
+  return true;
+}
+
+/** Cuántos filtros avanzados están puestos (el año y la convocatoria tienen su propio botón). */
+export const avanzadosPuestos = (f: BibFiltros) => [f.origen, f.programa, f.tarjetas, f.idioma, f.formato, f.tipos].filter((l) => l.length > 0).length;
 
 const LOOSE = 'Otros archivos';
 
@@ -573,17 +628,15 @@ export function cardsCsv(set: CardSet): string {
 }
 
 // ------------------------------------------------------------
-// Avance de repaso y convocatoria: de la cuenta, viajan con ella
-// (colección `loreStudy`: una ficha por juego de tarjetas, con la caja de
-// Leitner y el día en que toca cada tarjeta, y la ficha `perfil`).
+// Avance de repaso: de la cuenta, viaja con ella (colección `loreStudy`: una
+// ficha por juego de tarjetas, con la caja de Leitner y el día en que toca
+// cada tarjeta).
 // ------------------------------------------------------------
 
 export interface StudyRecord {
   id: string;
   /** id de tarjeta → [caja 1…5, día (desde 1970) en que vuelve a tocar]. */
   c?: Record<string, [number, number]>;
-  /** Solo en `perfil`. */
-  convocatoria?: string | null;
 }
 
 const studyKey = (uid: string) => `loreStudy_${uid}`;
@@ -643,12 +696,6 @@ export function useStudy(): StudyRecord[] {
   );
 }
 
-/** La convocatoria del alumno (undefined: aún no la eligió; null: «aún no lo sé»). */
-export const convocatoriaOf = (study: StudyRecord[]) => study.find((r) => r.id === 'perfil')?.convocatoria;
-
-export const setConvocatoria = (value: string | null) =>
-  writeStudy((list) => [...list.filter((r) => r.id !== 'perfil'), { ...(list.find((r) => r.id === 'perfil') ?? { id: 'perfil' }), convocatoria: value }]);
-
 const today = () => Math.floor(Date.now() / 86_400_000);
 /** Días hasta volver a ver una tarjeta según su caja (Leitner). */
 const GAP = [0, 1, 2, 4, 8, 16];
@@ -689,13 +736,12 @@ const DEMO_INDEX: IndexCopy = {
   actualizado: 'demo',
   raiz: 'raiz',
   config: {
-    convocatorias: [{ id: '2027-11', nombre: 'Noviembre de 2027' }, { id: '2028-11', nombre: 'Noviembre de 2028' }],
     programas: [
       {
         nombre: 'IB',
         etiqueta: 'Nivel',
         grupos: [
-          { nombre: 'Core', asignaturas: ['Monografía'] },
+          { nombre: 'Troncales', asignaturas: ['Monografía'] },
           { nombre: 'NM', asignaturas: ['Física'] },
           { nombre: 'NS', asignaturas: ['Historia'] },
         ],
@@ -704,6 +750,7 @@ const DEMO_INDEX: IndexCopy = {
           { nombre: 'Prueba 2', incluye: ['Prueba 2'] },
           { nombre: 'IA', incluye: ['Evaluación interna', 'Investigación histórica'] },
         ],
+        paquete: { fijas: ['Historia', 'Monografía'], elegir: 1 },
       },
       { nombre: 'CNEB', etiqueta: 'Curso', grupos: [{ nombre: 'Matemática (3.º)', asignaturas: ['Matemática (3.º)'] }], componentes: [] },
     ],

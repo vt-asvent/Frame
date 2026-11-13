@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Film, Headphones, Layers, Sparkles, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, Film, Headphones, Heart, Layers, Sparkles } from 'lucide-react';
 import { convocatoriaLabel, programaDe, tipoLabel, useCover, type BibItem, type BibSubjectConf } from '@/lib/extensions/aklore/biblioteca';
 import { tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 // tarjeta con su primera página (la copia la nube; mientras llega, o si el
 // archivo no tiene páginas, una hoja en blanco: nunca un color entero), su
 // título y debajo qué es. Se abre con un clic (BibFileDialog).
-// En una fila caben cinco tarjetas y asoma la sexta (1.9.8, Diego).
+// En una fila caben cuatro tarjetas y asoma la quinta (1.9.9, Diego).
 // ============================================================
 
 const PALETTE = ['#2563eb', '#0d9488', '#7c3aed', '#c2410c', '#be123c', '#15803d', '#a16207', '#0369a1', '#4338ca', '#334155'];
@@ -80,7 +80,6 @@ export function Cover({ item, className }: { item: BibItem; className?: string }
 export function ItemCard({
   item,
   conf,
-  convocatoria,
   favorite,
   showSubject,
   onOpen,
@@ -88,13 +87,12 @@ export function ItemCard({
 }: {
   item: BibItem;
   conf?: BibSubjectConf;
-  convocatoria: string | null;
   favorite: boolean;
   showSubject?: boolean;
   onOpen: () => void;
   onToggleFavorite: () => void;
 }) {
-  const programa = programaDe(item, conf, convocatoria);
+  const programa = programaDe(item, conf);
   return (
     <div className="group relative flex min-w-0 flex-col gap-1.5">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-col gap-1.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -127,7 +125,7 @@ export function ItemCard({
           favorite ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100'
         )}
       >
-        <Star className={cn('h-4 w-4', favorite && 'fill-yellow-400 text-yellow-400')} />
+        <Heart className={cn('h-4 w-4', favorite && 'fill-rose-500 text-rose-500')} />
       </button>
     </div>
   );
@@ -149,12 +147,12 @@ export function Tag({ tone = 'muted', children }: { tone?: 'muted' | 'warn' | 'i
   );
 }
 
-/** Rejilla de portadas: cinco por fila (menos en una pantalla estrecha). */
+/** Rejilla de portadas: cuatro por fila (menos en una pantalla estrecha). */
 export function ItemGrid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-5">{children}</div>;
+  return <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-4">{children}</div>;
 }
 
-/** Una fila que se desliza, con una flecha en cada extremo: cinco tarjetas enteras y un trozo de la sexta. */
+/** Una fila que se desliza, con una flecha en cada extremo: cuatro tarjetas enteras y un trozo de la quinta. */
 export function Shelf({ label, children, count }: { label: string; children: ReactNode; count: number }) {
   const track = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ start: true, end: true });
@@ -196,10 +194,10 @@ export function Shelf({ label, children, count }: { label: string; children: Rea
   );
 }
 
-/** Cada tarjeta de una fila: un poco menos de un quinto del ancho, para que asome la siguiente. */
+/** Cada tarjeta de una fila: un poco menos de un cuarto del ancho, para que asome la siguiente. */
 export function ShelfItem({ children }: { children: ReactNode }) {
   return (
-    <div role="listitem" className="w-[calc((100%-2rem)/2.3)] shrink-0 snap-start sm:w-[calc((100%-3rem)/3.3)] md:w-[calc((100%-5rem)/5.3)]">
+    <div role="listitem" className="w-[calc((100%-2rem)/2.3)] shrink-0 snap-start sm:w-[calc((100%-3rem)/3.3)] md:w-[calc((100%-4rem)/4.3)]">
       {children}
     </div>
   );

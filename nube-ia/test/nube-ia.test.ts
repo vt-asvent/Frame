@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, createVerify } from 'node:crypto';
 import { firmarJwt } from '../src/biblioteca';
-import { UNIDAD_DE_TRAMOS, bytesACobrar } from '../src/lore';
+import { UNIDAD_DE_TRAMOS, bytesACobrar, probabilidadDeLote } from '../src/lore';
 import { ALUMNA, type Arnes, CLAUDE, COLEGIO, conCorreo, crearArnes, DRIVE, ENVIADOS, esperar, LUIS, ORIGEN, pdfDe, PREGUNTAS, sesion, SIN_COMPROBAR, VERIFICADOR } from './ayuda';
 
 let a: Arnes;
@@ -564,11 +564,11 @@ describe('AK Lore: la Biblioteca', () => {
     expect((await a.pedir('/app/lore/archivo/no-existe', { token: sesion(ALUMNA) })).estado).toBe(404);
     expect((await a.pedir('/app/lore/archivo/..%2Fx', { token: sesion(ALUMNA) })).estado).toBe(404);
     expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 0 }]);
-    await a.sql('UPDATE lore_descargas SET n=300 WHERE owner=?', ALUMNA);
+    await a.sql('UPDATE lore_descargas SET n=2000 WHERE owner=?', ALUMNA);
     const r = await a.pedir('/app/lore/archivo/guia-historia', { token: sesion(ALUMNA) });
     expect(r.estado).toBe(429);
-    expect(r.datos).toEqual({ error: 'quota', files: 300 });
-    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 300 }]);
+    expect(r.datos).toEqual({ error: 'quota', files: 2000 });
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 2000 }]);
   });
 
   it('los destacados traen su vista previa, que no gasta el tope de descargas', async () => {
@@ -860,11 +860,11 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
     expect(dos.map((x) => x.estado)).toEqual([206, 206]);
     expect((await cuenta())[0]).toMatchObject({ n: 1 });
     // Con el tope del día pasado, ni abrir otro ni seguir hojeando; y lo rechazado no queda abierto ni anotado.
-    await a.sql('UPDATE lore_descargas SET n = 301 WHERE owner=?', ALUMNA);
+    await a.sql('UPDATE lore_descargas SET n = 2001 WHERE owner=?', ALUMNA);
     expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } })).estado).toBe(429);
     expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) })).estado).toBe(429);
     expect((await a.pedir('/app/biblioteca/archivo/examen-fis-0001', { token: sesion(ALUMNA), headers: { range: 'bytes=5-9' } })).estado).toBe(429);
-    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 301 }]);
+    expect(await a.sql('SELECT n FROM lore_descargas WHERE owner=?', ALUMNA)).toEqual([{ n: 2001 }]);
     expect(await a.sql('SELECT id FROM lore_abiertos WHERE owner=?', ALUMNA)).toEqual([{ id: 'guia-fisica-001' }]);
     await limpiar();
   });
@@ -884,6 +884,49 @@ describe('Biblioteca 2: la carpeta «AK Lore» de Drive', () => {
       for (let i = 0; i < veces; i++) total += bytesACobrar(tramo, false, (i + 0.5) / veces);
       expect(Math.abs(total / veces - tramo) / tramo, String(tramo)).toBeLessThan(0.01);
     }
+  });
+
+  it('un paquete se anota por muestreo, sin una escritura por archivo, y tiene sus dos topes', async () => {
+    const limpiar = async () => {
+      await a.sql('DELETE FROM lore_descargas WHERE owner=?', ALUMNA);
+      await a.sql('DELETE FROM lore_abiertos WHERE owner=?', ALUMNA);
+      await a.sql("DELETE FROM lore_estado WHERE k LIKE 'lote:%'");
+    };
+    await limpiar();
+    // Una de cada 16 veces como poco, más cuanto más pesa el archivo, y siempre desde 64 MiB.
+    expect(probabilidadDeLote(1_000)).toBe(1 / 16);
+    expect(probabilidadDeLote(32 * 1_048_576)).toBe(0.5);
+    expect(probabilidadDeLote(200_000_000)).toBe(1);
+    const lote = '/app/biblioteca/archivo/guia-fisica-001?lote=1';
+    const tam = pdfDe('guia-fisica-001').length;
+    for (let i = 0; i < 160; i++) expect((await a.pedir(lote, { token: sesion(ALUMNA) })).estado).toBe(200);
+    // 160 archivos: unas 10 anotaciones de 16 archivos cada una (ninguna, una vez de cada 30 000), nunca 160.
+    const [cuenta] = (await a.sql('SELECT n, bytes FROM lore_descargas WHERE owner=? AND day=?', ALUMNA, hoy())) as { n: number; bytes: number }[];
+    expect(cuenta!.n % 16).toBe(0);
+    expect(cuenta!.n).toBeGreaterThanOrEqual(16);
+    expect(cuenta!.n).toBeLessThanOrEqual(16 * 45);
+    expect(cuenta!.bytes).toBe(cuenta!.n * tam);
+    // Lo mismo queda en la cuenta del día de todas las cuentas; y un archivo de paquete no se apunta como abierto.
+    expect((await a.sql('SELECT v FROM lore_estado WHERE k=?', `lote:${hoy()}`)).map((x) => Number((x as { v: string }).v))).toEqual([cuenta!.n]);
+    expect(await a.sql('SELECT id FROM lore_abiertos WHERE owner=?', ALUMNA)).toEqual([]);
+    // El tope de la cuenta…
+    await a.sql('UPDATE lore_descargas SET n = 2001 WHERE owner=?', ALUMNA);
+    const tope = await a.pedir(lote, { token: sesion(ALUMNA) });
+    expect(tope.estado).toBe(429);
+    expect(tope.datos).toEqual({ error: 'quota', files: 2000 });
+    // …y el del día de todas: corta los paquetes, no las descargas sueltas ni hojear un archivo.
+    await a.sql('UPDATE lore_descargas SET n = 0 WHERE owner=?', ALUMNA);
+    await a.sql("INSERT OR REPLACE INTO lore_estado (k, v) VALUES (?, '40001')", `lote:${hoy()}`);
+    const lleno = await a.pedir(lote, { token: sesion(ALUMNA) });
+    expect(lleno.estado).toBe(429);
+    expect(lleno.datos).toEqual({ error: 'lleno' });
+    expect((await a.pedir('/app/biblioteca/archivo/guia-fisica-001', { token: sesion(ALUMNA) })).estado).toBe(200);
+    expect((await a.pedir(lote, { token: sesion(ALUMNA), headers: { range: 'bytes=0-4' } })).estado).toBe(206);
+    // La limpieza diaria olvida la cuenta de paquetes de los días pasados.
+    await a.sql("INSERT INTO lore_estado (k, v) VALUES ('lote:2026-01-01', '5')");
+    await a.cron();
+    expect(await a.sql("SELECT k FROM lore_estado WHERE k LIKE 'lote:%'")).toEqual([{ k: `lote:${hoy()}` }]);
+    await limpiar();
   });
 
   it('la limpieza diaria olvida los archivos abiertos de días pasados', async () => {

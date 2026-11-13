@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useCourse } from '@/context/CourseContext';
 import { useExtensionOn } from '@/lib/extensions/store';
-import { noteWirePeer, requestWireCycle, runWireCycle, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
+import { noteWirePeer, requestWireCycle, runWireCycle, setWireRuntime, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
 import { onPeerMessage } from '@/lib/sync-peers';
 import { SYNC_NOW_EVENT } from '@/lib/sync-status';
 
@@ -34,6 +34,7 @@ export default function WireRuntime() {
   // Vuelta periódica.
   useEffect(() => {
     if (!on || !userProfile) return;
+    setWireRuntime(true);
     let stop = false;
     let timer: number | undefined;
     const loop = async () => {
@@ -59,6 +60,7 @@ export default function WireRuntime() {
     window.addEventListener(SYNC_NOW_EVENT, onNow);
     return () => {
       stop = true;
+      setWireRuntime(false);
       window.clearTimeout(timer);
       stopPeers();
       document.removeEventListener('visibilitychange', onVisible);

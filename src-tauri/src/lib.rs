@@ -1356,16 +1356,68 @@ fn save_in_downloads(
     fallback: &str,
     mark: bool,
 ) -> Result<String, String> {
+    save_in_downloads_at(app_handle, None, file_name, data_base64, allowed, fallback, mark, false)
+}
+
+/// Una ruta de carpetas dentro de Descargas («Biblioteca de Frame/Física»), saneada: como mucho tres niveles, sin
+/// «..» ni caracteres que Windows o Android no admiten en un nombre.
+fn clean_subfolder(folder: &str) -> std::path::PathBuf {
+    let mut out = std::path::PathBuf::new();
+    for part in folder.split(['/', '\\']).take(3) {
+        let clean: String = part
+            .chars()
+            .filter(|c| !c.is_control() && !matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+            .take(80)
+            .collect();
+        let clean = clean.trim().trim_matches('.').trim();
+        if !clean.is_empty() {
+            out.push(clean);
+        }
+    }
+    if out.as_os_str().is_empty() {
+        out.push("Frame");
+    }
+    out
+}
+
+/// Escribe un archivo o, con `append`, añade al final del que ya está: lo grande llega por trozos.
+fn write_bytes(path: &std::path::Path, bytes: &[u8], append: bool) -> Result<(), String> {
+    use std::io::Write;
+    if !append {
+        return std::fs::write(path, bytes).map_err(|e| e.to_string());
+    }
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(bytes))
+        .map_err(|e| e.to_string())
+}
+
+/// Igual, pero dentro de una subcarpeta de Descargas (`folder`); ahí un archivo con el mismo nombre se reemplaza
+/// en vez de numerarse: es lo que se espera al volver a bajar una colección.
+fn save_in_downloads_at(
+    app_handle: &tauri::AppHandle,
+    folder: Option<&str>,
+    file_name: &str,
+    data_base64: &str,
+    allowed: Option<&[&str]>,
+    fallback: &str,
+    mark: bool,
+    append: bool,
+) -> Result<String, String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.as_bytes())
         .map_err(|e| format!("Informe ilegible: {e}"))?;
 
-    let dir = app_handle
+    let mut dir = app_handle
         .path()
         .download_dir()
         .or_else(|_| app_handle.path().document_dir())
         .map_err(|e| format!("Sin carpeta de descargas: {e}"))?;
+    if let Some(folder) = folder {
+        dir = dir.join(clean_subfolder(folder));
+    }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let safe: String = file_name
@@ -1386,7 +1438,7 @@ fn save_in_downloads(
 
     let mut path = dir.join(&safe);
     let mut attempt = 2;
-    while path.exists() {
+    while folder.is_none() && path.exists() {
         path = dir.join(format!("{stem} ({attempt}){extension}"));
         attempt += 1;
         if attempt > 500 {
@@ -1394,8 +1446,8 @@ fn save_in_downloads(
         }
     }
 
-    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-    if mark {
+    write_bytes(&path, &bytes, append)?;
+    if mark && !append {
         mark_from_internet(&path);
     }
     Ok(path.to_string_lossy().to_string())
@@ -1429,6 +1481,20 @@ fn save_file_copy(
     data_base64: String,
 ) -> Result<String, String> {
     save_in_downloads(&app_handle, &file_name, &data_base64, None, "Archivo", true)
+}
+
+/// «Tu paquete» de la Biblioteca (1.9.9): cada archivo va a su carpeta dentro de Descargas
+/// («Biblioteca de Frame/Física»), no suelto. Llega por trozos: el primero crea el archivo y los
+/// siguientes (`append`) se añaden.
+#[tauri::command]
+fn save_file_in_folder(
+    app_handle: tauri::AppHandle,
+    folder: String,
+    file_name: String,
+    data_base64: String,
+    append: Option<bool>,
+) -> Result<String, String> {
+    save_in_downloads_at(&app_handle, Some(&folder), &file_name, &data_base64, None, "Archivo", true, append.unwrap_or(false))
 }
 
 // ============================================================
@@ -1860,6 +1926,7 @@ pub fn run() {
             focus_main_window,
             save_report_file,
             save_file_copy,
+            save_file_in_folder,
             schedule_peek,
             schedule_peek_enable,
             schedule_peek_resize,

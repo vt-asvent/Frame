@@ -201,6 +201,14 @@ export function useWireStatus(): WireStatus {
 
 export const wireConnection = () => extRead<WireConnection | null>(WIRE, 'connection', null);
 
+/** El relevo está encendido en este equipo (lo dice WireRuntime al montarse y al parar). */
+let runtimeOn = false;
+export const setWireRuntime = (on: boolean) => {
+  runtimeOn = on;
+};
+/** Este equipo manda y recibe por Wire: encendido, con su Drive conectado y sin que Google haya retirado el permiso. */
+export const wireWorking = (): boolean => runtimeOn && !!wireConnection() && !needsReauth;
+
 let access: { token: string; expiresAt: number } | null = null;
 /** Google ya no acepta la llave guardada: no se insiste hasta que el usuario vuelva a conectar. */
 let needsReauth = false;
@@ -553,6 +561,8 @@ interface RelayState extends SavedState {
 }
 
 const stateName = (userTag: string) => `state:${userTag}`;
+/** La marca de la cuenta de Frame en la carpeta y en el estado (un resumen de su id, no el id). */
+const userTagOf = async (uid: string) => (await hash(`frame-user:${uid}`)).slice(0, 16);
 
 function readState(userTag: string): RelayState {
   const raw = extRead<Partial<SavedState> | null>(WIRE, stateName(userTag), null);
@@ -579,6 +589,21 @@ function writeState(userTag: string, next: SavedState): boolean {
 }
 
 let currentUserTag: string | null = null;
+
+/**
+ * De estas canciones (por la clave que dejan en una playlist, song-keys.ts), las que el usuario BORRÓ en este
+ * equipo. Para el verificador de sincronización (1.9.9): no le «faltan», las quitó él, y el relevo no se las
+ * vuelve a traer. Hasta la 1.9.8 contaban como pendientes para siempre y «Corregir» no podía arreglarlo.
+ */
+export async function songsDeclinedHere(uid: string, keys: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (keys.length === 0 || !wireConnection()) return out;
+  // Lo recién borrado (aún sin recoger por el relevo) y lo que su estado ya tiene por rechazado.
+  const fresh = new Set(removedSongs(uid).map((entry) => entry.key));
+  const declined = new Set(readState(await userTagOf(uid)).declined);
+  for (const key of keys) if (fresh.has(key) || declined.has(`${SONG}${await hash(key)}`)) out.add(key);
+  return out;
+}
 
 /** Fija (o suelta) un objeto del relevo: fijado, queda en Drive para siempre. */
 export function togglePin(key: string) {
@@ -964,7 +989,7 @@ interface UploadBudget {
 async function cycle(ctx: WireContext): Promise<{ moved: number; pending: number; warning: string | null }> {
   const drive = new Drive(accessToken);
   const me = await device();
-  const userTag = (await hash(`frame-user:${ctx.uid}`)).slice(0, 16);
+  const userTag = await userTagOf(ctx.uid);
   currentUserTag = userTag;
   selfId = me.id;
   driveTag = (await hash(`frame-drive:${ctx.uid}:${(wireConnection()?.email ?? '').toLowerCase()}`)).slice(0, 12);

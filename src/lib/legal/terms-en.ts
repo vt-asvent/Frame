@@ -371,15 +371,17 @@ Only when you ask Frame to read the classes in a schedule photo —when adding i
 
 ### 3.9 Your Account’s devices
 
-If you sign in, each device where you open Frame leaves a record in your Account, so that Settings → “Devices” can show you where your session is open and whether they all have the same data:
+If you sign in, each device where you open Frame leaves a record in your Account, so that “Devices”, in the Wire extension, can show you where your session is open and whether they all have the same data:
 
-**What each record holds.** A random identifier of that installation, the type of device (laptop, phone or tablet), its system (Windows or Android), the Frame version, whether the session is still open or was closed, the first and last time it connected, and a summary of what it still has to sync (how many things of each type, never which ones). **It doesn’t hold the device’s name, its network or its location.**
+**What each record holds.** A random identifier of that installation, the type of device (laptop, phone or tablet), its system (Windows or Android), the Frame version, whether the session is still open or was closed, the first and last time it connected, whether it has the Wire extension running and a summary of what it still has to sync (how many things of each type, never which ones). **It doesn’t hold the device’s name, its network or its location.**
 
 **Who sees it.** Only you, from your devices. The person responsible for Frame sees only counts: on how many devices each Account is open and what type they are (section 3.4).
 
 **How long it lasts.** You can remove a device you no longer use from the list; at most twenty records are kept per Account, and all of them are deleted when the Account is deleted.
 
 ### 3.10 Lyrics translation
+
+Since version 1.9.9 for Windows and 1.4.1 for Android, Frame no longer translates lyrics: this section applies only to those still using an earlier version.
 
 Only if you turn on “Translation” on a song’s lyrics, and only when those lyrics aren’t already in your Frame’s language —the Application checks that on your computer, without sending them—:
 

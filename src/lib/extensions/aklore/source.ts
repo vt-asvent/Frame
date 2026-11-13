@@ -46,7 +46,8 @@ export async function fromCloud(path: string, signal?: AbortSignal, headers?: Re
     throw fail(tr('Activa la Biblioteca con tu correo institucional.'));
   }
   if (resp.status === 404) throw fail(tr('Ese archivo ya no está en la Biblioteca.'), false);
-  if (resp.status === 429) throw fail(tr('Llegaste al tope de descargas de hoy. Mañana puedes seguir.'));
+  // `lleno`: hoy se repartieron muchos paquetes entre todas las cuentas (la nube se cuida de no agotarse).
+  if (resp.status === 429) throw fail(body?.error === 'lleno' ? tr('Hoy se bajaron muchos paquetes de la Biblioteca. Mañana puedes seguir.') : tr('Llegaste al tope de descargas de hoy. Mañana puedes seguir.'));
   if (body?.error === 'lore-off') throw fail(tr('La Biblioteca aún se está preparando. Vuelve en un rato.'));
   throw fail(tr('La Biblioteca no respondió ({status}). Inténtalo de nuevo.', { status: resp.status }), false);
 }

@@ -777,8 +777,15 @@ group('borrado', 'Lo que el usuario borra no vuelve; perder el almacén no es bo
   await settle([a, b]);
   const drive = world.drive();
 
+  // Las claves con las que «Dos» y «Tres» quedan en una playlist (song-keys.ts).
+  const keyOf = (dev, title) => dev.wire.libraryKeys(dev.songs)[dev.find(title)[0].id];
+  const [dos, tres] = [keyOf(b, 'Dos'), keyOf(b, 'Tres')];
+  const declined = async (dev) => [...(await dev.wire.songsDeclinedHere(dev.uid, [dos, tres]))].join();
+  check((await declined(b)) === '', 'antes de borrar, a la tablet no le consta nada rechazado');
   b.deleteSong(b.find('Dos')[0].id);
+  check((await declined(b)) === dos, 'recién borrada, el verificador ya sabe que la tablet la quitó a propósito (1.9.9)');
   check(await settle([a, b]), 'tras borrar en la tablet, se estabiliza');
+  check((await declined(b)) === dos && (await declined(a)) === '', 'y lo sigue sabiendo tras la vuelta; a la laptop, que la conserva, no le consta');
   check(b.find('Dos').length === 0 && a.find('Dos').length === 1, 'lo borrado no vuelve a la tablet y sigue en la laptop');
   check(drive.live('item').length === 0, 'y no se queda esperando en Drive');
   check(b.wire.removedSongs(b.uid).length === 0, 'el borrado quedó anotado en el estado del relevo y salió de la lista');

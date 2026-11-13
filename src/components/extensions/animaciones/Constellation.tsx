@@ -199,7 +199,10 @@ export default function Constellation({
         .then(async ({ getCurrentWindow }) => {
           const win = getCurrentWindow();
           const unlisten = await win.onResized(() => {
-            void win.isMinimized().then((minimized) => (minimized ? stop() : document.hidden || start()));
+            void win
+              .isMinimized()
+              .then((minimized) => (minimized ? stop() : document.hidden || start()))
+              .catch(() => undefined);
           });
           if (disposed) unlisten();
           else stopMinimizeWatch = unlisten;

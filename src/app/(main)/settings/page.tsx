@@ -41,7 +41,6 @@ import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, 
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import AvatarCropper from '@/components/auth/AvatarCropper';
 import AccountMenu from '@/components/settings/AccountCard';
-import { DevicesCard } from '@/components/settings/DevicesCard';
 import { useContributions, useExtensionOn, useInstalledExtensions } from '@/lib/extensions/store';
 import { ANIMACIONES, effectiveLook, useLook } from '@/lib/extensions/animaciones';
 import ProfileStats from '@/components/settings/ProfileStats';
@@ -754,11 +753,6 @@ export default function SettingsPage() {
             </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </button>
-        </div>
-
-        {/* Dispositivos de la cuenta y su sincronización (1.9.2). */}
-        <div className="pt-6">
-          <DevicesCard userProfile={userProfile} />
         </div>
 
         {/* Metas diarias (minutos) y escala AD/A/B/C: modo Avanzado. Las

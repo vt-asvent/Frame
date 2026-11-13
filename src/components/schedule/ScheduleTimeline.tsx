@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronLeft, ChevronRight, LocateFixed } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import WaveBackdrop from '@/components/courses/WaveBackdrop';
 import { useCourse } from '@/context/CourseContext';
@@ -39,6 +40,11 @@ import { cn } from '@/lib/utils';
 // se mueve con el reloj: una clase de 8 a 12 queda centrada a las 10, y a las
 // 9 la línea cae a un cuarto de su tarjeta. Entre días (y el fin de semana)
 // la línea recorre el hueco hasta la primera clase del siguiente.
+//
+// Se puede mirar atrás y adelante (1.9.9, Diego): con las flechas de los
+// extremos o arrastrando (con el dedo en el móvil, con el ratón en la laptop).
+// Entonces la línea de la hora se va con su tarjeta y aparece «Ahora», que
+// devuelve la hora al medio.
 // ============================================================
 
 /** Ancho de la tarjeta y del hueco, en fracción del recuadro. En un teléfono, una tarjeta casi entera. */
@@ -78,20 +84,85 @@ export default function ScheduleTimeline({ uid, classes, onFix }: { uid: string;
   const gap = Math.max(10, Math.round(width * gapShare));
   const step = card + gap;
   const position = trackPosition(list, now, card, gap);
-  const offset = width / 2 - position;
+  // Cuánto se apartó el usuario de la hora de ahora, en píxeles de la pista (0: la hora, al medio).
+  const [moved, setMoved] = useState(0);
+  const end = Math.max(0, list.length * step - gap);
+  const shift = Math.min(end - position, Math.max(-position, moved));
+  const center = position + shift;
+  const offset = width / 2 - center;
+
+  // Arrastrar: con el dedo o con el ratón. Un toque sin moverse sigue siendo un clic en la tarjeta.
+  const drag = useRef<{ x: number; from: number; moving: boolean } | null>(null);
+  const dragged = useRef(false);
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    drag.current = { x: event.clientX, from: shift, moving: false };
+    dragged.current = false;
+  };
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = event.clientX - d.x;
+    if (!d.moving && Math.abs(dx) < 6) return;
+    if (!d.moving) {
+      d.moving = true;
+      dragged.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    setMoved(d.from - dx);
+  };
+  const onPointerEnd = () => {
+    drag.current = null;
+  };
+  const jump = (direction: 1 | -1) => setMoved(shift + direction * step);
 
   // Solo lo que se ve (y un poco más).
-  const first = step > 0 ? Math.max(0, Math.floor((position - width / 2 - card) / step)) : 0;
-  const last = step > 0 ? Math.min(list.length - 1, Math.ceil((position + width / 2) / step)) : -1;
+  const first = step > 0 ? Math.max(0, Math.floor((center - width / 2 - card) / step)) : 0;
+  const last = step > 0 ? Math.min(list.length - 1, Math.ceil((center + width / 2) / step)) : -1;
   const visible: { occurrence: Occurrence; index: number }[] = [];
   for (let index = first; index <= last; index++) visible.push({ occurrence: list[index], index });
+  const height = Math.round(card * ratio) + NAME_ROW;
+  const arrow =
+    'absolute z-30 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-card/95 text-foreground shadow-md transition-opacity hover:bg-card disabled:pointer-events-none disabled:opacity-0 [@media(hover:hover)]:flex';
 
   return (
-    <div ref={boxRef} className="relative select-none">
+    <div
+      ref={boxRef}
+      className="relative touch-pan-y select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+      onClickCapture={(event) => {
+        // El clic que cierra un arrastre no abre la tarjeta que quedó debajo.
+        if (!dragged.current) return;
+        dragged.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       {classes.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">{tr('Este horario aún no tiene clases. Añádelas en «Semanal».')}</p>
       ) : (
-        <Track uid={uid} list={list} visible={visible} width={width} card={card} height={Math.round(card * ratio) + NAME_ROW} step={step} offset={offset} now={now} today={today} onFix={onFix} />
+        <>
+          <Track uid={uid} list={list} visible={visible} width={width} card={card} height={height} step={step} offset={offset} shift={shift} now={now} today={today} onFix={onFix} />
+          <button type="button" className={cn(arrow, 'left-1')} style={{ top: 32 + height / 2 }} disabled={center <= 0} onClick={() => jump(-1)} aria-label={tr('Anteriores')}>
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button type="button" className={cn(arrow, 'right-1')} style={{ top: 32 + height / 2 }} disabled={center >= end} onClick={() => jump(1)} aria-label={tr('Siguientes')}>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          {shift !== 0 && (
+            <button
+              type="button"
+              onClick={() => setMoved(0)}
+              className="absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground shadow-md transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <LocateFixed className="h-3 w-3" />
+              {tr('Ahora')}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -107,19 +178,29 @@ interface TrackProps {
   height: number;
   step: number;
   offset: number;
+  /** Cuánto se apartó el usuario de la hora de ahora (0: la hora, al medio). */
+  shift: number;
   now: number;
   today: number;
   onFix: () => void;
 }
 
-function Track({ uid, list, visible, width, card, height, step, offset, now, today, onFix }: TrackProps) {
+function Track({ uid, list, visible, width, card, height, step, offset, shift, now, today, onFix }: TrackProps) {
+  // La hora de ahora va al medio; si el usuario se desplazó, se va con su tarjeta (y fuera del recuadro no se pinta).
+  const nowAt = width / 2 - shift;
+  const nowShown = nowAt > 8 && nowAt < width - 8;
   return (
     <>
-      {/* La hora de ahora, siempre al medio */}
-      <div aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 top-3 z-20 w-0.5 -translate-x-1/2 rounded-full bg-primary/80" />
-      <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary-foreground shadow-sm">
-        {timeOf(minutesOfDay(now))}
-      </div>
+      {nowShown && (
+        <>
+          <div aria-hidden className="pointer-events-none absolute bottom-0 top-3 z-20 w-0.5 -translate-x-1/2 rounded-full bg-primary/80" style={{ left: nowAt }} />
+          {shift === 0 && (
+            <div className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary-foreground shadow-sm">
+              {timeOf(minutesOfDay(now))}
+            </div>
+          )}
+        </>
+      )}
 
       {width > 0 && (
         <div className="relative overflow-hidden" style={{ WebkitMaskImage: FADE, maskImage: FADE }}>
@@ -135,6 +216,7 @@ function Track({ uid, list, visible, width, card, height, step, offset, now, tod
                 const startText = `${firstOfDay && day !== today ? `${dayShort(occurrence.item.day - 1)} ` : ''}${timeOf(minutesOf(occurrence.item.start)!)}`;
                 // El fin solo si deja un hueco ese mismo día: el de la última clase lo dice su tarjeta.
                 const showEnd = !!next && startOfDay(next.start) === day && next.start !== occurrence.end;
+                // Las horas se apartan de la etiqueta del medio: la hora de ahora o, desplazado, «Ahora».
                 const nearNow = (x: number) => Math.abs(x + offset - width / 2) < 44;
                 return (
                   <div key={occurrence.key}>

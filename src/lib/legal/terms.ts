@@ -385,15 +385,17 @@ Solo cuando pides a Frame que lea las clases de la foto de un horario —al aña
 
 ### 3.9 Dispositivos de tu Cuenta
 
-Si inicias sesión, cada dispositivo donde abres Frame deja en tu Cuenta una ficha, para que Ajustes → «Dispositivos» te enseñe dónde está abierta tu sesión y si todos tienen lo mismo:
+Si inicias sesión, cada dispositivo donde abres Frame deja en tu Cuenta una ficha, para que «Dispositivos», en la extensión Wire, te enseñe dónde está abierta tu sesión y si todos tienen lo mismo:
 
-**Lo que guarda cada ficha.** Un identificador aleatorio de esa instalación, el tipo de dispositivo (laptop, celular o tablet), su sistema (Windows o Android), la versión de Frame, si la sesión sigue abierta o se cerró, la primera y la última vez que se conectó, y un resumen de lo que le falta por sincronizar (cuántas cosas de cada tipo, nunca cuáles). **No guarda el nombre del dispositivo, su red ni su ubicación.**
+**Lo que guarda cada ficha.** Un identificador aleatorio de esa instalación, el tipo de dispositivo (laptop, celular o tablet), su sistema (Windows o Android), la versión de Frame, si la sesión sigue abierta o se cerró, la primera y la última vez que se conectó, si tiene en marcha la extensión Wire y un resumen de lo que le falta por sincronizar (cuántas cosas de cada tipo, nunca cuáles). **No guarda el nombre del dispositivo, su red ni su ubicación.**
 
 **Quién la ve.** Solo tú, desde tus dispositivos. El responsable de Frame ve únicamente recuentos: en cuántos dispositivos está abierta cada Cuenta y de qué tipo son (apartado 3.4).
 
 **Cuánto dura.** Puedes quitar de la lista un dispositivo que ya no usas; se conservan como mucho veinte fichas por Cuenta, y todas se borran al eliminar la Cuenta.
 
 ### 3.10 Traducción de letras
+
+Desde la versión 1.9.9 para Windows y la 1.4.1 para Android, Frame ya no traduce letras: este apartado se aplica solo a quien siga usando una versión anterior.
 
 Solo si enciendes «Traducción» en la letra de una canción, y solo cuando esa letra no está ya en el idioma de tu Frame —eso lo comprueba la Aplicación en tu equipo, sin enviarla—:
 

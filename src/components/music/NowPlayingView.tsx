@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
+  ChevronLeft,
   FileText,
   Heart,
-  Languages,
   LoaderCircle,
   MicVocal,
   Minus,
@@ -35,7 +35,6 @@ import { decimalText, tr } from '@/lib/i18n';
 import { artistLabel } from '@/lib/enum-labels';
 import { formatListened, listeningAllTime, playsText, useListening } from '@/lib/listening';
 import { songKey } from '@/lib/song-keys';
-import { setTranslationWanted, translationWanted, useLyricsTranslation, type TranslationState } from '@/lib/lyrics-translate';
 import { useMediaQuery } from '@/hooks/use-media-query';
 
 // ============================================================
@@ -45,6 +44,11 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 // pequeños, la línea de reproducción y los controles. A la derecha, la letra
 // sincronizada: la línea que suena va resaltada y centrada, y tocar cualquier
 // línea salta a ese punto. El fondo es la propia portada, desenfocada.
+//
+// En una pantalla estrecha (un teléfono de pie, 1.9.9) no caben lado a lado:
+// la letra va arriba, centrada, y abajo la portada pequeña con el título, la
+// línea de reproducción y los controles; se sale con la flecha de arriba a la
+// izquierda.
 //
 // La letra es la que trajo la canción al importarla (sus etiquetas, o un .lrc
 // o .txt con el mismo nombre) o la que el usuario le añade aquí desde un
@@ -59,15 +63,15 @@ function LyricsPanel({
   loading,
   note,
   onAttach,
-  translation,
+  centered,
 }: {
   lyrics: SongLyrics | null;
   loading: boolean;
   /** Aviso tras elegir un archivo que no servía. */
   note: string | null;
   onAttach: () => void;
-  /** «Traducción» (1.9.2): línea original → traducida. */
-  translation: Map<string, string> | null;
+  /** Letra centrada (pantalla estrecha). */
+  centered: boolean;
 }) {
   const { progress } = usePlaybackPosition();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -126,17 +130,8 @@ function LyricsPanel({
   if (lines.length === 0) {
     return (
       <div className="hide-scrollbar h-full overflow-y-auto px-2 py-6">
-        <p className="mb-4 text-[10px] font-semibold text-white/50">{tr('Letra sin sincronizar')}</p>
-        {translation ? (
-          lyrics.plain.split(/\r?\n/).map((line, index) => (
-            <p key={index} className="text-lg font-semibold leading-relaxed text-white/85">
-              {line || '\u00a0'}
-              {translation.get(line.trim()) && <span className="mb-1 block text-base leading-snug text-white/55">{translation.get(line.trim())}</span>}
-            </p>
-          ))
-        ) : (
-          <p className="whitespace-pre-wrap text-lg font-semibold leading-relaxed text-white/85">{lyrics.plain}</p>
-        )}
+        <p className={cn('mb-4 text-[10px] font-semibold text-white/50', centered && 'text-center')}>{tr('Letra sin sincronizar')}</p>
+        <p className={cn('whitespace-pre-wrap text-lg font-semibold leading-relaxed text-white/85', centered && 'text-center')}>{lyrics.plain}</p>
       </div>
     );
   }
@@ -146,7 +141,7 @@ function LyricsPanel({
       ref={containerRef}
       className="hide-scrollbar relative h-full overflow-y-auto scroll-smooth [mask-image:linear-gradient(to_bottom,transparent,black_14%,black_86%,transparent)]"
     >
-      <div className="py-[28vh]">
+      <div className={centered ? 'py-[22vh]' : 'py-[28vh]'}>
         {lines.map((line, index) => (
           <button
             key={`${line.time}-${index}`}
@@ -157,7 +152,8 @@ function LyricsPanel({
             onClick={() => playbackClock.seek(Math.max(0, line.time + offset))}
             title={tr('Saltar a {clock}', { clock: formatClock(Math.max(0, line.time + offset)) })}
             className={cn(
-              'block w-full rounded-lg px-3 py-2 text-left font-headline text-2xl font-bold leading-snug transition-all duration-300 lg:text-3xl',
+              'block w-full rounded-lg px-3 py-2 font-headline text-2xl font-bold leading-snug transition-all duration-300 lg:text-3xl',
+              centered ? 'text-center' : 'text-left',
               index === active
                 ? 'scale-[1.02] text-white'
                 : index < active
@@ -166,9 +162,6 @@ function LyricsPanel({
             )}
           >
             {line.text || '♪'}
-            {translation?.get(line.text.trim()) && (
-              <span className="mt-1 block text-base font-semibold leading-snug opacity-70 lg:text-lg">{translation.get(line.text.trim())}</span>
-            )}
           </button>
         ))}
       </div>
@@ -185,22 +178,14 @@ function LyricsFooter({
   offset,
   onOffset,
   onAttach,
-  translate,
-  translation,
-  onTranslate,
 }: {
   synced: boolean;
   offset: number;
   onOffset: (delta: number) => void;
   onAttach: () => void;
-  /** «Traducción» encendida. */
-  translate: boolean;
-  translation: TranslationState;
-  onTranslate: () => void;
 }) {
   return (
     <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-white/55">
-      <div className="flex min-w-0 items-center gap-1">
       <Button
         variant="ghost"
         onClick={onAttach}
@@ -210,26 +195,6 @@ function LyricsFooter({
         <FileText className="mr-1.5 h-3.5 w-3.5" />
         {tr('Cambiar letra…')}
       </Button>
-      <Button
-        variant="ghost"
-        onClick={onTranslate}
-        aria-pressed={translate}
-        title={
-          translation.status === 'error'
-            ? translation.message
-            : translation.status === 'same'
-              ? tr('La letra ya está en tu idioma.')
-              : tr('Ver la traducción de cada línea, en el idioma de Frame')
-        }
-        className={cn(
-          'h-7 rounded-full px-3 text-[11px] hover:bg-white/15 hover:text-white',
-          translate ? 'bg-white/15 text-white' : 'text-white/70'
-        )}
-      >
-        {translation.status === 'loading' ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Languages className="mr-1.5 h-3.5 w-3.5" />}
-        {tr('Traducción')}
-      </Button>
-      </div>
       {synced && (
       <div className="flex items-center rounded-full border border-white/15" title={tr('Ajusta si la letra va adelantada o atrasada')}>
         <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-white/75 hover:bg-white/15 hover:text-white" onClick={() => onOffset(-0.5)} title={tr('Letra 0,5 s antes')}>
@@ -274,16 +239,8 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
   const songId = currentSong?.id ?? null;
   const loading = !!songId && loaded?.songId !== songId;
   const lyrics = loaded && !loading ? loaded.lyrics : null;
-  // «Traducción» (1.9.2): encendida o no se recuerda; se pide solo con la letra
-  // a la vista (la vista abierta y con ancho para su panel, que en estrecho no sale).
-  const [translate, setTranslate] = useState(translationWanted);
-  const lyricsVisible = useMediaQuery('(min-width: 1024px)');
-  const translation = useLyricsTranslation(songId, open && lyricsVisible ? lyrics : null, translate);
-  const toggleTranslate = () =>
-    setTranslate((on) => {
-      setTranslationWanted(!on);
-      return !on;
-    });
+  // Ancha: la canción y la letra, lado a lado. Estrecha (un teléfono de pie): la letra arriba y la canción abajo.
+  const wide = useMediaQuery('(min-width: 1024px)');
 
   // La letra guardada se lee al abrir y al cambiar de canción.
   useEffect(() => {
@@ -343,6 +300,98 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
   const artist = artistLabel(currentSong.artist);
   const control = 'h-10 w-10 rounded-full text-white/80 hover:bg-white/15 hover:text-white';
 
+  const cover = (className: string, icon: string) => (
+    <div className={cn('shrink-0 overflow-hidden bg-white/10 ring-1 ring-white/15', className)}>
+      {currentSong.picture ? (
+        <img src={currentSong.picture} alt={title} className="h-full w-full object-cover" />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center">
+          <Music className={cn('text-white/60', icon)} />
+        </span>
+      )}
+    </div>
+  );
+
+  const seek = (
+    <div>
+      <Slider
+        value={[Math.min(progress, duration || 0)]}
+        max={duration || 0}
+        step={1}
+        onValueChange={(value) => playbackClock.seek(value[0])}
+        aria-label={tr('Posición de la canción')}
+        className="[&_[role=slider]]:border-white [&_[role=slider]]:bg-white [&>span:first-child]:bg-white/25 [&>span:first-child>span]:bg-white"
+      />
+      <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-white/60">
+        <span>{formatClock(progress)}</span>
+        <span>{formatClock(duration)}</span>
+      </div>
+    </div>
+  );
+
+  const controls = (
+    <div className="flex items-center justify-center gap-2">
+      <Button variant="ghost" size="icon" onClick={toggleShuffle} title={tr('Aleatorio')} className={cn(control, 'h-9 w-9', isShuffle && 'bg-white/20 text-white')}>
+        <Shuffle className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={playPrevious} title={tr('Anterior')} className={control}>
+        <SkipBack className="h-5 w-5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={togglePlay}
+        title={isPlaying ? tr('Pausar') : tr('Reproducir')}
+        className="h-14 w-14 rounded-full bg-white text-neutral-900 hover:bg-white/90 hover:text-neutral-900"
+      >
+        {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current pl-0.5" />}
+      </Button>
+      <Button variant="ghost" size="icon" onClick={playNext} title={tr('Siguiente')} className={control}>
+        <SkipForward className="h-5 w-5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        title={repeatMode.mode === 'off' ? tr('Repetir esta canción') : tr('Dejar de repetir')}
+        onClick={() => setRepeatMode(repeatMode.mode === 'off' ? { mode: 'infinite' } : { mode: 'off' })}
+        className={cn(control, 'h-9 w-9', repeatMode.mode !== 'off' && 'bg-white/20 text-white')}
+      >
+        <Repeat className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        title={currentSong.isFavorite ? tr('Quitar de favoritas') : tr('Marcar como favorita')}
+        onClick={() => void toggleSongFavorite(currentSong.id)}
+        className={cn(control, 'h-9 w-9')}
+      >
+        <Heart className={cn('h-4 w-4', currentSong.isFavorite && 'fill-white text-white')} />
+      </Button>
+    </div>
+  );
+
+  const lyricsBlock = (
+    <>
+      <div className={wide ? 'h-[68%] w-full' : 'min-h-0 w-full flex-1'}>
+        <LyricsPanel lyrics={lyrics} loading={loading} note={lyricsNote} onAttach={() => lyricsInputRef.current?.click()} centered={!wide} />
+      </div>
+      {!loading && lyrics && !lyrics.missing && (
+        <LyricsFooter synced={lyrics.synced.length > 0} offset={lyrics.offset ?? 0} onOffset={changeOffset} onAttach={() => lyricsInputRef.current?.click()} />
+      )}
+      {!loading && lyrics && lyricsNote && <p className="mt-2 text-right text-xs text-white/60">{lyricsNote}</p>}
+      <input
+        ref={lyricsInputRef}
+        type="file"
+        accept=".lrc,.txt,text/plain"
+        className="hidden"
+        onChange={(event) => {
+          void attachLyrics(event.target.files?.[0]);
+          event.target.value = '';
+        }}
+      />
+    </>
+  );
+
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-neutral-950 text-white animate-in fade-in-0 duration-300" role="dialog" aria-label={tr('Reproduciendo')}>
       {/* Fondo: la portada, muy desenfocada, y un velo para que el texto se lea. */}
@@ -351,136 +400,73 @@ export default function NowPlayingView({ open, onClose }: { open: boolean; onClo
       )}
       <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-black/55 to-black/80" />
 
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onClose}
-        title={tr('Cerrar (Esc)')}
-        className="absolute right-5 top-5 z-10 h-10 w-10 rounded-full text-white/80 hover:bg-white/15 hover:text-white"
-      >
-        <ChevronDown className="h-6 w-6" />
-      </Button>
-
-      <div className="relative grid h-full grid-cols-1 gap-8 px-8 py-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-14 lg:px-16">
-        {/* ---- La canción ---- */}
-        <div className="flex min-h-0 flex-col items-center justify-center text-center">
-          <h2 className="w-full max-w-md truncate font-headline text-2xl font-bold lg:text-3xl" title={title}>
-            {title}
-          </h2>
-
-          <div className="my-6 aspect-square w-full max-w-[min(22rem,42vh)] overflow-hidden rounded-2xl bg-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/15">
-            {currentSong.picture ? (
-              <img src={currentSong.picture} alt={title} className="h-full w-full object-cover" />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center">
-                <Music className="h-20 w-20 text-white/60" />
-              </span>
-            )}
-          </div>
-
-          <p className="w-full max-w-md truncate text-base font-semibold text-white/75" title={artist}>
-            {artist}
-          </p>
-          {songStats && (songStats.plays > 0 || songStats.seconds >= 60) && (
-            <p className="mt-1 text-xs tabular-nums text-white/55">
-              {tr('{plays} · {time} en total', { plays: playsText(songStats.plays), time: formatListened(songStats.seconds) })}
-            </p>
-          )}
-
-          <div className="mt-6 w-full max-w-sm space-y-3">
-            <div>
-              <Slider
-                value={[Math.min(progress, duration || 0)]}
-                max={duration || 0}
-                step={1}
-                onValueChange={(value) => playbackClock.seek(value[0])}
-                aria-label={tr('Posición de la canción')}
-                className="[&_[role=slider]]:border-white [&_[role=slider]]:bg-white [&>span:first-child]:bg-white/25 [&>span:first-child>span]:bg-white"
-              />
-              <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-white/60">
-                <span>{formatClock(progress)}</span>
-                <span>{formatClock(duration)}</span>
+      {wide ? (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            title={tr('Cerrar (Esc)')}
+            className="absolute right-5 top-5 z-10 h-10 w-10 rounded-full text-white/80 hover:bg-white/15 hover:text-white"
+          >
+            <ChevronDown className="h-6 w-6" />
+          </Button>
+          <div className="relative grid h-full grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-14 px-16 py-10">
+            {/* ---- La canción ---- */}
+            <div className="flex min-h-0 flex-col items-center justify-center text-center">
+              <h2 className="w-full max-w-md truncate font-headline text-3xl font-bold" title={title}>
+                {title}
+              </h2>
+              {cover('my-6 aspect-square w-full max-w-[min(22rem,42vh)] rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.55)]', 'h-20 w-20')}
+              <p className="w-full max-w-md truncate text-base font-semibold text-white/75" title={artist}>
+                {artist}
+              </p>
+              {songStats && (songStats.plays > 0 || songStats.seconds >= 60) && (
+                <p className="mt-1 text-xs tabular-nums text-white/55">
+                  {tr('{plays} · {time} en total', { plays: playsText(songStats.plays), time: formatListened(songStats.seconds) })}
+                </p>
+              )}
+              <div className="mt-6 w-full max-w-sm space-y-3">
+                {seek}
+                {controls}
               </div>
             </div>
-            <div className="flex items-center justify-center gap-2">
-              <Button variant="ghost" size="icon" onClick={toggleShuffle} title={tr('Aleatorio')} className={cn(control, 'h-9 w-9', isShuffle && 'bg-white/20 text-white')}>
-                <Shuffle className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={playPrevious} title={tr('Anterior')} className={control}>
-                <SkipBack className="h-5 w-5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={togglePlay}
-                title={isPlaying ? tr('Pausar') : tr('Reproducir')}
-                className="h-14 w-14 rounded-full bg-white text-neutral-900 hover:bg-white/90 hover:text-neutral-900"
-              >
-                {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current pl-0.5" />}
-              </Button>
-              <Button variant="ghost" size="icon" onClick={playNext} title={tr('Siguiente')} className={control}>
-                <SkipForward className="h-5 w-5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                title={repeatMode.mode === 'off' ? tr('Repetir esta canción') : tr('Dejar de repetir')}
-                onClick={() => setRepeatMode(repeatMode.mode === 'off' ? { mode: 'infinite' } : { mode: 'off' })}
-                className={cn(control, 'h-9 w-9', repeatMode.mode !== 'off' && 'bg-white/20 text-white')}
-              >
-                <Repeat className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                title={currentSong.isFavorite ? tr('Quitar de favoritas') : tr('Marcar como favorita')}
-                onClick={() => void toggleSongFavorite(currentSong.id)}
-                className={cn(control, 'h-9 w-9')}
-              >
-                <Heart className={cn('h-4 w-4', currentSong.isFavorite && 'fill-white text-white')} />
-              </Button>
+            {/* ---- La letra: ~68 % del alto, centrada ---- */}
+            <div className="flex min-h-0 flex-col justify-center">{lyricsBlock}</div>
+          </div>
+        </>
+      ) : (
+        <div className="relative flex h-full flex-col px-5 pb-[max(1.25rem,var(--safe-bottom,0px))] pt-[max(0.75rem,var(--safe-top,0px))]">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            title={tr('Volver')}
+            aria-label={tr('Volver')}
+            className="-ml-2 h-10 w-10 shrink-0 rounded-full text-white/80 hover:bg-white/15 hover:text-white"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </Button>
+          {/* ---- La letra, arriba ---- */}
+          <div className="flex min-h-0 flex-1 flex-col">{lyricsBlock}</div>
+          {/* ---- La canción, abajo ---- */}
+          <div className="mt-4 shrink-0 space-y-3">
+            <div className="flex items-center gap-3">
+              {cover('h-16 w-16 rounded-xl', 'h-7 w-7')}
+              <div className="min-w-0">
+                <h2 className="truncate font-headline text-lg font-bold" title={title}>
+                  {title}
+                </h2>
+                <p className="truncate text-sm font-semibold text-white/70" title={artist}>
+                  {artist}
+                </p>
+              </div>
             </div>
+            {seek}
+            {controls}
           </div>
         </div>
-
-        {/* ---- La letra: ~68 % del alto, centrada ---- */}
-        <div className="hidden min-h-0 flex-col justify-center lg:flex">
-          <div className="h-[68%] w-full">
-            <LyricsPanel
-              lyrics={lyrics}
-              loading={loading}
-              note={lyricsNote}
-              onAttach={() => lyricsInputRef.current?.click()}
-              translation={translate && translation.status === 'done' ? translation.map : null}
-            />
-          </div>
-          {!loading && lyrics && !lyrics.missing && (
-            <LyricsFooter
-              synced={lyrics.synced.length > 0}
-              offset={lyrics.offset ?? 0}
-              onOffset={changeOffset}
-              onAttach={() => lyricsInputRef.current?.click()}
-              translate={translate}
-              translation={translation}
-              onTranslate={toggleTranslate}
-            />
-          )}
-          {!loading && lyrics && lyricsNote && <p className="mt-2 text-right text-xs text-white/60">{lyricsNote}</p>}
-          {!loading && translate && (translation.status === 'error' || translation.status === 'same') && (
-            <p className="mt-2 text-xs text-white/60">{translation.status === 'error' ? translation.message : tr('La letra ya está en tu idioma.')}</p>
-          )}
-          <input
-            ref={lyricsInputRef}
-            type="file"
-            accept=".lrc,.txt,text/plain"
-            className="hidden"
-            onChange={(event) => {
-              void attachLyrics(event.target.files?.[0]);
-              event.target.value = '';
-            }}
-          />
-        </div>
-      </div>
+      )}
     </div>
   );
 }

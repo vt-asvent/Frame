@@ -153,6 +153,7 @@ export default {
         env.DB.prepare('DELETE FROM traducciones WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
         env.DB.prepare('DELETE FROM neuronas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
         env.DB.prepare('DELETE FROM lore_descargas WHERE day<?').bind(new Date(now).toISOString().slice(0, 10)),
+        env.DB.prepare("DELETE FROM lore_estado WHERE k LIKE 'lote:%' AND k<?").bind(`lote:${new Date(now).toISOString().slice(0, 10)}`),
         ...loreAccessCleanup(env, now),
       ]).then(() => undefined),
     );

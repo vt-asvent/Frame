@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase/client';
 import { checkSession } from '@/lib/supabase/session-guard';
 import { SESSION_RESTORED_EVENT } from '@/lib/connection-status';
 import { readCursor, sameInstant } from '@/lib/supabase/sync';
+import { wireWorking } from '@/lib/extensions/wire/relay';
 import { currentSyncIssues, subscribeSyncIssues, type SyncIssue } from '@/lib/sync-check';
 import { SYNC_NOW_EVENT, getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
 import { onPeerMessage, sendPeerMessage } from '@/lib/sync-peers';
@@ -10,7 +11,7 @@ import { deviceId } from '@/lib/sync-delta';
 import { APP_VERSION } from '@/lib/version';
 
 // ============================================================
-// Dispositivos de la cuenta (1.9.2, Ajustes → Dispositivos).
+// Dispositivos de la cuenta (1.9.2; desde la 1.9.9, en la interfaz de Wire).
 //
 // Cada equipo con sesión late (supabase/migrations/0018 y 0019): manda su
 // tipo, sistema, versión y un resumen (`DeviceSync`), y recibe los equipos de
@@ -28,7 +29,9 @@ import { APP_VERSION } from '@/lib/version';
 // · Un equipo que aún no confirmó la última versión no tiene un problema:
 //   está en ello o está cerrado y lo hará al abrir Frame (`waiting`). Solo
 //   cuenta como pendiente (`behind`) lo que su verificador de sincronización
-//   encontró sin sincronizar.
+//   encontró sin sincronizar. Cada equipo dice además si tiene Wire (1.9.9):
+//   la música, las imágenes propias y los adjuntos solo viajan con él, y así
+//   la tarjeta puede decir en cuál hay que activarlo.
 //
 // Los latidos van espaciados (al abrir, cada 10 min, al volver a la ventana
 // y medio minuto después de un cambio). Con la tarjeta abierta en algún
@@ -50,6 +53,8 @@ export interface DeviceSync {
   cloudAt: string | null;
   /** Lo que le falta, por tipo (del verificador de sincronización). */
   issues: Partial<Record<IssueKind, number>>;
+  /** Manda y recibe por Wire (las versiones anteriores a la 1.9.9 y a la 1.4.1 de Android no lo dicen). */
+  wire?: boolean;
 }
 
 export interface DeviceRow {
@@ -127,7 +132,7 @@ function summary(uid: string): DeviceSync {
     const count = counts.get(kind);
     if (count) issues[kind] = count;
   }
-  return { v: 1, cloudAt: readCursor(uid)?.remoteAt ?? null, issues };
+  return { v: 1, cloudAt: readCursor(uid)?.remoteAt ?? null, issues, wire: wireWorking() };
 }
 
 // ------------------------------------------------------------
@@ -204,7 +209,7 @@ function parseReply(data: unknown): { devices: DeviceRow[]; cloudAt: string | nu
 // Lo que la tarjeta y el cierre de sesión piden
 // ------------------------------------------------------------
 
-/** La tarjeta de Ajustes está en pantalla. */
+/** La tarjeta de Dispositivos está en pantalla. */
 let cardOpen = false;
 /** Cerrando sesión: ni un latido más. */
 let muted = false;
@@ -215,7 +220,7 @@ function refreshDevices(): void {
   active?.refresh();
 }
 
-/** La tarjeta de Ajustes avisa cuando entra y sale de la pantalla. */
+/** La tarjeta avisa cuando entra y sale de la pantalla. */
 export function setDevicesOpen(open: boolean): void {
   if (cardOpen === open) return;
   cardOpen = open;

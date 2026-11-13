@@ -11,6 +11,7 @@ import { richNoteToLine } from '@/lib/rich-note';
 import { monthName } from '@/lib/timetable';
 import { CLOUD_APPLIED_EVENT } from '@/lib/supabase/sync';
 import { getConnectionState } from '@/lib/connection-status';
+import { songsDeclinedHere } from '@/lib/extensions/wire/relay';
 import { dateLocale, subscribeLang, tr } from '@/lib/i18n';
 
 // ============================================================
@@ -24,8 +25,9 @@ import { dateLocale, subscribeLang, tr } from '@/lib/i18n';
 //   · imágenes propias de asignaturas, colecciones o playlists que se
 //     eligieron en otro dispositivo (las imágenes propias no viajan);
 //   · imágenes de la galería que esta versión de Frame no tiene;
-//   · canciones de una playlist que no están en este dispositivo (la música
-//     no viaja);
+//   · canciones de una playlist que no están en este dispositivo (viajan con
+//     Wire). Las que el usuario borró AQUÍ no cuentan (1.9.9): no le faltan,
+//     las quitó él; contarlas dejaba un aviso que nada podía quitar;
 //   · adjuntos de tareas, eventos y recursos que se quedaron en el
 //     dispositivo donde se añadieron.
 //
@@ -65,7 +67,7 @@ const WHERE: Record<string, { where: () => string; route: string; label: (row: R
   playlists: { where: () => tr('Música'), route: '/music', label: (row) => String(row.name ?? '') },
   studyVideos: { where: () => tr('Estudio'), route: '/temporizador', label: (row) => String(row.title ?? '') },
   loreFavorites: { where: () => tr('Biblioteca'), route: '/biblioteca', label: () => tr('Favoritos') },
-  loreStudy: { where: () => tr('Biblioteca'), route: '/biblioteca', label: (row) => (row.id === 'perfil' ? tr('Convocatoria de exámenes') : tr('Repaso de tarjetas')) },
+  loreStudy: { where: () => tr('Biblioteca'), route: '/biblioteca', label: () => tr('Repaso de tarjetas') },
   subjectLinks: { where: () => tr('Inicio'), route: '/', label: (row) => tr('Asignatura de «{name}» en el horario', { name: String(row.id ?? '') }) },
   songFavorites: {
     where: () => tr('Música'),
@@ -189,14 +191,17 @@ export async function computeSyncIssues(uid: string): Promise<SyncIssue[]> {
         return [];
       }
     })();
-    for (const playlist of playlists) {
+    const entriesOf = (playlist: { id?: string }) => {
       const local = localPlaylists.find((item) => item?.id === playlist.id);
-      const entries = Array.isArray(local?.songIds) ? (local!.songIds as unknown[]).filter((id): id is string => typeof id === 'string') : [];
+      return Array.isArray(local?.songIds) ? (local!.songIds as unknown[]).filter((id): id is string => typeof id === 'string' && !library.has(id)) : [];
+    };
+    const declined = await songsDeclinedHere(uid, playlists.flatMap(entriesOf).filter(isSongKey)).catch(() => new Set<string>());
+    for (const playlist of playlists) {
+      const entries = entriesOf(playlist).filter((entry) => !declined.has(entry));
       const where = tr('Música · {name}', { name: playlist.name ?? '' });
       const route = playlist.id ? `/playlists?id=${encodeURIComponent(playlist.id)}` : '/music';
       let foreign = 0;
       for (const entry of entries) {
-        if (library.has(entry)) continue;
         if (!isSongKey(entry)) {
           foreign += 1;
           continue;

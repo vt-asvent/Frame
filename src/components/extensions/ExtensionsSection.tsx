@@ -33,6 +33,7 @@ import { EXTENSION_PANELS, ThirdPartyPanel } from '@/components/extensions/exten
 import { errorText, tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { markWireJustInstalled, WireSection } from '@/components/extensions/wire/WireViews';
+import { DevicesCard } from '@/components/settings/DevicesCard';
 import { WIRE } from '@/lib/extensions/wire/relay';
 import { useCatalog } from '@/lib/extensions/remote-catalog';
 import { easedMask } from '@/lib/eased-fade';
@@ -448,6 +449,8 @@ function ExtensionPage({ row, onBack, onToggle, onRemove }: { row: Row; onBack: 
               {entry ? tr('Desactivada: no hace nada y conserva sus ajustes.') : tr('Actívala para instalarla; antes verás los permisos que pide.')}
             </p>
           )}
+          {/* Los equipos de la cuenta y su sincronización (1.9.9: aquí y no en Ajustes). */}
+          {row.id === WIRE && <DevicesCard />}
         </section>
 
         <aside className="space-y-3 self-start rounded-xl border border-border/60 bg-card p-4">

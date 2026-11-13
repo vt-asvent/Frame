@@ -502,8 +502,10 @@ export async function bibliotecaArchivo(req: Request, env: Env, user: AppUser, i
   // pequeños de hojearlo se anotan por muestreo (lore.ts): una vista previa son decenas de peticiones y las
   // escrituras de la base están contadas. Si la cuenta falla, el archivo se sirve igual.
   const bytes = Math.max(0, fin - inicio + 1);
-  const cuenta = await contarDescarga(env, user.owner, { id: nodo.id, bytes, entero: !m });
-  if (!cuenta.cabe) return json({ error: 'quota', files: DAILY_FILES }, 429);
+  // `?lote=1`: un archivo entero de «Tu paquete» (cientos seguidos), que se anota por muestreo.
+  const lote = !m && new URL(req.url).searchParams.get('lote') === '1';
+  const cuenta = await contarDescarga(env, user.owner, { id: nodo.id, bytes, entero: !m, lote });
+  if (!cuenta.cabe) return json(cuenta.lleno ? { error: 'lleno' } : { error: 'quota', files: DAILY_FILES }, 429);
   const devolver = cuenta.devolver;
 
   const r = await drive(env, `files/${encodeURIComponent(nodo.id)}?alt=media`, m ? { range: rango } : {});

@@ -85,7 +85,9 @@ async function compile(entry, extra = {}) {
     format: 'iife',
     platform: 'browser',
     target: 'es2022',
-    define: { 'process.env.NODE_ENV': '"production"' },
+    // `import.meta.env`: el verificador (1.9.9) mira el relevo de Wire, que trae consigo el acceso de Google y sus
+    // variables de entorno; aquí no hay ninguna (Wire sin conectar, que es lo que se prueba).
+    define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{}' },
     logLevel: 'error',
     plugins: [
       aliases({

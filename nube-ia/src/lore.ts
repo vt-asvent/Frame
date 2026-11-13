@@ -8,7 +8,9 @@
 // Solo para cuentas que pueden abrirla (lore-acceso.ts): las que entran con su
 // correo del colegio, comprobado, o las que la activaron con el código que
 // llega a ese correo (1.9.3).
-// Cada cuenta tiene un tope diario de archivos y de bytes (`lore_descargas`).
+// Cada cuenta tiene un tope diario de archivos y de bytes (`lore_descargas`):
+// holgado para bajar «Tu paquete» (Frame 1.9.9: varias asignaturas enteras, un
+// millar de archivos) y seguir usando la Biblioteca ese día.
 //
 // Rutas: GET /app/lore → { format: 1, guides: [...] }
 //        GET /app/lore/archivo/<id> → el archivo (attachment)
@@ -21,8 +23,13 @@ import { hasLoreAccess } from './lore-acceso';
 import { type AppUser } from './supabase';
 import { type Env, json } from './util';
 
-export const DAILY_FILES = 300;
-export const DAILY_BYTES = 3_000_000_000;
+export const DAILY_FILES = 2000;
+export const DAILY_BYTES = 5_000_000_000;
+/**
+ * Archivos que se reparten al día en paquetes, entre todas las cuentas. Cada uno es una petición a esta nube, y el
+ * plan gratis da 100 000 al día para todo Frame: un día de muchos paquetes no puede dejar sin nube a los demás.
+ */
+export const LOTE_DIA = 40_000;
 
 const ID = /^[a-z0-9][a-z0-9-]{2,79}$/;
 
@@ -139,6 +146,42 @@ export function bytesACobrar(bytes: number, exacto: boolean, azar: number): numb
 const azar = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
 
 /**
+ * Con qué probabilidad se anota un archivo de un paquete: una de cada 16 veces como poco, más cuanto más pesa y
+ * siempre desde 64 MiB. Al anotarlo cuenta por 1/p archivos y bytes/p bytes: en promedio, lo mismo que anotarlos
+ * todos, con una escritura cada muchos archivos y sin que una sola anotación pese más de 64 MiB.
+ */
+export const probabilidadDeLote = (bytes: number): number => Math.min(1, Math.max(1 / 16, bytes / (64 * 1_048_576)));
+
+type Cuenta = { cabe: boolean; lleno?: boolean; devolver: () => Promise<void> };
+const nada = async () => undefined;
+
+/** Un archivo de un paquete: se mira lo que llevan la cuenta y el día, y se anota por muestreo. */
+async function contarLote(env: Env, owner: string, day: string, tamano: number): Promise<Cuenta> {
+  const k = `lote:${day}`;
+  const [cuenta, total] = await env.DB.batch<{ n: number; bytes: number }>([
+    env.DB.prepare('SELECT n, bytes FROM lore_descargas WHERE owner = ?1 AND day = ?2').bind(owner, day),
+    env.DB.prepare('SELECT CAST(v AS REAL) AS n, 0 AS bytes FROM lore_estado WHERE k = ?1').bind(k),
+  ]);
+  const lleva = cuenta?.results[0];
+  if (lleva && (lleva.n > DAILY_FILES || lleva.bytes > DAILY_BYTES)) return { cabe: false, devolver: nada };
+  if ((total?.results[0]?.n ?? 0) > LOTE_DIA) return { cabe: false, lleno: true, devolver: nada };
+  const p = probabilidadDeLote(tamano);
+  if (azar() >= p) return { cabe: true, devolver: nada };
+  const n = 1 / p;
+  const bytes = Math.round(tamano / p);
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO lore_descargas (owner, day, n, bytes) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (owner, day) DO UPDATE SET n = n + excluded.n, bytes = bytes + excluded.bytes').bind(owner, day, n, bytes),
+    env.DB.prepare('INSERT INTO lore_estado (k, v) VALUES (?1, ?2) ON CONFLICT (k) DO UPDATE SET v = CAST(v AS REAL) + CAST(excluded.v AS REAL)').bind(k, String(n)),
+  ]);
+  const devolver = () =>
+    env.DB.batch([
+      env.DB.prepare('UPDATE lore_descargas SET n = n - ?, bytes = bytes - ? WHERE owner = ? AND day = ?').bind(n, bytes, owner, day),
+      env.DB.prepare('UPDATE lore_estado SET v = CAST(v AS REAL) - ? WHERE k = ?').bind(n, k),
+    ]).then(nada, nada);
+  return { cabe: true, devolver };
+}
+
+/**
  * La lista de archivos abiertos hoy (la misma tabla que la migración 0010). Esa migración no pudo aplicarse el día
  * que hizo falta, con las escrituras de la base cortadas; por eso la nube la crea sola, en cuanto la base la deja,
  * la primera vez que la echa en falta.
@@ -157,6 +200,8 @@ export const asegurarAbiertos = (env: Env): Promise<void> =>
  * - Con `id` (Biblioteca 2): el archivo cuenta una vez al día por cuenta, en su primera petición, empiece por el byte
  *   que empiece (`lore_abiertos`): pedirlo sin su primer tramo no lo deja fuera de la cuenta de archivos.
  * - Sin `id` (la Biblioteca de las apps 1.9.2 a 1.9.6, que siempre baja el archivo entero): cada descarga cuenta.
+ * - `lote` (un archivo entero de «Tu paquete»): por muestreo y con el tope del día de todas las cuentas
+ *   (`contarLote`); `lleno` dice que fue ese tope, no el de la cuenta.
  *
  * Nunca impide servir un archivo por un fallo propio: si la base no deja anotar (el plan gratis corta las escrituras
  * de toda la cuenta al llegar a su tope diario, y eso dejó la Biblioteca sin descargas el 13-nov-2026) o no responde,
@@ -165,11 +210,11 @@ export const asegurarAbiertos = (env: Env): Promise<void> =>
 export async function contarDescarga(
   env: Env,
   owner: string,
-  pedido: { id?: string; bytes: number; entero: boolean },
-): Promise<{ cabe: boolean; devolver: () => Promise<void> }> {
+  pedido: { id?: string; bytes: number; entero: boolean; lote?: boolean },
+): Promise<Cuenta> {
   const day = new Date().toISOString().slice(0, 10);
-  const nada = async () => undefined;
   try {
+    if (pedido.lote) return await contarLote(env, owner, day, pedido.bytes);
     let abre = !pedido.id;
     let lleva: { n: number; bytes: number } | undefined;
     if (pedido.id) {
