@@ -465,6 +465,7 @@ function makeDevice(world, nombre, { skew = 0, storage = null } = {}) {
     letras: new Map(),
     adjuntos: new Map(),
     imagenes: new Map(),
+    grabaciones: new Map(),
     refs: [],
     llaves: new Map(),
     llaveLegible: true,
@@ -1399,6 +1400,45 @@ group('fichas', 'Adjuntos, recursos e imágenes: mandan sus fichas', async () =>
   check(drive.live('item').length === 0, 'y ninguna se queda en Drive');
 });
 
+group('grabaciones', 'El audio de una grabación viaja; su ficha manda; un equipo anterior no lo espera', async () => {
+  const world = makeWorld(23);
+  const a = world.device('Tablet');
+  const b = world.device('Laptop');
+  const drive = world.drive();
+  const cards = [{ id: 'g1', name: 'Clase de Historia', mimeType: 'audio/webm' }, { id: 'g2', name: 'Recordatorio', mimeType: 'audio/mp4' }];
+  // Las fichas viajan con la cuenta: están en los dos. El audio, solo donde se grabó.
+  for (const dev of [a, b]) dev.storage.setItem(`recordings_${dev.uid}`, JSON.stringify(cards));
+  a.grabaciones.set('g1', new Blob([world.bytes(1800)], { type: 'audio/webm' }));
+  b.grabaciones.set('g2', new Blob([world.bytes(1200)], { type: 'audio/mp4' }));
+  await a.connect();
+  await b.connect();
+  check(await settle([a, b]), 'se estabiliza');
+  const same = async (id) => Buffer.from(await a.grabaciones.get(id).arrayBuffer()).equals(Buffer.from(await b.grabaciones.get(id).arrayBuffer()));
+  check(a.grabaciones.size === 2 && b.grabaciones.size === 2 && (await same('g1')) && (await same('g2')), 'cada grabación llega al otro equipo, entera');
+  check(b.grabaciones.get('g1').type === 'audio/webm' && a.grabaciones.get('g2').type === 'audio/mp4', 'con el tipo de audio de su ficha');
+  check(drive.live('item').length === 0, 'y Drive queda vacío');
+  check(b.events.includes('recheck'), 'el verificador de sincronización se entera');
+
+  // Una grabación nueva y, antes de que llegue, se borra su ficha en el otro equipo: no se le trae.
+  const more = [...cards, { id: 'g3', name: 'Borrada a medio camino', mimeType: 'audio/webm' }];
+  a.storage.setItem(`recordings_${a.uid}`, JSON.stringify(more));
+  a.grabaciones.set('g3', new Blob([world.bytes(900)], { type: 'audio/webm' }));
+  await a.turn();
+  check(drive.live('item').some((file) => file.appProperties.key === 'r:g3'), 'la nueva sube mientras el otro no la tiene');
+  check(await settle([a, b]), 'sin ficha en el otro equipo, se estabiliza');
+  check(!b.grabaciones.has('g3') && drive.live('item').length === 0, 'no se le trae un audio sin ficha, y no se queda esperando en Drive');
+
+  // Un equipo con el relevo anterior (Frame 1.9.9): no conoce las grabaciones.
+  const root = drive.roots()[0];
+  drive.create(
+    { name: 'Equipo · Celular.json', mimeType: 'application/json', parents: [root.id], appProperties: { frameWire: 'device', device: 'celular-viejo', user: root.appProperties.user } },
+    Buffer.from(JSON.stringify({ id: 'celular-viejo', name: 'Celular', lastSeen: world.t, have: [], declined: [], keep: [], version: 2 }))
+  );
+  b.storage.setItem(`recordings_${b.uid}`, JSON.stringify(more));
+  check(await settle([a, b]), 'con un equipo anterior en el relevo, se estabiliza');
+  check(b.grabaciones.has('g3') && drive.live('item').every((file) => file.appProperties.kind !== 'recording'), 'las grabaciones pasan entre los nuevos y no se quedan en Drive esperando al anterior');
+});
+
 group('versiones', 'Convive con el estado de la 1.9.5 y con un almacenamiento lleno', async () => {
   const world = makeWorld(15);
   const a = world.device('Laptop');
@@ -1492,7 +1532,7 @@ group('antiguos', 'Un equipo con una Frame anterior no recibe canciones hasta ac
   await a.turn();
   check(a.status().outdated.length === 0, 'al actualizarse, el aviso se quita');
   check(drive.live('item').some((file) => file.name.includes('De la tablet')), 'y la música empieza a subir para él');
-  check(JSON.parse(drive.live('device').find((file) => file.appProperties.device !== 'laptop-vieja').content.toString()).version === 2, 'los equipos nuevos se anuncian con la versión nueva');
+  check(JSON.parse(drive.live('device').find((file) => file.appProperties.device !== 'laptop-vieja').content.toString()).version === 3, 'los equipos nuevos se anuncian con la versión nueva');
 });
 
 group('cuentas', 'Dos equipos con Drive distinto: se avisa', async () => {

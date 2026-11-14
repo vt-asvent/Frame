@@ -372,7 +372,7 @@ function RecordingDetailsDialog({
               </>
             ) : (
               <p className="py-5 text-center text-xs text-muted-foreground">
-                {tr('El audio de esta grabación ya no está disponible.')}
+                {tr('El audio de esta grabación no está en este dispositivo. Si la grabaste en otro, llega solo con Wire.')}
               </p>
             )}
           </div>

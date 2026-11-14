@@ -282,7 +282,7 @@ export function DevicesCard() {
           </ul>
         )}
         <p className="text-[11px] text-muted-foreground">
-          {tr('Cada equipo con tu sesión aparece aquí. «Corregir» sincroniza datos, imágenes y Wire en este equipo y se lo pide a los demás: lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.')}
+          {tr('Tus equipos se sincronizan solos. «Corregir» es para cuando algo se atasca: repasa todo a fondo en este equipo (datos, imágenes y Wire) y se lo pide a los demás, que lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.')}
         </p>
       </CardContent>
     </Card>

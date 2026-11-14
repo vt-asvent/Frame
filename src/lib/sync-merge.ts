@@ -71,6 +71,8 @@ const COLLECTION_KEYS = [
   // Qué asignatura es cada nombre del horario (1.9.3, id = el nombre
   // normalizado): vale para todos los horarios de la cuenta.
   'subjectLinks',
+  // Fichas de las grabaciones de voz (2.0.0, id propio); borrar una deja su lápida.
+  'recordings',
 ] as const;
 
 /**
@@ -228,6 +230,14 @@ function readJson<T>(key: string, fallback: T): T {
 export function hasTombstone(uid: string, key: string, id: string): boolean {
   const mark = readJson<SyncMeta>(metaKey(uid), emptyMeta()).collections?.[key]?.[id];
   return !!mark?.d && (!mark.u || mark.d >= mark.u);
+}
+
+/** Los registros de una colección con lápida vigente: se borraron aquí o en otro dispositivo. */
+export function deletedIds(uid: string, key: string): string[] {
+  const marks = readJson<SyncMeta>(metaKey(uid), emptyMeta()).collections?.[key] ?? {};
+  return Object.entries(marks)
+    .filter(([, mark]) => !!mark?.d && (!mark.u || mark.d >= mark.u))
+    .map(([id]) => id);
 }
 
 /**

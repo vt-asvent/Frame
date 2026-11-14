@@ -688,7 +688,6 @@ const EN: Record<string, string> = {
   "El archivo original ya no existe": "The original file no longer exists",
   "El archivo ya no está en el disco.": "The file is no longer on the disk.",
   "El audio de": "The audio from",
-  "El audio de esta grabación ya no está disponible.": "This recording’s audio is no longer available.",
   "El audio se eliminó definitivamente de tu equipo.": "The audio was permanently deleted from your computer.",
   "El cumplimiento cuenta solo los días ya vividos del periodo, no los que faltan.": "Compliance counts only the days already lived in the period, not the ones still to come.",
   "El detalle sesión a sesión se omite en el informe anual: son cientos de registros y su sitio es el informe mensual.": "The session-by-session detail is left out of the yearly report: it’s hundreds of records, and it belongs in the monthly report.",
@@ -2593,7 +2592,6 @@ const EN: Record<string, string> = {
   "Sincronizado": "In sync",
   "Desvinculado": "Unlinked",
   "Vinculado": "Linked",
-  "Cada equipo con tu sesión aparece aquí. «Corregir» sincroniza datos, imágenes y Wire en este equipo y se lo pide a los demás: lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "Every device signed in to your account shows up here. “Fix” syncs data, images and Wire on this device and asks the others to do the same: they do it within a few minutes if Frame is open, or when they open it.",
   "sincronización|Corregir": "Fix",
   "Laptop": "Laptop",
   "Celular": "Phone",
@@ -2868,6 +2866,9 @@ const EN: Record<string, string> = {
   "conecta Wire aquí": "connect Wire here",
   "activa Wire en ese equipo": "turn on Wire on that device",
   "necesita Wire": "needs Wire",
+  "El audio de esta grabación no está en este dispositivo. Si la grabaste en otro, llega solo con Wire.": "The audio of this recording is not on this device. If you recorded it on another one, it arrives on its own with Wire.",
+  "Tus equipos se sincronizan solos. «Corregir» es para cuando algo se atasca: repasa todo a fondo en este equipo (datos, imágenes y Wire) y se lo pide a los demás, que lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "Your devices sync on their own. “Fix” is for when something gets stuck: it goes through everything thoroughly on this device (data, images and Wire) and asks the others to do the same, which they do within a few minutes if Frame is open, or when it is opened.",
+  "El audio de una grabación viaja con la extensión Wire; sin ella, se queda en el dispositivo donde se grabó.": "A recording’s audio travels with the Wire extension; without it, it stays on the device where it was recorded.",
 };
 
 export default EN;

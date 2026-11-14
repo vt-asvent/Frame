@@ -1933,10 +1933,42 @@ async function devicesAcross() {
   shutdown();
 }
 
+async function recordingsAcross() {
+  console.log('\n▶ Grabaciones de voz: la ficha viaja con la cuenta; la ruta de su archivo, no (2.0.0)');
+  resetWorld();
+  const laptop = device('laptop');
+  const tablet = device('tablet');
+  load(laptop, fixture());
+  const here = 'C:\\Users\\alumna\\Documents\\Frame\\Grabaciones\\g1.webm';
+  laptop.frame.put('recordings', [{ id: 'g1', name: 'Clase de Historia', importance: 'media', recordedAt: '2026-11-13T15:00:00.000Z', courseId: 'c2', durationSec: 620, mimeType: 'audio/webm', filePath: here }]);
+  laptop.frame.start();
+  await sleep(120);
+  tablet.frame.start();
+  check(await settle(), 'primer encuentro: se calma');
+  const arrived = tablet.frame.get('recordings') ?? [];
+  check(arrived.length === 1 && arrived[0].name === 'Clase de Historia' && arrived[0].durationSec === 620 && !('filePath' in arrived[0]), 'la ficha llega a la tablet, sin la ruta del archivo de la laptop');
+  check(!JSON.stringify(cloud.row?.data ?? {}).includes('g1.webm'), 'la ruta no sale del equipo: la nube no la tiene');
+
+  edit(tablet, 'recordings', 'g1', { name: 'Historia: la Guerra Fría', importance: 'alta' });
+  check(await settle(), 'se calma');
+  const back = (laptop.frame.get('recordings') ?? [])[0];
+  check(back?.name === 'Historia: la Guerra Fría' && back?.importance === 'alta' && back?.filePath === here, 'lo cambiado en la tablet llega a la laptop, que conserva su ruta');
+
+  add(tablet, 'recordings', { id: 'g2', name: 'Recordatorio', importance: 'baja', recordedAt: '2026-11-13T16:00:00.000Z', durationSec: 12, mimeType: 'audio/mp4' });
+  check(await settle(), 'se calma');
+  check((laptop.frame.get('recordings') ?? []).map((r) => r.id).sort().join() === 'g1,g2', 'una grabada en la tablet aparece en la laptop');
+
+  drop(laptop, 'recordings', 'g1');
+  check(await settle(), 'se calma');
+  check((tablet.frame.get('recordings') ?? []).map((r) => r.id).join() === 'g2', 'borrar una en la laptop la borra en la tablet');
+  check((laptop.frame.get('recordings') ?? []).map((r) => r.id).join() === 'g2', 'y no vuelve a la laptop');
+  shutdown();
+}
+
 const started = Date.now();
 // --solo=dos|tres|playlists|relojes|convivencia|anterior|futuro|imagenes|corazon|recuperacion|dispositivos|referencia corre solo ese grupo.
 const only = process.argv.find((arg) => arg.startsWith('--solo='))?.slice('--solo='.length);
-const groups = { dos: twoDevices, tres: threeDevices, playlists: playlistsAcross, relojes: clockSkew, convivencia: withOldVersion, anterior: withPrevious, futuro: futureKeys, imagenes: images, corazon: favorites, recuperacion: recovery, dispositivos: devicesAcross, referencia: oldPair };
+const groups = { dos: twoDevices, tres: threeDevices, playlists: playlistsAcross, relojes: clockSkew, convivencia: withOldVersion, anterior: withPrevious, futuro: futureKeys, imagenes: images, corazon: favorites, recuperacion: recovery, dispositivos: devicesAcross, grabaciones: recordingsAcross, referencia: oldPair };
 for (const [name, run] of Object.entries(groups)) {
   if (only ? only === name : name !== 'referencia' || !process.argv.includes('--sin-referencia')) await run();
 }

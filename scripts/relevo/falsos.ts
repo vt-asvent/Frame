@@ -81,6 +81,9 @@ export const deleteSecret = async (_ext: string, name: string) => void equipo().
 export const getImage = async (key: string): Promise<string | null> => equipo().imagenes.get(key)?.dataUrl ?? null;
 export const getImageRecord = async (key: string) => equipo().imagenes.get(key) ?? null;
 export const saveImage = async (key: string, dataUrl: string, options: { at?: number } = {}) => void equipo().imagenes.set(key, { dataUrl, at: options.at ?? Date.now() });
+export const listRecordingAudioIds = async (): Promise<Set<string>> => new Set(equipo().grabaciones.keys());
+export const getRecordingAudio = async (id: string): Promise<Blob | undefined> => equipo().grabaciones.get(id);
+export const saveRecordingAudio = async (id: string, blob: Blob) => void equipo().grabaciones.set(id, blob);
 
 // --- @/lib/image-refs ---
 export const readImageRefs = () => equipo().refs;

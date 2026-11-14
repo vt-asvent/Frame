@@ -686,7 +686,6 @@ const DICT: Record<string, string> = {
   "El archivo original ya no existe": "Le fichier d’origine n’existe plus",
   "El archivo ya no está en el disco.": "Le fichier n’est plus sur le disque.",
   "El audio de": "L’audio de",
-  "El audio de esta grabación ya no está disponible.": "L’audio de cet enregistrement n’est plus disponible.",
   "El audio se eliminó definitivamente de tu equipo.": "L’audio a été supprimé définitivement de ton ordinateur.",
   "El cumplimiento cuenta solo los días ya vividos del periodo, no los que faltan.": "La réalisation ne compte que les jours déjà passés de la période, pas ceux à venir.",
   "El detalle sesión a sesión se omite en el informe anual: son cientos de registros y su sitio es el informe mensual.": "Le détail session par session est omis dans le rapport annuel : ce sont des centaines d’entrées, et leur place est dans le rapport mensuel.",
@@ -2591,7 +2590,6 @@ const DICT: Record<string, string> = {
   "Sincronizado": "Synchronisé",
   "Desvinculado": "Dissocié",
   "Vinculado": "Associé",
-  "Cada equipo con tu sesión aparece aquí. «Corregir» sincroniza datos, imágenes y Wire en este equipo y se lo pide a los demás: lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "Chaque appareil connecté à ton compte apparaît ici. « Corriger » synchronise les données, les images et Wire sur cet appareil et le demande aux autres : ils le font en quelques minutes si Frame est ouvert, ou à son ouverture.",
   "sincronización|Corregir": "Corriger",
   "Laptop": "Ordinateur portable",
   "Celular": "Téléphone",
@@ -2866,6 +2864,9 @@ const DICT: Record<string, string> = {
   "conecta Wire aquí": "connecte Wire ici",
   "activa Wire en ese equipo": "active Wire sur cet appareil-là",
   "necesita Wire": "nécessite Wire",
+  "El audio de esta grabación no está en este dispositivo. Si la grabaste en otro, llega solo con Wire.": "L’audio de cet enregistrement n’est pas sur cet appareil. Si tu l’as enregistré sur un autre, il arrive tout seul avec Wire.",
+  "Tus equipos se sincronizan solos. «Corregir» es para cuando algo se atasca: repasa todo a fondo en este equipo (datos, imágenes y Wire) y se lo pide a los demás, que lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "Tes appareils se synchronisent tout seuls. « Corriger » sert quand quelque chose se bloque : il repasse tout à fond sur cet appareil (données, images et Wire) et le demande aux autres, qui le font en quelques minutes si Frame est ouvert, ou à son ouverture.",
+  "El audio de una grabación viaja con la extensión Wire; sin ella, se queda en el dispositivo donde se grabó.": "L’audio d’un enregistrement voyage avec l’extension Wire ; sans elle, il reste sur l’appareil où il a été enregistré.",
 };
 
 export default DICT;

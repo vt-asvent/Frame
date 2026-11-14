@@ -58,6 +58,7 @@ import { startLiveSync } from '@/lib/supabase/live-sync';
 import { startAccountSettings } from '@/lib/account-settings';
 import { startImageRefs } from '@/lib/image-refs';
 import { startSyncCheck } from '@/lib/sync-check';
+import { startRecordingsSweep } from '@/lib/recordings-sync';
 import { startDevices } from '@/lib/devices';
 import { resetSyncStatus } from '@/lib/sync-status';
 import SyncIssuesDialog from '@/components/sync/SyncIssuesDialog';
@@ -392,6 +393,7 @@ function MainApp({ children, userProfile }: { children: ReactNode; userProfile: 
     const stopImageRefs = startImageRefs(uid);
     const stopSettings = startAccountSettings(uid);
     const stopSyncCheck = startSyncCheck(uid);
+    const stopRecordings = startRecordingsSweep(uid);
     // 1.9.2: este equipo en Ajustes → Dispositivos (lib/devices.ts).
     const stopDevices = startDevices(uid);
     const handleUnload = () => { void pushToCloud(uid); };
@@ -403,6 +405,7 @@ function MainApp({ children, userProfile }: { children: ReactNode; userProfile: 
       stopImageRefs();
       stopSettings();
       stopSyncCheck();
+      stopRecordings();
       stopDevices();
       resetSyncStatus();
       window.removeEventListener('beforeunload', handleUnload);

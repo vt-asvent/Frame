@@ -3,9 +3,11 @@ import { toCloudSongIds, toLocalSongIds } from '@/lib/song-keys';
 // Claves de estado de negocio sincronizables (sufijo `_<uid>`).
 // Excluye música (archivos en IndexedDB) e imágenes; solo se respalda el estado de negocio.
 //
-// Grabaciones ('recordings'): la ficha es JSON, pero el audio vive en
-// IndexedDB igual que la música. Restaurar solo la ficha dejaría tarjetas
-// mudas, así que queda fuera a propósito.
+// Grabaciones ('recordings', desde la 2.0.0): viaja la ficha (nombre, tipo,
+// importancia, asignatura, duración); el audio vive en IndexedDB, como la
+// música, y lo lleva Wire (relay.ts). Sin Wire la ficha se ve en los demás
+// equipos y dice dónde está su audio. La ruta del archivo en disco
+// (`filePath`, solo escritorio) es de cada equipo y no viaja.
 //
 // Retiradas en la 1.6.8 (ver RETIRED_KEYS en sync-merge.ts): 'classSessions'
 // y 'schedules' (invisibles desde la 1.6.6), 'playHistory' (sin escribirse
@@ -75,6 +77,8 @@ export const SCOPED_KEYS = [
   // Vínculo entre los nombres del horario y las asignaturas (1.9.3,
   // timetable-links.ts): una ficha por nombre.
   'subjectLinks',
+  // Grabaciones de voz (2.0.0): la ficha; el audio va por Wire (ver arriba).
+  'recordings',
 ] as const;
 
 /** Las claves que esta versión conoce (lo demás de la nube es de una versión más nueva). */
@@ -105,11 +109,18 @@ const write = (key: string, value: unknown): boolean => {
 };
 
 /**
- * Forma «de nube» de una clave: lo que viaja. Solo cambia en las playlists,
- * cuyas canciones viajan por su clave (song-keys.ts) y no por el id de este
- * dispositivo.
+ * Forma «de nube» de una clave: lo que viaja. Cambia en las playlists, cuyas
+ * canciones viajan por su clave (song-keys.ts) y no por el id de este
+ * dispositivo, y en las grabaciones, que dejan aquí la ruta de su archivo.
  */
 export function toCloudForm(uid: string, key: string, value: unknown): unknown {
+  if (key === 'recordings' && Array.isArray(value)) {
+    return value.map((record) => {
+      if (!record || typeof record !== 'object' || !('filePath' in record)) return record;
+      const { filePath: _here, ...travels } = record as Record<string, unknown>;
+      return travels;
+    });
+  }
   if (key !== 'playlists' || !Array.isArray(value)) return value;
   return value.map((playlist) =>
     playlist && typeof playlist === 'object' && Array.isArray((playlist as { songIds?: unknown }).songIds)
@@ -120,6 +131,20 @@ export function toCloudForm(uid: string, key: string, value: unknown): unknown {
 
 /** Forma de este dispositivo de lo que llega de la nube (la inversa de la anterior). */
 export function toLocalForm(uid: string, key: string, value: unknown): unknown {
+  if (key === 'recordings' && Array.isArray(value)) {
+    // La ruta del archivo de cada grabación es de este equipo: se conserva la que ya tenía.
+    const stored = read(`recordings_${uid}`);
+    const paths = new Map<unknown, unknown>();
+    for (const record of Array.isArray(stored) ? (stored as Record<string, unknown>[]) : []) {
+      if (record && typeof record.filePath === 'string') paths.set(record.id, record.filePath);
+    }
+    // Y solo esa: una ficha que llega nunca trae ruta propia (la de otro equipo aquí no significa nada).
+    return value.map((record) => {
+      if (!record || typeof record !== 'object') return record;
+      const { filePath: _foreign, ...card } = record as Record<string, unknown>;
+      return paths.has(card.id) ? { ...card, filePath: paths.get(card.id) } : card;
+    });
+  }
   if (key !== 'playlists' || !Array.isArray(value)) return value;
   return value.map((playlist) =>
     playlist && typeof playlist === 'object' && Array.isArray((playlist as { songIds?: unknown }).songIds)

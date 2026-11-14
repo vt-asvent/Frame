@@ -648,6 +648,36 @@ static EMBED_PROFILE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 /// a abrir con la nueva.
 static DRIVE_ACCOUNT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+/// Lo último que la página pidió para un recuadro (2.0.0). Las llamadas son asíncronas: pueden llegar cruzadas, y
+/// crear el webview tarda. Al pasar deprisa de YouTube a Música, el «apártate» llegaba cuando el webview aún no
+/// existía (y no hacía nada), y al terminar de crearse quedaba encima de la otra interfaz. Ahora cada petición
+/// trae su número de orden: una atrasada se descarta, y al terminar de crear se aplica lo ÚLTIMO pedido.
+#[derive(Clone, Copy)]
+struct EmbedWant {
+    seq: f64,
+    visible: bool,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+static EMBED_WANT: std::sync::Mutex<[Option<EmbedWant>; 4]> = std::sync::Mutex::new([None; 4]);
+/// Recuadros que se están creando ahora: una segunda petición no crea otro.
+static EMBED_CREATING: [AtomicBool; 4] = [AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false)];
+
+/// Coloca el recuadro donde dice la última petición, o lo aparta si lo último fue ocultarlo.
+fn place_embed(webview: &tauri::Webview, slot: usize) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize};
+    let want = EMBED_WANT.lock().map_err(|e| e.to_string())?[slot];
+    match want {
+        Some(want) if want.visible => {
+            webview.set_size(LogicalSize::new(want.w, want.h)).map_err(|e| e.to_string())?;
+            webview.set_position(LogicalPosition::new(want.x, want.y)).map_err(|e| e.to_string())
+        }
+        _ => webview.set_position(LogicalPosition::new(-30000.0, 0.0)).map_err(|e| e.to_string()),
+    }
+}
+
 /// Carpeta de datos de las páginas incrustadas de un perfil.
 fn embed_data_dir(app: &tauri::AppHandle, profile: &str) -> Result<std::path::PathBuf, String> {
     let safe: String = profile
@@ -772,10 +802,22 @@ async fn google_embed_update(
     visible: bool,
     profile: String,
     account: Option<String>,
+    seq: f64,
 ) -> Result<(), String> {
     use tauri::{LogicalPosition, LogicalSize};
 
     let (label, base, home) = embed_service(&kind).ok_or("Servicio no permitido.")?;
+    let slot = EMBED_LABELS.iter().position(|l| *l == label).unwrap_or(0);
+    let w = width.max(1.0);
+    let h = height.max(1.0);
+    {
+        let mut wants = EMBED_WANT.lock().map_err(|e| e.to_string())?;
+        // Llegó después que una petición más nueva: no cuenta.
+        if wants[slot].map_or(false, |last| last.seq > seq) {
+            return Ok(());
+        }
+        wants[slot] = Some(EmbedWant { seq, visible, x, y, w, h });
+    }
     // Solo Drive se abre con una cuenta concreta: la conectada en Wire.
     let account = if kind == "drive" {
         account.map(|a| a.trim().to_string()).filter(|a| !a.is_empty() && a.len() <= 320)
@@ -793,34 +835,21 @@ async fn google_embed_update(
         }
     }
 
-    const OFFSCREEN: LogicalPosition<f64> = LogicalPosition { x: -30000.0, y: 0.0 };
-    let w = width.max(1.0);
-    let h = height.max(1.0);
-
     if let Some(webview) = app.get_webview(label) {
-        if visible {
-            // Otra cuenta en Wire: Drive se vuelve a abrir con ella.
-            if kind == "drive" {
-                let mut last = DRIVE_ACCOUNT.lock().map_err(|e| e.to_string())?;
-                if *last != account {
-                    *last = account.clone();
-                    let _ = webview.navigate(url.clone());
-                }
+        // Otra cuenta en Wire: Drive se vuelve a abrir con ella.
+        if visible && kind == "drive" {
+            let mut last = DRIVE_ACCOUNT.lock().map_err(|e| e.to_string())?;
+            if *last != account {
+                *last = account.clone();
+                let _ = webview.navigate(url.clone());
             }
-            webview
-                .set_size(LogicalSize::new(w, h))
-                .map_err(|e| e.to_string())?;
-            webview
-                .set_position(LogicalPosition::new(x, y))
-                .map_err(|e| e.to_string())?;
-        } else {
-            webview.set_position(OFFSCREEN).map_err(|e| e.to_string())?;
         }
-        return Ok(());
+        return place_embed(&webview, slot);
     }
 
-    // Aún no existe: solo se crea cuando el recuadro es visible.
-    if !visible {
+    // Aún no existe: solo se crea cuando el recuadro es visible, y una sola vez (si otra petición ya lo está
+    // creando, esa aplicará al terminar lo último pedido).
+    if !visible || EMBED_CREATING[slot].swap(true, Ordering::SeqCst) {
         return Ok(());
     }
     let window = app
@@ -855,10 +884,10 @@ async fn google_embed_update(
                 }
                 tauri::webview::NewWindowResponse::Deny
             });
-    window
-        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    let created = window.add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h));
+    EMBED_CREATING[slot].store(false, Ordering::SeqCst);
+    // Mientras se creaba, la página pudo pedir otra cosa (apartarlo, sobre todo): manda lo último.
+    place_embed(&created.map_err(|e| e.to_string())?, slot)
 }
 
 /// URL actual del webview incrustado de YouTube: «Añadir vídeo» de Estudio la
@@ -898,6 +927,51 @@ const MINI_COMPACT: (f64, f64) = (280.0, 56.0);
 /// Mediana con el editor de anotaciones abierto.
 const MINI_TALL: (f64, f64) = (300.0, 300.0);
 
+/// Vigía de la ventana flotante (2.0.0). «Siempre encima» no dura para siempre en Windows: otra ventana que
+/// también lo sea y se active después queda por delante (la barra de tareas, el vistazo al horario, el vídeo
+/// flotante de otra app), y «Mostrar escritorio» la minimiza sin avisar. Mientras exista y esté a la vista, cada
+/// segundo se la vuelve a poner la primera de las que van encima, sin quitarle el foco a nadie.
+fn keep_mini_timer_on_top(app: &tauri::AppHandle) {
+    static WATCHING: AtomicBool = AtomicBool::new(false);
+    if WATCHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            let Some(window) = app.get_webview_window("minitimer") else { break };
+            #[cfg(windows)]
+            if let Ok(hwnd) = window.hwnd() {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongW, IsIconic, IsWindowVisible, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS,
+                    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNOACTIVATE, WS_EX_TOPMOST,
+                };
+                let hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
+                // SAFETY: el identificador es de una ventana viva de este proceso; las llamadas solo cambian su
+                // sitio en la pila de ventanas, y con ASYNCWINDOWPOS no esperan al hilo que la dibuja.
+                unsafe {
+                    if IsWindowVisible(hwnd) != 0 {
+                        if IsIconic(hwnd) != 0 {
+                            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                        }
+                        let stay = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS;
+                        // Si perdió el «siempre encima» (algo la mandó al fondo), Windows no se lo devuelve con solo
+                        // pedirlo: hay que quitárselo del todo y dárselo de nuevo (comprobado el 13-nov-2026).
+                        if GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST == 0 {
+                            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, stay);
+                        }
+                        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, stay);
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = window;
+        }
+        WATCHING.store(false, Ordering::SeqCst);
+    });
+}
+
 #[tauri::command]
 async fn open_mini_timer(
     app: tauri::AppHandle,
@@ -921,6 +995,7 @@ async fn open_mini_timer(
         let _ = w.set_resizable(false);
         let _ = w.show();
         let _ = w.set_focus();
+        keep_mini_timer_on_top(&app);
         return Ok(());
     }
 
@@ -946,6 +1021,7 @@ async fn open_mini_timer(
         let size = monitor.size().to_logical::<f64>(scale);
         let _ = w.set_position(tauri::LogicalPosition::new(size.width - w_px - 24.0, 64.0));
     }
+    keep_mini_timer_on_top(&app);
     Ok(())
 }
 

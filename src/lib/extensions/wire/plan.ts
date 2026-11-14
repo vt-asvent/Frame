@@ -4,8 +4,8 @@
 // Lógica pura, sin red ni almacenamiento (la prueba la ejecuta en Node con un
 // Drive falso: scripts/probar-wire.mjs). El relevo:
 //
-// - Cada equipo publica en Drive su ficha: qué tiene (canciones por su clave,
-//   adjuntos y archivos de recursos por su id), qué rechazó (lo que el
+// - Cada equipo publica en Drive su ficha: qué tiene (canciones por su clave;
+//   adjuntos, archivos de recursos y, desde la 2.0.0, grabaciones por su id), qué rechazó (lo que el
 //   usuario borró aquí: no se le vuelve a traer), qué tiene con corazón y qué
 //   fijó, y cuándo se le vio por última vez.
 // - Se sube lo que algún otro equipo activo no tiene y no rechazó, y lo que
@@ -25,7 +25,7 @@
 
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type ItemKind = 'song' | 'attachment' | 'note' | 'image';
+export type ItemKind = 'song' | 'attachment' | 'note' | 'image' | 'recording';
 
 export interface DeviceRecord {
   id: string;

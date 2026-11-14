@@ -95,6 +95,15 @@ export function readCursor(uid: string): SyncCursor | null {
   }
 }
 
+/** «Corregir»: la próxima vuelta no se fía de lo que recordaba; baja lo de la nube y lo fusiona entero. */
+export function forgetCursor(uid: string): void {
+  try {
+    localStorage.removeItem(cursorKey(uid));
+  } catch {
+    /* sin almacenamiento no hay cursor que olvidar */
+  }
+}
+
 export function writeCursor(uid: string, cursor: SyncCursor): void {
   try {
     localStorage.setItem(cursorKey(uid), JSON.stringify(cursor));

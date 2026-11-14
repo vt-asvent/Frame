@@ -178,6 +178,16 @@ export const saveRecordingAudio = async (id: string, blob: Blob): Promise<void> 
   });
 };
 
+/** Ids de las grabaciones cuyo audio está en este dispositivo (sin leer los audios). */
+export const listRecordingAudioIds = async (): Promise<Set<string>> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(RECORDINGS_STORE_NAME, 'readonly').objectStore(RECORDINGS_STORE_NAME).getAllKeys();
+    request.onsuccess = () => resolve(new Set(request.result.map(String)));
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export const getRecordingAudio = async (id: string): Promise<Blob | undefined> => {
   const db = await openDB();
   return new Promise((resolve, reject) => {

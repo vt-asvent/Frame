@@ -6,7 +6,7 @@ import { SYNC_RECHECK_EVENT, getSyncStatus, subscribeSyncStatus } from '@/lib/sy
 import { IMAGE_REFS_EVENT, entityOfImage, imageRefsReport } from '@/lib/image-refs';
 import { describeSongKey, isSongKey, libraryIds, subscribeLibrary } from '@/lib/song-keys';
 import { hasAttachment } from '@/lib/file-handles';
-import { listImageKeys } from '@/lib/music-db';
+import { listImageKeys, listRecordingAudioIds } from '@/lib/music-db';
 import { richNoteToLine } from '@/lib/rich-note';
 import { monthName } from '@/lib/timetable';
 import { CLOUD_APPLIED_EVENT } from '@/lib/supabase/sync';
@@ -28,8 +28,8 @@ import { dateLocale, subscribeLang, tr } from '@/lib/i18n';
 //   · canciones de una playlist que no están en este dispositivo (viajan con
 //     Wire). Las que el usuario borró AQUÍ no cuentan (1.9.9): no le faltan,
 //     las quitó él; contarlas dejaba un aviso que nada podía quitar;
-//   · adjuntos de tareas, eventos y recursos que se quedaron en el
-//     dispositivo donde se añadieron.
+//   · adjuntos de tareas, eventos y recursos, y el audio de las grabaciones
+//     (2.0.0), que se quedaron en el dispositivo donde se añadieron.
 //
 // La campana muestra cuántas son; al pulsar, un recuadro las enumera
 // (SyncIssuesDialog).
@@ -69,6 +69,7 @@ const WHERE: Record<string, { where: () => string; route: string; label: (row: R
   loreFavorites: { where: () => tr('Biblioteca'), route: '/biblioteca', label: () => tr('Favoritos') },
   loreStudy: { where: () => tr('Biblioteca'), route: '/biblioteca', label: () => tr('Repaso de tarjetas') },
   subjectLinks: { where: () => tr('Inicio'), route: '/', label: (row) => tr('Asignatura de «{name}» en el horario', { name: String(row.id ?? '') }) },
+  recordings: { where: () => tr('Grabaciones'), route: '/', label: (row) => String(row.name ?? '') },
   songFavorites: {
     where: () => tr('Música'),
     route: '/music',
@@ -263,6 +264,23 @@ export async function computeSyncIssues(uid: string): Promise<SyncIssue[]> {
       why: tr('Los archivos adjuntos viajan con la extensión Wire; sin ella, se quedan en el dispositivo donde se añadieron.'),
       route: '/knowledge',
     });
+  }
+
+  // --- 6. Grabaciones cuyo audio está en otro dispositivo ---
+  const recordings = Array.isArray(data.recordings) ? (data.recordings as { id?: string; name?: string }[]) : [];
+  if (recordings.length > 0) {
+    const audios = await listRecordingAudioIds().catch(() => null);
+    for (const recording of audios ? recordings : []) {
+      if (!recording.id || audios!.has(recording.id)) continue;
+      issues.push({
+        id: `recording:${recording.id}`,
+        kind: 'attachment',
+        where: tr('Grabaciones'),
+        what: short(String(recording.name ?? '')),
+        why: tr('El audio de una grabación viaja con la extensión Wire; sin ella, se queda en el dispositivo donde se grabó.'),
+        route: '/',
+      });
+    }
   }
 
   return issues;

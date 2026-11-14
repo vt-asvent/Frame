@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { authorizeDrive, refreshGoogleAccess, revokeGoogleToken } from '@/lib/google/auth';
 import { extRead, extWrite, onExtensionTeardown } from '@/lib/extensions/store';
 import { libraryKeys } from '@/lib/song-keys';
-import { getImage, getImageRecord, saveImage } from '@/lib/music-db';
+import { getImage, getImageRecord, getRecordingAudio, listRecordingAudioIds, saveImage, saveRecordingAudio } from '@/lib/music-db';
 import { entityOfImage, isEntityImageKey, readImageRefs, reconcileImageRefs, type ImageRef } from '@/lib/image-refs';
 import { fingerprint } from '@/lib/profile-scope';
 import { importLyrics, storedLyrics, type SongLyrics } from '@/lib/lyrics';
@@ -23,9 +23,10 @@ import { forgetAllRemoved, forgetRemovedSongs, removedSongs } from './removed';
 // En el Drive del usuario, una carpeta «Frame · Wire» por cuenta de Frame
 // (marcada con un resumen de su id, no con el id): la ficha de cada equipo
 // («Equipo · …json») y lo que está de paso (canciones con su ficha de datos,
-// adjuntos de tareas, archivos de recursos y, desde la 1.9.2, las imágenes
-// propias de asignaturas, colecciones y playlists). Lo que llega a un equipo
-// entra en Frame como si se hubiera importado ahí.
+// adjuntos de tareas, archivos de recursos, desde la 1.9.2 las imágenes
+// propias de asignaturas, colecciones y playlists y, desde la 2.0.0, el audio
+// de las grabaciones de voz). Lo que llega a un equipo entra en Frame como si
+// se hubiera importado ahí.
 //
 // 1.9.2: lo que ya está en todos los equipos se borra de Drive del todo (en
 // su papelera seguía ocupando espacio un mes); cuando algo viaja, los demás
@@ -94,10 +95,13 @@ const NETWORK_FAILS_SHOWN = 5;
 const HELLO_EVERY_MS = 10 * 60_000;
 /**
  * Versión del relevo que escribe cada equipo en su ficha. 1: hasta Frame 1.9.5. 2: desde la
- * 1.9.6 (Android 1.3.5). El de la 1 tenía un fallo al recibir canciones con cola pendiente (las
- * bajaba otra vez, duplicadas): a un equipo así no se le envían canciones hasta que se actualice.
+ * 1.9.6 (Android 1.3.5). 3: desde la 2.0.0. El de la 1 tenía un fallo al recibir canciones con
+ * cola pendiente (las bajaba otra vez, duplicadas): a un equipo así no se le envían canciones
+ * hasta que se actualice. Los de la 1 y la 2 no conocen las grabaciones: no se les esperan.
  */
-const RELAY_VERSION = 2;
+const RELAY_VERSION = 3;
+const SONGS_SAFE_FROM = 2;
+const RECORDINGS_FROM = 3;
 
 export interface WireConnection {
   email: string;
@@ -389,6 +393,21 @@ const noteFilesHere = new Set<string>();
 /** Imágenes propias (clave con su huella) que ya se vio que están aquí. */
 const imagesHere = new Set<string>();
 
+/** Lo que el relevo necesita de la ficha de una grabación (`recordings_<uid>`, que viaja con la cuenta). */
+interface RecordingCard {
+  id: string;
+  name?: string;
+  mimeType?: string;
+}
+function readRecordings(uid: string): RecordingCard[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(`recordings_${uid}`) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((r): r is RecordingCard => !!r && typeof (r as RecordingCard).id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 /** «i:<clave de la imagen>:<huella>»: si la imagen cambia, es otra. */
 const imageItemKey = (ref: ImageRef) => `i:${ref.id}:${ref.h}`;
 const parseImageKey = (key: string) => /^i:(.+):([^:]+)$/.exec(key);
@@ -408,6 +427,8 @@ interface Inventory {
   attachments: Map<string, { taskName: string }>;
   noteFiles: Map<string, Note>;
   images: Map<string, ImageRef>;
+  /** Grabaciones con ficha aquí, por su clave «r:<id>». */
+  recordings: Map<string, RecordingCard>;
   /** Borrados del usuario ya recogidos en `view.declined`. */
   consumed: Set<string>;
   uid: string;
@@ -507,9 +528,30 @@ async function inventory(ctx: WireContext, deviceId: string, state: RelayState):
     }
   }
 
+  // Grabaciones de voz (2.0.0): la ficha viaja con la cuenta; el audio, por aquí.
+  const recordings = new Map<string, RecordingCard>();
+  const cards = readRecordings(ctx.uid);
+  const audios = cards.length > 0 ? await listRecordingAudioIds().catch(() => new Set<string>()) : new Set<string>();
+  for (const card of cards) {
+    const key = `r:${card.id}`;
+    recordings.set(key, card);
+    if (audios.has(card.id)) {
+      have.add(key);
+      uploadable.set(key, 'recording');
+    }
+  }
+
   // Lo rechazado: solo lo que consta.
   const recordHere = (key: string) =>
-    key.startsWith('a:') ? attachments.has(key) : key.startsWith('n:') ? noteFiles.has(key) : key.startsWith('i:') ? images.has(key) : true;
+    key.startsWith('a:')
+      ? attachments.has(key)
+      : key.startsWith('n:')
+        ? noteFiles.has(key)
+        : key.startsWith('i:')
+          ? images.has(key)
+          : key.startsWith('r:')
+            ? recordings.has(key)
+            : true;
   const declined = new Set(state.declined);
   // Canciones: las que el usuario borró aquí con Wire conectado (removed.ts).
   const here = new Set(ctx.songs.map((song) => song.id));
@@ -536,6 +578,7 @@ async function inventory(ctx: WireContext, deviceId: string, state: RelayState):
     attachments,
     noteFiles,
     images,
+    recordings,
     consumed,
     uid: ctx.uid,
   };
@@ -745,7 +788,7 @@ async function readDevices(drive: Drive, files: DriveFile[]): Promise<{ records:
 const toItem = (file: DriveFile): RelayItem | null => {
   const p = file.appProperties;
   if (p.frameWire !== 'item' || !p.key || !p.from) return null;
-  const kind = p.kind === 'song' || p.kind === 'attachment' || p.kind === 'note' || p.kind === 'image' ? p.kind : null;
+  const kind = p.kind === 'song' || p.kind === 'attachment' || p.kind === 'note' || p.kind === 'image' || p.kind === 'recording' ? p.kind : null;
   if (!kind) return null;
   return {
     id: file.id,
@@ -864,6 +907,15 @@ const recentUploads = new Map<string, { item: RelayItem; at: number }>();
 const RECENT_UPLOAD_MS = 60_000;
 /** Un reloj que no salta aunque cambien la hora del equipo. */
 const steady = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/** «Corregir»: la próxima vuelta vuelve a comprobar qué archivos están aquí de verdad y no descansa de nada. */
+export function forgetWireChecks(): void {
+  noteFilesHere.clear();
+  imagesHere.clear();
+  stubborn.clear();
+  pausedUntil = 0;
+  pauseSteps = 0;
+}
 
 /**
  * Pide una vuelta pronto (al cambiar la biblioteca, al fijar algo…). Con 0 la
@@ -1063,15 +1115,22 @@ async function cycle(ctx: WireContext): Promise<{ moved: number; pending: number
     // cuenta) no se espera. Si la ficha llega, vuelve a pedirse (ver `inventory`).
     else if (item.kind === 'attachment' && !inv.attachments.has(item.key)) inv.view.declined.add(item.key);
     else if (item.kind === 'note' && !inv.noteFiles.has(item.key)) inv.view.declined.add(item.key);
+    else if (item.kind === 'recording' && !inv.recordings.has(item.key)) inv.view.declined.add(item.key);
     // Lo que pesa más de lo que este equipo acepta: que los demás no lo guarden en Drive por él.
     else if (item.size > MAX_FILE) inv.view.declined.add(item.key);
+  }
+  // Un equipo con un relevo anterior no conoce las grabaciones: ni las baja ni las cuenta. Se le da por servido,
+  // para que no se queden en Drive esperándole.
+  const recordingKeys = [...items.filter((i) => i.kind === 'recording').map((i) => i.key), ...[...inv.view.uploadable].filter(([, kind]) => kind === 'recording').map(([key]) => key)];
+  if (recordingKeys.length > 0) {
+    for (const record of records) if ((versions.get(record.id) ?? 1) < RECORDINGS_FROM) record.declined = [...new Set([...record.declined, ...recordingKeys])];
   }
   const plan = planCycle(inv.view, records, items);
   const names = new Map(records.map((r) => [r.id, r.name]));
   names.set(me.id, me.name);
   // Equipos activos con un relevo anterior (ver RELAY_VERSION): una canción que alguno de ellos
   // aún no tiene no se sube; la bajaría duplicada. Lo demás (adjuntos, imágenes) sí: eso lo recibía bien.
-  const old = plan.activeOthers.filter((r) => (versions.get(r.id) ?? 1) < RELAY_VERSION);
+  const old = plan.activeOthers.filter((r) => (versions.get(r.id) ?? 1) < SONGS_SAFE_FROM);
   if (old.length > 0) {
     const wouldReach = (key: string) => old.some((r) => !r.have.includes(key) && !r.declined.includes(key));
     plan.upload = plan.upload.filter((job) => job.kind !== 'song' || !wouldReach(job.key));
@@ -1151,7 +1210,7 @@ async function cycle(ctx: WireContext): Promise<{ moved: number; pending: number
   // Que el verificador y los avisos dejen de decir que la imagen es de otro equipo.
   if (plan.download.some((i) => i.kind === 'image' && inv.view.have.has(i.key))) await reconcileImageRefs(ctx.uid).catch(() => undefined);
   // Un adjunto o un archivo de recurso que llegó ya no falta: que el verificador lo vea ahora.
-  if (plan.download.some((i) => (i.kind === 'attachment' || i.kind === 'note') && inv.view.have.has(i.key))) window.dispatchEvent(new Event(SYNC_RECHECK_EVENT));
+  if (plan.download.some((i) => (i.kind === 'attachment' || i.kind === 'note' || i.kind === 'recording') && inv.view.have.has(i.key))) window.dispatchEvent(new Event(SYNC_RECHECK_EVENT));
 
   // 5. Subir lo que otro equipo no tiene (o lo que va para siempre), sin llenar el Drive.
   transfers = 0;
@@ -1345,6 +1404,13 @@ async function receive(drive: Drive, item: RelayItem, metas: Map<string, DriveFi
       await storeAttachmentCopy(item.key.slice(2), new File([blob], item.name, { type: blob.type }));
       return true;
     }
+    if (item.kind === 'recording') {
+      const card = inv.recordings.get(item.key);
+      if (!card) return false;
+      // Con el tipo de su ficha: el reproductor lo necesita y Drive no siempre lo devuelve.
+      await saveRecordingAudio(card.id, card.mimeType ? new Blob([blob], { type: card.mimeType }) : blob);
+      return true;
+    }
     await saveImage(`noteFile_${item.key.slice(2)}`, await blobToDataUrl(blob));
     noteFilesHere.add(item.key.slice(2));
     return true;
@@ -1390,6 +1456,12 @@ async function send(
     if (!resolved || resolved.file.size > MAX_FILE) return null;
     blob = resolved.file;
     name = safeName(resolved.file.name);
+  } else if (job.kind === 'recording') {
+    const card = inv.recordings.get(job.key);
+    const audio = card ? await getRecordingAudio(card.id).catch(() => undefined) : undefined;
+    if (!card || !audio || audio.size === 0 || audio.size > MAX_FILE) return null;
+    blob = audio;
+    name = safeName(`${tr('Grabación')} · ${card.name || card.id}`) + (/mp4|m4a|aac/.test(audio.type) ? '.m4a' : /mpeg|mp3/.test(audio.type) ? '.mp3' : '.webm');
   } else if (job.kind === 'image') {
     const ref = inv.images.get(job.key);
     const local = ref ? await getImageRecord(ref.id).catch(() => null) : null;

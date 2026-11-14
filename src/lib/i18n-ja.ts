@@ -686,7 +686,6 @@ const DICT: Record<string, string> = {
   "El archivo original ya no existe": "元のファイルはもう存在しません",
   "El archivo ya no está en el disco.": "ファイルはもうディスク上にありません。",
   "El audio de": "長さ",
-  "El audio de esta grabación ya no está disponible.": "この録音の音声はもう利用できません。",
   "El audio se eliminó definitivamente de tu equipo.": "音声はこのパソコンから完全に削除されました。",
   "El cumplimiento cuenta solo los días ya vividos del periodo, no los que faltan.": "達成状況は期間中のすでに過ぎた日だけを数え、残りの日は含みません。",
   "El detalle sesión a sesión se omite en el informe anual: son cientos de registros y su sitio es el informe mensual.": "セッションごとの詳細は年間レポートには含めません。記録が数百件になるため、月間レポートで確認してください。",
@@ -2591,7 +2590,6 @@ const DICT: Record<string, string> = {
   "Sincronizado": "同期済み",
   "Desvinculado": "リンク解除",
   "Vinculado": "リンク済み",
-  "Cada equipo con tu sesión aparece aquí. «Corregir» sincroniza datos, imágenes y Wire en este equipo y se lo pide a los demás: lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "アカウントでログインしているデバイスがすべてここに表示されます。「修正」を押すと、このデバイスでデータ・画像・Wire を同期し、ほかのデバイスにも同期を依頼します。Frame が開いていれば数分以内に、そうでなければ次に開いたときに同期されます。",
   "sincronización|Corregir": "修正",
   "Laptop": "ノートPC",
   "Celular": "スマートフォン",
@@ -2866,6 +2864,9 @@ const DICT: Record<string, string> = {
   "conecta Wire aquí": "ここで Wire を接続",
   "activa Wire en ese equipo": "その端末で Wire を有効に",
   "necesita Wire": "Wire が必要",
+  "El audio de esta grabación no está en este dispositivo. Si la grabaste en otro, llega solo con Wire.": "この録音の音声はこの端末にありません。別の端末で録音した場合は、Wire で自動的に届きます。",
+  "Tus equipos se sincronizan solos. «Corregir» es para cuando algo se atasca: repasa todo a fondo en este equipo (datos, imágenes y Wire) y se lo pide a los demás, que lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "端末どうしは自動で同期します。「修正」は何かが止まったときのためのものです。この端末ですべて（データ、画像、Wire）を徹底的に確認し、ほかの端末にも依頼します。Frame を開いていれば数分で、そうでなければ開いたときに実行されます。",
+  "El audio de una grabación viaja con la extensión Wire; sin ella, se queda en el dispositivo donde se grabó.": "録音の音声は拡張機能 Wire で届きます。Wire がない場合は、録音した端末に残ります。",
 };
 
 export default DICT;

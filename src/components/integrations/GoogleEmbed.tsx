@@ -16,6 +16,14 @@ import { tr } from '@/lib/i18n';
 //   Google no se recarga al volver a la sección.
 // ============================================================
 
+/**
+ * Número de orden de cada petición al núcleo (2.0.0). Las peticiones son asíncronas y pueden llegar cruzadas; con
+ * él, el núcleo descarta la que llega tarde y, al terminar de crear un recuadro, aplica la última. Es la hora de la
+ * página (crece también entre recargas), siempre mayor que la anterior.
+ */
+let lastSeq = 0;
+const nextSeq = (): number => (lastSeq = Math.max(lastSeq + 0.001, performance.timeOrigin + performance.now()));
+
 function useOnline(): boolean {
   const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
@@ -115,7 +123,7 @@ export default function GoogleEmbed({
       if (key === lastSent && now - lastSentAt < 3000) return;
       lastSent = key;
       lastSentAt = now;
-      void invoke('google_embed_update', payload).catch(() => {});
+      void invoke('google_embed_update', { ...payload, seq: nextSeq() }).catch(() => {});
     };
     const schedule = () => {
       cancelAnimationFrame(raf);
@@ -153,6 +161,7 @@ export default function GoogleEmbed({
         width: 1,
         height: 1,
         visible: false,
+        seq: nextSeq(),
       }).catch(() => {});
     };
   }, [kind, account, allowInModal, paused]);

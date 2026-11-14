@@ -5,7 +5,7 @@ import { SESSION_RESTORED_EVENT } from '@/lib/connection-status';
 import { readCursor, sameInstant } from '@/lib/supabase/sync';
 import { wireWorking } from '@/lib/extensions/wire/relay';
 import { currentSyncIssues, subscribeSyncIssues, type SyncIssue } from '@/lib/sync-check';
-import { SYNC_NOW_EVENT, getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
+import { SYNC_DEEP_EVENT, SYNC_NOW_EVENT, getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
 import { onPeerMessage, sendPeerMessage } from '@/lib/sync-peers';
 import { deviceId } from '@/lib/sync-delta';
 import { APP_VERSION } from '@/lib/version';
@@ -40,8 +40,11 @@ import { APP_VERSION } from '@/lib/version';
 // nadie lata de más cuando no hay quien mire. Un latido que no llega se
 // reintenta solo, cada vez más espaciado.
 //
-// «Corregir»: aquí, una vuelta completa de sincronización (datos, imágenes y
-// Wire); a los demás se les pide lo mismo (resync_at) y lo hacen una vez.
+// «Corregir» es para cuando algo se atascó (lo de todos los días va solo):
+// aquí, una pasada PROFUNDA (2.0.0): los datos se bajan enteros y se fusionan
+// registro a registro, sin fiarse de lo que se recordaba, las imágenes se
+// repasan y Wire vuelve a comprobar qué archivos están de verdad. A los demás
+// equipos se les pide lo mismo (resync_at) y lo hacen una vez.
 // ============================================================
 
 export type DeviceKind = 'laptop' | 'phone' | 'tablet';
@@ -227,9 +230,15 @@ export function setDevicesOpen(open: boolean): void {
   if (open) active?.refresh();
 }
 
+/** Una pasada profunda en este equipo: primero se olvidan los atajos, luego la vuelta completa. */
+function deepSync(): void {
+  window.dispatchEvent(new Event(SYNC_DEEP_EVENT));
+  window.dispatchEvent(new Event(SYNC_NOW_EVENT));
+}
+
 /** «Corregir»: aquí y en los demás equipos vinculados. False: no se les pudo pedir. */
 export async function repairAllDevices(): Promise<boolean> {
-  window.dispatchEvent(new Event(SYNC_NOW_EVENT));
+  deepSync();
   const supabase = getSupabase();
   if (!supabase) return false;
   try {
@@ -385,7 +394,7 @@ export function startDevices(uid: string): () => void {
     } catch {
       /* sin marca se atendería otra vez al reabrir: inofensivo */
     }
-    window.dispatchEvent(new Event(SYNC_NOW_EVENT));
+    deepSync();
   };
 
   const beat = async (): Promise<void> => {

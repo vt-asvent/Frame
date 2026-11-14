@@ -1,3 +1,4 @@
+import { ACCENT_CHANGED_EVENT, accentById, getAccent, getCustomHex, setAccent, setCustomAccent } from '@/lib/accent';
 import { getLang, isClassicLang, isLang, setLang, subscribeLang, type Lang } from '@/lib/i18n';
 import { getCardImageRatio, setCardImageRatio, subscribeCardImageRatio } from '@/lib/card-image-height';
 import { WEATHER_PLACE_EVENT, loadWeatherPlace, saveWeatherPlace, type WeatherPlace } from '@/lib/weather';
@@ -10,7 +11,9 @@ import { getSyncStatus, subscribeSyncStatus } from '@/lib/sync-status';
 //   · el idioma de la app;
 //   · la proporción de las imágenes de las tarjetas de asignaturas y colecciones;
 //   · la ciudad del clima ELEGIDA A MANO (la detectada sola es de cada
-//     dispositivo: depende de dónde está).
+//     dispositivo: depende de dónde está);
+//   · el color de acento (2.0.0), desde que se cambia en algún dispositivo:
+//     hasta entonces cada uno conserva el suyo.
 //
 // Cada uno sigue guardándose donde siempre (lo lee su pantalla sin esperar a
 // nada); aquí solo se copia a `appSettings_<uid>`, que viaja con la cuenta,
@@ -35,6 +38,9 @@ interface AccountSettings {
   cardRatio?: number;
   /** Última ciudad elegida a mano (ausente: nunca se eligió una). */
   weather?: WeatherPlace;
+  /** Color de acento (2.0.0) y, si es el propio, su valor. Ausente: nadie lo ha cambiado desde que viaja. */
+  accent?: string;
+  accentHex?: string;
 }
 
 const storageKey = (uid: string) => `appSettings_${uid}`;
@@ -50,15 +56,20 @@ function read(uid: string): AccountSettings | null {
   }
 }
 
+/** El acento se anota desde que el usuario lo cambia en algún dispositivo de la cuenta. */
+let accentChosen = false;
+
 /** Lo de este dispositivo ahora mismo. */
 function current(previous: AccountSettings | null): AccountSettings {
   const place = loadWeatherPlace();
+  const withAccent = accentChosen || typeof previous?.accent === 'string';
   return {
     lang: getLang(),
     multiLang: true,
     cardRatio: round(getCardImageRatio()),
     // Una ubicación automática no pisa la última ciudad elegida a mano.
     weather: place && !place.auto ? place : previous?.weather,
+    ...(withAccent ? { accent: getAccent(), accentHex: getAccent() === 'personal' ? getCustomHex() : previous?.accentHex } : {}),
   };
 }
 
@@ -86,6 +97,14 @@ async function apply(settings: AccountSettings): Promise<boolean> {
   if (place && typeof place.latitude === 'number' && typeof place.longitude === 'number') {
     const here = loadWeatherPlace();
     if (!here || here.auto || here.latitude !== place.latitude || here.longitude !== place.longitude) saveWeatherPlace(place);
+  }
+  if (typeof settings.accent === 'string') {
+    const hex = typeof settings.accentHex === 'string' && /^#[0-9a-f]{6}$/i.test(settings.accentHex) ? settings.accentHex.toUpperCase() : null;
+    if (settings.accent === 'personal') {
+      if (hex && (getAccent() !== 'personal' || getCustomHex() !== hex)) setCustomAccent(hex);
+    } else if (accentById(settings.accent).id === settings.accent && getAccent() !== settings.accent) {
+      setAccent(accentById(settings.accent).id);
+    }
   }
   return keptOwn;
 }
@@ -127,15 +146,26 @@ export function startAccountSettings(uid: string): () => void {
     afterFirstSync();
   }
   const onCloud = () => void applyStored();
+  // El acento: solo un cambio de verdad (no el pintado inicial) lo hace viajar.
+  let accentWas = `${getAccent()}|${getCustomHex()}`;
+  const onAccent = () => {
+    const now = `${getAccent()}|${getCustomHex()}`;
+    if (now === accentWas) return;
+    accentWas = now;
+    accentChosen = true;
+    record();
+  };
   const stopLang = subscribeLang(record);
   const stopRatio = subscribeCardImageRatio(record);
   window.addEventListener(WEATHER_PLACE_EVENT, record);
+  window.addEventListener(ACCENT_CHANGED_EVENT, onAccent);
   window.addEventListener(CLOUD_APPLIED_EVENT, onCloud);
   return () => {
     stopWaiting?.();
     stopLang();
     stopRatio();
     window.removeEventListener(WEATHER_PLACE_EVENT, record);
+    window.removeEventListener(ACCENT_CHANGED_EVENT, onAccent);
     window.removeEventListener(CLOUD_APPLIED_EVENT, onCloud);
   };
 }

@@ -9,6 +9,7 @@ import {
   Heart,
   Laptop,
   LoaderCircle,
+  Mic,
   Music,
   Pin,
   PinOff,
@@ -207,7 +208,7 @@ export function WirePanel() {
   );
 }
 
-const kindIcon = (item: WireItemView) => (item.kind === 'song' ? Music : item.kind === 'image' ? ImageIcon : FileText);
+const kindIcon = (item: WireItemView) => (item.kind === 'song' ? Music : item.kind === 'image' ? ImageIcon : item.kind === 'recording' ? Mic : FileText);
 
 /** Sección propia en Ajustes: el relevo en vivo, como una ventana de Drive. */
 export function WireSection() {

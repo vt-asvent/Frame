@@ -20,6 +20,12 @@ export type SyncPhase = 'idle' | 'syncing' | 'offline' | 'error';
 
 /** «Sincronizar ahora» (verificador, «Corregir» de Dispositivos): una vuelta completa ya. */
 export const SYNC_NOW_EVENT = 'frame:sync-now';
+/**
+ * «Corregir» (2.0.0): justo antes de `SYNC_NOW_EVENT`, para que esa vuelta no use atajos. La sincronización olvida
+ * qué había visto de la nube (baja todo y lo fusiona registro a registro) y Wire olvida lo que daba por comprobado.
+ * Es el recurso para cuando algo se atascó; lo de todos los días va solo.
+ */
+export const SYNC_DEEP_EVENT = 'frame:sync-deep';
 /** Cambió algo que el verificador cuenta y que no pasa por la sincronización (un adjunto que llegó por Wire). */
 export const SYNC_RECHECK_EVENT = 'frame:sync-recheck';
 

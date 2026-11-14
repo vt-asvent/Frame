@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useCourse } from '@/context/CourseContext';
 import { useExtensionOn } from '@/lib/extensions/store';
-import { noteWirePeer, requestWireCycle, runWireCycle, setWireRuntime, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
+import { forgetWireChecks, noteWirePeer, requestWireCycle, runWireCycle, setWireRuntime, WIRE, type WireContext } from '@/lib/extensions/wire/relay';
 import { onPeerMessage } from '@/lib/sync-peers';
-import { SYNC_NOW_EVENT } from '@/lib/sync-status';
+import { SYNC_DEEP_EVENT, SYNC_NOW_EVENT } from '@/lib/sync-status';
 
 // ============================================================
 // El relevo de Wire en segundo plano (montado en el diseño principal).
@@ -21,7 +21,7 @@ export const wireLive = { visible: false };
 
 export default function WireRuntime() {
   const on = useExtensionOn(WIRE);
-  const { userProfile, songs, addSongs, tasks, archivedTasks, incompleteTasks, notes, archivedNotes, areSongsLoading } = useCourse();
+  const { userProfile, songs, addSongs, tasks, archivedTasks, incompleteTasks, notes, archivedNotes, recordings, areSongsLoading } = useCourse();
   const ctxRef = useRef<WireContext | null>(null);
 
   // Mientras la biblioteca carga no hay vuelta (1.9.6): una lista de canciones aún vacía diría
@@ -57,6 +57,7 @@ export default function WireRuntime() {
       if (ctxRef.current) requestWireCycle(1500);
     });
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener(SYNC_DEEP_EVENT, forgetWireChecks);
     window.addEventListener(SYNC_NOW_EVENT, onNow);
     return () => {
       stop = true;
@@ -64,12 +65,13 @@ export default function WireRuntime() {
       window.clearTimeout(timer);
       stopPeers();
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener(SYNC_DEEP_EVENT, forgetWireChecks);
       window.removeEventListener(SYNC_NOW_EVENT, onNow);
     };
   }, [on, userProfile?.id]);
 
-  // Cambió la biblioteca o los adjuntos: vuelta pronto (con el contexto nuevo).
-  const fingerprint = `${songs.length}:${songs.filter((s) => s.isFavorite).length}:${tasks.length}:${notes.length}`;
+  // Cambió la biblioteca, los adjuntos o las grabaciones (aquí o en otro equipo): vuelta pronto (con el contexto nuevo).
+  const fingerprint = `${songs.length}:${songs.filter((s) => s.isFavorite).length}:${tasks.length}:${notes.length}:${recordings.length}`;
   useEffect(() => {
     if (!on || !ctxRef.current) return;
     const timer = window.setTimeout(() => ctxRef.current && void runWireCycle(ctxRef.current), 5000);

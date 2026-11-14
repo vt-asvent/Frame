@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase/client';
-import { CLOUD_APPLIED_EVENT, adoptRemoteWrite, printOfLocal, pushToCloud, readCursor, writeCursor } from '@/lib/supabase/sync';
+import { CLOUD_APPLIED_EVENT, adoptRemoteWrite, forgetCursor, printOfLocal, pushToCloud, readCursor, writeCursor } from '@/lib/supabase/sync';
 import { SCOPED_KEYS, isApplyingRemote } from '@/lib/storage-snapshot';
 import {
   announcedFromSync,
@@ -16,7 +16,7 @@ import {
 } from '@/lib/sync-delta';
 import { noteLocalEdits } from '@/lib/sync-merge';
 import { deliverPeerMessage, setPeerSender } from '@/lib/sync-peers';
-import { markLiveChange } from '@/lib/sync-status';
+import { SYNC_DEEP_EVENT, markLiveChange } from '@/lib/sync-status';
 import { SYNC_NOW_EVENT } from '@/lib/sync-check';
 
 // ============================================================
@@ -400,6 +400,11 @@ export function startLiveSync(uid: string): () => void {
   };
   // «Sincronizar ahora» del verificador de sincronización.
   const onNow = () => schedule(0);
+  // «Corregir»: sin atajos (la vuelta la pide enseguida `SYNC_NOW_EVENT`) y con la cuenta de fallos a cero.
+  const onDeep = () => {
+    forgetCursor(uid);
+    failures = 0;
+  };
   // La sesión se renovó (o volvió) después de un fallo: lo que esperaba sale
   // ya. Al volver de un rato sin red con la llave vencida, el primer intento
   // falla (supabase-js no reintenta renovarla hasta pasado un minuto) y, sin
@@ -414,6 +419,7 @@ export function startLiveSync(uid: string): () => void {
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('focus', onFocus);
   window.addEventListener('online', onOnline);
+  window.addEventListener(SYNC_DEEP_EVENT, onDeep);
   window.addEventListener(SYNC_NOW_EVENT, onNow);
   const probeEvery = () => {
     const visible = document.visibilityState === 'visible';
@@ -452,6 +458,7 @@ export function startLiveSync(uid: string): () => void {
     document.removeEventListener('visibilitychange', onVisible);
     window.removeEventListener('focus', onFocus);
     window.removeEventListener('online', onOnline);
+    window.removeEventListener(SYNC_DEEP_EVENT, onDeep);
     window.removeEventListener(SYNC_NOW_EVENT, onNow);
     stopAuth?.();
     releasePeers();

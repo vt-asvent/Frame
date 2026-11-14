@@ -686,7 +686,6 @@ const DICT: Record<string, string> = {
   "El archivo original ya no existe": "Исходного файла больше нет",
   "El archivo ya no está en el disco.": "Файла больше нет на диске.",
   "El audio de": "Аудио длительностью",
-  "El audio de esta grabación ya no está disponible.": "Аудио этой записи больше недоступно.",
   "El audio se eliminó definitivamente de tu equipo.": "Аудио навсегда удалено с компьютера.",
   "El cumplimiento cuenta solo los días ya vividos del periodo, no los que faltan.": "Выполнение учитывает только уже прошедшие дни периода, а не оставшиеся.",
   "El detalle sesión a sesión se omite en el informe anual: son cientos de registros y su sitio es el informe mensual.": "Подробности по каждому занятию в годовой отчёт не входят: это сотни записей, им место в месячном отчёте.",
@@ -2591,7 +2590,6 @@ const DICT: Record<string, string> = {
   "Sincronizado": "Синхронизировано",
   "Desvinculado": "Отвязано",
   "Vinculado": "Привязано",
-  "Cada equipo con tu sesión aparece aquí. «Corregir» sincroniza datos, imágenes y Wire en este equipo y se lo pide a los demás: lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "Здесь видны все устройства, где выполнен вход в аккаунт. «Исправить» синхронизирует данные, изображения и Wire на этом устройстве и просит остальные сделать то же: они сделают это за несколько минут, если Frame открыт, или при открытии.",
   "sincronización|Corregir": "Исправить",
   "Laptop": "Ноутбук",
   "Celular": "Телефон",
@@ -2866,6 +2864,9 @@ const DICT: Record<string, string> = {
   "conecta Wire aquí": "подключи Wire здесь",
   "activa Wire en ese equipo": "включи Wire на том устройстве",
   "necesita Wire": "нужен Wire",
+  "El audio de esta grabación no está en este dispositivo. Si la grabaste en otro, llega solo con Wire.": "Звука этой записи нет на этом устройстве. Если она сделана на другом, он придёт сам через Wire.",
+  "Tus equipos se sincronizan solos. «Corregir» es para cuando algo se atasca: repasa todo a fondo en este equipo (datos, imágenes y Wire) y se lo pide a los demás, que lo hacen en unos minutos si tienen Frame abierto, o al abrirlo.": "Устройства синхронизируются сами. «Исправить» нужно, когда что-то застряло: на этом устройстве всё тщательно перепроверяется (данные, изображения и Wire), и о том же просят остальные — они сделают это за несколько минут, если Frame открыт, или при его открытии.",
+  "El audio de una grabación viaja con la extensión Wire; sin ella, se queda en el dispositivo donde se grabó.": "Звук записи передаётся расширением Wire; без него он остаётся на устройстве, где был записан.",
 };
 
 export default DICT;
