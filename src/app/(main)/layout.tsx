@@ -172,17 +172,6 @@ function AppLayout({ children, userProfile }: { children: ReactNode; userProfile
         return () => setUpdateBusyGuard(null);
     }, [isTimerActive, isPlaying]);
 
-    // Lo que guardaban funciones que ya no existen (réplica de Spotify, letras
-    // en línea, la posición recordada de Música): fuera, una vez.
-    useEffect(() => {
-        for (const key of ['spotifyReplicaJob', 'lyricsOfflineAnswer', 'musicLibraryPlace']) {
-            try {
-                localStorage.removeItem(key);
-            } catch {
-                /* sin almacenamiento: nada que limpiar */
-            }
-        }
-    }, []);
 
     // Vistazo al horario desde el borde izquierdo de la pantalla. El vigilante
     // del cursor vive en Rust y nace apagado: encenderlo sin imagen guardada

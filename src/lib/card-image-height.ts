@@ -23,16 +23,12 @@ const REFERENCE_WIDTH = 352;
 export const CARD_RATIO_DEFAULT = 112 / REFERENCE_WIDTH;
 
 const KEY = 'frameCardImageRatio';
-const LEGACY_KEY = 'frameCardImageHeight';
 const listeners = new Set<() => void>();
 
 let ratio = (() => {
   try {
     const saved = Number(localStorage.getItem(KEY));
     if (Number.isFinite(saved) && saved > 0) return saved;
-    // Hasta la 1.6.5 se guardaba el alto en píxeles.
-    const legacy = Number(localStorage.getItem(LEGACY_KEY));
-    if (Number.isFinite(legacy) && legacy > 0) return legacy / REFERENCE_WIDTH;
   } catch {
     /* sin almacenamiento */
   }
@@ -49,7 +45,6 @@ export function setCardImageRatio(next: number) {
   try {
     if (Math.abs(ratio - CARD_RATIO_DEFAULT) < 1e-6) localStorage.removeItem(KEY);
     else localStorage.setItem(KEY, String(ratio));
-    localStorage.removeItem(LEGACY_KEY);
   } catch {
     /* sin almacenamiento: vale para esta sesión */
   }

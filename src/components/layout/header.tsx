@@ -14,17 +14,6 @@ import type { UserProfile } from '@/types';
 import { tr, useLang } from '@/lib/i18n';
 import { ChromePattern, useChromePattern } from '@/components/extensions/animaciones/Mosaic';
 
-// La frase propia (clave `headerQuote`) se retiró en la 1.6.2: la barra ya no
-// muestra un texto escrito a mano sino frases con los datos del usuario. Se
-// borra lo que quedara guardado para no arrastrarlo en los respaldos.
-try {
-  if (typeof window !== 'undefined' && window.localStorage.getItem('headerQuote') !== null) {
-    window.localStorage.removeItem('headerQuote');
-  }
-} catch {
-  /* almacenamiento vetado: no hay nada que limpiar */
-}
-
 /** Cada cuánto cambia la frase: lo bastante para leerla y olvidarse de ella. */
 const ROTATE_MS = 90_000;
 /** Al retirar el ratón, nunca cambia antes de esto: se acaba de leer. */
