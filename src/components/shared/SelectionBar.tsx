@@ -5,8 +5,8 @@ import { tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 // ============================================================
-// La barra de la selección múltiple (2.0.2): flota arriba de la lista
-// mientras haya tarjetas marcadas, sin mover nada de lo que hay debajo.
+// La barra de la selección múltiple (2.0.2): mientras haya tarjetas marcadas,
+// tapa la fila de herramientas (y flota al bajar), sin mover nada de la lista.
 // Cuántas van, «Todo», lo que se hace con ellas y cerrar (o Esc).
 // ============================================================
 
@@ -35,7 +35,7 @@ export default function SelectionBar({
       <div
         role="toolbar"
         aria-label={tr('Selección')}
-        className="mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-primary/50 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur animate-in fade-in-0 slide-in-from-top-2"
+        className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-primary/50 bg-card px-2 py-2.5 shadow-lg animate-in fade-in-0 slide-in-from-top-2"
       >
         <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={onClear} title={tr('Soltar la selección (Esc)')} aria-label={tr('Soltar la selección')}>
           <X className="h-4 w-4" />

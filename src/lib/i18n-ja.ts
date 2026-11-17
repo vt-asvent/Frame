@@ -2883,7 +2883,6 @@ const DICT: Record<string, string> = {
   "1 canción añadida a «{name}»": "「{name}」に 1 曲を追加しました",
   "{n} canciones añadidas a «{name}»": "「{name}」に {n} 曲を追加しました",
   "Añadir a playlist": "プレイリストに追加",
-  "No tienes otras playlists": "ほかのプレイリストはありません",
   "Eliminar de la biblioteca": "ライブラリから削除",
   "¿Eliminar 1 canción?": "1 曲を削除しますか？",
   "¿Eliminar {n} canciones?": "{n} 曲を削除しますか？",

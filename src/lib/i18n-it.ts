@@ -2883,7 +2883,6 @@ const DICT: Record<string, string> = {
   "1 canción añadida a «{name}»": "1 brano aggiunto a «{name}»",
   "{n} canciones añadidas a «{name}»": "{n} brani aggiunti a «{name}»",
   "Añadir a playlist": "Aggiungi a playlist",
-  "No tienes otras playlists": "Non hai altre playlist",
   "Eliminar de la biblioteca": "Elimina dalla libreria",
   "¿Eliminar 1 canción?": "Eliminare 1 brano?",
   "¿Eliminar {n} canciones?": "Eliminare {n} brani?",

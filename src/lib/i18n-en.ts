@@ -2885,7 +2885,6 @@ const EN: Record<string, string> = {
   "1 canción añadida a «{name}»": "1 song added to “{name}”",
   "{n} canciones añadidas a «{name}»": "{n} songs added to “{name}”",
   "Añadir a playlist": "Add to playlist",
-  "No tienes otras playlists": "You have no other playlists",
   "Eliminar de la biblioteca": "Delete from library",
   "¿Eliminar 1 canción?": "Delete 1 song?",
   "¿Eliminar {n} canciones?": "Delete {n} songs?",
