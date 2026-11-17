@@ -190,11 +190,18 @@ export function useLoreFavorites(): ReadonlySet<string> {
 
 /** Marca o quita un favorito. False: no se pudo guardar (el equipo sin espacio). */
 export function toggleFavorite(id: string): boolean {
+  return setFavorites([id], !readFavorites().has(id));
+}
+
+/** Marca (`on`) o quita varios favoritos de una vez (2.0.2, selección múltiple). */
+export function setFavorites(ids: readonly string[], on: boolean): boolean {
   const uid = activeProfileId();
   if (!uid) return false;
   const next = new Set(readFavorites());
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
+  for (const id of ids) {
+    if (on) next.add(id);
+    else next.delete(id);
+  }
   try {
     // Ordenados: el mismo conjunto se escribe igual en todos los dispositivos.
     localStorage.setItem(favoritesKey(uid), JSON.stringify([...next].sort().map((entry) => ({ id: entry }))));

@@ -7,7 +7,7 @@ import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import { useCourse } from '@/context/CourseContext';
 import type { ExtensionManifest, MusicSourceContribution } from '@/lib/extensions/manifest';
 import { EngineClient, parseSongsCsv, safeFileName, songBytes, thumbnailUrl, youtubeId, type CsvSong } from '@/lib/extensions/yt-mp3';
-import { engineError, ensureEngine, useEngineStep } from '@/lib/extensions/engine-app';
+import { downloadEngineInBrowser, engineError, ensureEngine, useEngineStep } from '@/lib/extensions/engine-app';
 import {
   addCsvDownloads,
   cancelDownloads,
@@ -137,6 +137,29 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
   useEffect(() => {
     void check();
   }, [check]);
+
+  // Mientras el programa no esté (2.0.2), se sigue mirando: cada 15 s y al volver a Frame
+  // (por ejemplo, después de instalarlo desde el navegador). Así se conecta solo.
+  useEffect(() => {
+    if (engine === 'up' || engine === 'checking') return;
+    const again = () => void check();
+    const timer = window.setInterval(again, 15_000);
+    window.addEventListener('focus', again);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', again);
+    };
+  }, [engine, check]);
+
+  /** «Descargar»: el instalador oficial en el navegador; al instalarlo, Frame se conecta solo. */
+  const downloadProgram = async () => {
+    try {
+      await downloadEngineInBrowser(id);
+      setNotice(tr('Se está descargando {name} en tu navegador: ábrelo, instálalo y Frame se conectará solo.', { name }));
+    } catch (error) {
+      setNotice(tr('No se pudo abrir la descarga: {error}', { error: errorText(error).slice(0, 140) }));
+    }
+  };
 
   /** Archivos de este equipo: Música abre el explorador (su importación de siempre). */
   const local = (folder: boolean) => navigate('/music', { state: { importLocal: folder ? 'folder' : 'files' } });
@@ -500,19 +523,26 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
               ) : (
                 <>
                   <span className="min-w-0 flex-1">
-                    {shownEngine === 'down'
-                      ? tr('{name} no responde en este equipo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })
-                      : tr('{name} necesita ponerse al día y aún no se pudo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })}
                     {engineError(id) === 'store'
-                      ? ` ${tr('En la versión de la Microsoft Store, Frame no instala programas: instala {name} por tu cuenta y Frame lo abrirá y lo usará solo.', { name })}`
+                      ? tr('Pulsa «Descargar», instala {name} y Frame se conectará solo. (La versión de la Microsoft Store no instala programas por su cuenta.)', { name })
                       : engineError(id)
-                        ? ` ${tr('Último intento: {error}', { error: errorText(engineError(id)!) })}`
-                        : ''}
+                        ? `${tr('{name} no se pudo instalar solo. Pulsa «Descargar», instálalo y Frame se conectará solo.', { name })} ${tr('Último intento: {error}', { error: errorText(engineError(id)!) })}`
+                        : shownEngine === 'down'
+                          ? tr('{name} no responde en este equipo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })
+                          : tr('{name} necesita ponerse al día y aún no se pudo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })}
                   </span>
-                  <Button size="sm" variant="ghost" className="h-6 shrink-0 px-2 text-[11px]" onClick={() => void check(true)}>
-                    <RefreshCw className="mr-1 h-3 w-3" />
-                    {tr('Reintentar')}
-                  </Button>
+                  {engineError(id) && (
+                    <Button size="sm" className="h-7 shrink-0 px-2.5 text-[11px]" onClick={() => void downloadProgram()}>
+                      <Download className="mr-1 h-3 w-3" />
+                      {tr('Descargar')}
+                    </Button>
+                  )}
+                  {engineError(id) !== 'store' && (
+                    <Button size="sm" variant="ghost" className="h-6 shrink-0 px-2 text-[11px]" onClick={() => void check(true)}>
+                      <RefreshCw className="mr-1 h-3 w-3" />
+                      {tr('Reintentar')}
+                    </Button>
+                  )}
                 </>
               )}
             </div>

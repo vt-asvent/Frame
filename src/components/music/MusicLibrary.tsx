@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Image from '@/lib/image';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Music, Heart, Trash2, Shuffle, LoaderCircle, Search } from 'lucide-react';
+import SongCard from '@/components/music/SongCard';
+import AddToPlaylistMenu from '@/components/music/AddToPlaylistMenu';
+import SelectionBar from '@/components/shared/SelectionBar';
+import { useMultiSelect } from '@/hooks/use-multi-select';
 import { useCourse } from '@/context/CourseContext';
 import MusicImportButton from '@/components/music/MusicImportButton';
 import ListeningStatsButton from '@/components/music/ListeningStats';
@@ -23,7 +26,6 @@ import type { Song } from '@/types';
 import { songMatches, songTitle } from '@/lib/music-search';
 import { songCardId, useSongHighlight } from '@/hooks/use-song-highlight';
 import { tr } from '@/lib/i18n';
-import { artistLabel } from '@/lib/enum-labels';
 
 /**
  * Dónde se quedó el usuario: carpeta y desplazamiento (solo sin filtros).
@@ -46,11 +48,12 @@ let lastPlace: { page: number; scroll: number } | null = null;
 const PAGE_SIZE = 100;
 
 export default function MusicLibrary() {
-  const { songs, areSongsLoading, playSong, deleteSong } = useCourse();
+  const { songs, areSongsLoading, playSong, deleteSong, deleteSongs } = useCourse();
 
   const rootRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [songToDelete, setSongToDelete] = useState<Song | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   /** Carpeta visible (0 = la primera). En la misma sesión, donde se dejó. */
   const [page, setPage] = useState(() => lastPlace?.page ?? 0);
@@ -70,6 +73,11 @@ export default function MusicLibrary() {
     () => queueSongs.filter(song => songMatches(song, searchQuery)),
     [queueSongs, searchQuery]
   );
+
+  // Varias a la vez (2.0.2): Ctrl+clic o mantener presionada. Vale entre carpetas.
+  const filteredIds = useMemo(() => filteredSongs.map(song => song.id), [filteredSongs]);
+  const select = useMultiSelect(filteredIds);
+  const chosen = useMemo(() => filteredIds.filter(id => select.selected.has(id)), [filteredIds, select.selected]);
 
   const pageCount = Math.max(1, Math.ceil(filteredSongs.length / PAGE_SIZE));
   // Si la lista se acorta (búsqueda, borrado) la carpeta actual puede dejar
@@ -170,6 +178,19 @@ export default function MusicLibrary() {
 
   return (
     <div ref={rootRef} className="p-6 pt-4 md:p-8 md:pt-4">
+      <SelectionBar
+        count={chosen.length}
+        total={filteredIds.length}
+        label={chosen.length === 1 ? tr('1 canción') : tr('{n} canciones', { n: chosen.length })}
+        onSelectAll={select.selectAll}
+        onClear={select.clear}
+      >
+        <AddToPlaylistMenu songIds={chosen} onDone={select.clear} />
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-destructive hover:text-destructive" onClick={() => setConfirmBulkDelete(true)}>
+          <Trash2 className="mr-1 h-4 w-4" />
+          {tr('Eliminar')}
+        </Button>
+      </SelectionBar>
       {/* Una sola fila flexible: buscador · flechas de carpeta · botones.
           El buscador no pasa de la mitad del ancho y lleva DENTRO, a la
           derecha, cuántas canciones hay: el número es parte de la búsqueda
@@ -287,56 +308,45 @@ export default function MusicLibrary() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {pageSongs.map(song => (
-            <Card
+            <SongCard
               key={song.id}
-              id={songCardId(song.id)}
-              className={cn(
-                'bg-accent/40 hover:bg-accent/80 transition-colors cursor-pointer group relative',
-                song.id === highlightId && 'animate-pulse-border'
-              )}
-              onClick={() => playSong(song, { context: playbackContext, queue: queueSongs })}
-            >
-              <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSongToDelete(song);
-                  }}
-                >
-                  <Trash2 className="h-5 w-5" />
-                </Button>
-              </div>
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="relative h-16 w-16 shrink-0 rounded-md bg-accent flex items-center justify-center">
-                  {song.picture ? (
-                    <Image
-                      src={song.picture}
-                      alt={songTitle(song)}
-                      fill
-                      style={{ objectFit: 'cover' }}
-                      className="rounded-md"
-                    />
-                  ) : (
-                    <Music className="h-6 w-6 text-primary" />
-                  )}
-                </div>
-                <div className="flex flex-col truncate min-w-0">
-                  <p className="font-semibold text-foreground truncate">
-                    {songTitle(song)}
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate">{artistLabel(song.artist)}</p>
-                </div>
-              </CardContent>
-            </Card>
+              cardId={songCardId(song.id)}
+              song={song}
+              highlighted={song.id === highlightId}
+              select={select}
+              onPlay={() => playSong(song, { context: playbackContext, queue: queueSongs })}
+              onRemove={() => setSongToDelete(song)}
+              removeTitle={tr('Eliminar de la biblioteca')}
+            />
           ))}
         </div>
       )}
 
       {/* 1.6.7 (Diego): sin flechas al pie de la lista; se cambia de carpeta
           con las de arriba, junto al buscador. */}
+
+      <AlertDialog open={confirmBulkDelete} onOpenChange={setConfirmBulkDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{chosen.length === 1 ? tr('¿Eliminar 1 canción?') : tr('¿Eliminar {n} canciones?', { n: chosen.length })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {tr('Se borran de tu biblioteca en este equipo y salen de tus playlists. Puedes deshacerlo con Ctrl+Z durante unos segundos.')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tr('Cancelar')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                void deleteSongs(chosen);
+                select.clear();
+              }}
+            >
+              {tr('Eliminar')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!songToDelete} onOpenChange={(isOpen) => !isOpen && setSongToDelete(null)}>
         <AlertDialogContent>

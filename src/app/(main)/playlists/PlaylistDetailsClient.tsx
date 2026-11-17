@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from '@/lib/navigation';
-import Image from '@/lib/image';
 import {
   DndContext,
   closestCenter,
@@ -20,10 +19,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import {
-  Card,
-  CardContent,
-} from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -57,103 +53,39 @@ import { formatListened, listeningAllTime, playsText, useListening } from '@/lib
 import type { Playlist, Song } from '@/types';
 import { useCourse } from '@/context/CourseContext';
 import SongPickerGrid from '@/components/music/SongPickerGrid';
+import SongCard from '@/components/music/SongCard';
+import AddToPlaylistMenu from '@/components/music/AddToPlaylistMenu';
+import SelectionBar from '@/components/shared/SelectionBar';
+import { useMultiSelect } from '@/hooks/use-multi-select';
 import { songCardId, useSongHighlight } from '@/hooks/use-song-highlight';
 import { songMatches, songTitle } from '@/lib/music-search';
 import { EchoHeader } from '@/components/shared/EchoWord';
 import { tr } from '@/lib/i18n';
-import { artistLabel } from '@/lib/enum-labels';
 
 /** La imagen: transparente (= fondo de la app) a la izquierda, entera a la derecha. */
 const HEADER_IMAGE_MASK = easedMask('to right');
 /** El velo: color del fondo a la izquierda, transparente a la derecha. */
 const HEADER_BACKGROUND_VEIL = easedVeil('to right');
 
-const SortablePlaylistSongCard = ({ song, onPlay, onRemove, highlighted }: { song: Song; onPlay: () => void; onRemove: () => void; highlighted?: boolean }) => {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: song.id });
+/** En orden normal (sin búsqueda) la tarjeta lleva el asa para arrastrarla. */
+const SortablePlaylistSongCard = (props: Omit<React.ComponentProps<typeof SongCard>, 'handle' | 'cardId'>) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.song.id });
     const style = {
         transform: CSS.Transform.toString(transform),
         transition,
         zIndex: isDragging ? 10 : 'auto',
     };
-
-    const handleDeleteClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        onRemove();
-    };
-
     return (
-        <div ref={setNodeRef} style={style} id={songCardId(song.id)}>
-            <Card className={cn("bg-accent/40 group relative transition-shadow", isDragging && "shadow-lg opacity-75", highlighted && 'animate-pulse-border')}>
-                 <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={handleDeleteClick}>
-                        <Trash2 className="h-5 w-5" />
-                    </Button>
-                </div>
-                <div className="flex items-center">
-                    <div {...attributes} {...listeners} className="p-4 cursor-grab active:cursor-grabbing touch-none">
+        <div ref={setNodeRef} style={style} id={songCardId(props.song.id)} className={cn(isDragging && 'opacity-75 shadow-lg')}>
+            <SongCard
+                {...props}
+                handle={
+                    <div {...attributes} {...listeners} className="cursor-grab touch-none p-4 active:cursor-grabbing">
                         <Menu className="h-5 w-5 text-muted-foreground/60" />
                     </div>
-                    <div onClick={onPlay} className="flex-grow cursor-pointer hover:bg-accent/80 min-w-0">
-                        <CardContent className="p-4 pl-0 flex items-center gap-4">
-                            <div className="relative h-16 w-16 shrink-0 rounded-md bg-accent flex items-center justify-center">
-                                {song.picture ? (
-                                    <Image
-                                        src={song.picture}
-                                        alt={songTitle(song)}
-                                        fill
-                                        style={{objectFit: 'cover'}}
-                                        className="rounded-md"
-                                    />
-                                ) : (
-                                    <Music className="h-6 w-6 text-primary" />
-                                )}
-                            </div>
-                            <div className="flex flex-col truncate min-w-0">
-                                <p className="font-semibold text-foreground truncate">{songTitle(song)}</p>
-                                <p className="text-xs text-muted-foreground truncate">{artistLabel(song.artist)}</p>
-                            </div>
-                        </CardContent>
-                    </div>
-                </div>
-            </Card>
+                }
+            />
         </div>
-    );
-};
-
-// A non-sortable version for when search is active
-const PlaylistSongCard = ({ song, onPlay, onRemove, highlighted }: { song: Song; onPlay: () => void; onRemove: () => void; highlighted?: boolean }) => {
-    const handleDeleteClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        onRemove();
-    };
-
-    return (
-        <Card id={songCardId(song.id)} onClick={onPlay} className={cn("bg-accent/40 group relative transition-shadow cursor-pointer hover:bg-accent/80", highlighted && 'animate-pulse-border')}>
-            <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={handleDeleteClick}>
-                    <Trash2 className="h-5 w-5" />
-                </Button>
-            </div>
-            <CardContent className="p-4 flex items-center gap-4">
-                 <div className="relative h-16 w-16 shrink-0 rounded-md bg-accent flex items-center justify-center">
-                    {song.picture ? (
-                        <Image
-                            src={song.picture}
-                            alt={songTitle(song)}
-                            fill
-                            style={{objectFit: 'cover'}}
-                            className="rounded-md"
-                        />
-                    ) : (
-                        <Music className="h-6 w-6 text-primary" />
-                    )}
-                </div>
-                <div className="flex flex-col truncate min-w-0">
-                    <p className="font-semibold text-foreground truncate">{songTitle(song)}</p>
-                    <p className="text-xs text-muted-foreground truncate">{artistLabel(song.artist)}</p>
-                </div>
-            </CardContent>
-        </Card>
     );
 };
 
@@ -191,6 +123,7 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
   const [isAddSongsOpen, setAddSongsOpen] = useState(false);
   const [addSongsSearch, setAddSongsSearch] = useState('');
   const [songToRemove, setSongToRemove] = useState<Song | null>(null);
+  const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
 
   const [isImagePickerOpen, setImagePickerOpen] = useState(false);
   // El encuadre usa la proporción real de la mitad derecha de la cabecera.
@@ -279,6 +212,11 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
     [searchQuery, playlistSongs]
   );
 
+  // Varias a la vez (2.0.2): Ctrl+clic o mantener presionada.
+  const visibleIds = useMemo(() => filteredSongs.map(song => song.id), [filteredSongs]);
+  const select = useMultiSelect(visibleIds);
+  const chosen = useMemo(() => visibleIds.filter(songId => select.selected.has(songId)), [visibleIds, select.selected]);
+
   const handleEdit = () => {
     if (playlist) {
       setIsEditing(true);
@@ -326,10 +264,10 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
       updatePlaylist(playlist.id, { songIds: [...playlist.songIds, songId] });
   };
 
-  const handleRemoveSongFromPlaylist = (songId: string) => {
+  const handleRemoveSongsFromPlaylist = (songIds: readonly string[]) => {
       if (playlist) {
-          const newSongIds = playlist.songIds.filter(id => id !== songId);
-          updatePlaylist(playlist.id, { songIds: newSongIds });
+          const out = new Set(songIds);
+          updatePlaylist(playlist.id, { songIds: playlist.songIds.filter(songId => !out.has(songId)) });
       }
   };
 
@@ -515,6 +453,20 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
         />
       )}
       
+      <SelectionBar
+        count={chosen.length}
+        total={visibleIds.length}
+        label={chosen.length === 1 ? tr('1 canción') : tr('{n} canciones', { n: chosen.length })}
+        onSelectAll={select.selectAll}
+        onClear={select.clear}
+      >
+        <AddToPlaylistMenu songIds={chosen} exclude={playlist.id} onDone={select.clear} />
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-destructive hover:text-destructive" onClick={() => setConfirmBulkRemove(true)}>
+          <Trash2 className="mr-1 h-4 w-4" />
+          {tr('Quitar')}
+        </Button>
+      </SelectionBar>
+
       {songsToShow.length > 0 ? (
          !isSearching ? (
             <DndContext accessibility={dndAccessibility()}
@@ -529,8 +481,10 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
                             <SortablePlaylistSongCard
                                 key={song.id}
                                 song={song}
+                                select={select}
                                 onPlay={() => handlePlaySong(song)}
                                 onRemove={() => setSongToRemove(song)}
+                                removeTitle={tr('Quitar de la playlist')}
                                 highlighted={song.id === highlightId}
                             />
                         ))}
@@ -540,11 +494,14 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
          ) : (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredSongs.map(song => (
-                    <PlaylistSongCard
+                    <SongCard
                         key={song.id}
+                        cardId={songCardId(song.id)}
                         song={song}
+                        select={select}
                         onPlay={() => handlePlaySong(song)}
                         onRemove={() => setSongToRemove(song)}
+                        removeTitle={tr('Quitar de la playlist')}
                         highlighted={song.id === highlightId}
                     />
                 ))}
@@ -592,6 +549,27 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
         </DialogContent>
       </Dialog>
 
+      <AlertDialog open={confirmBulkRemove} onOpenChange={setConfirmBulkRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{chosen.length === 1 ? tr('¿Quitar 1 canción de la playlist?') : tr('¿Quitar {n} canciones de la playlist?', { n: chosen.length })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr('Salen de «{playlist}» y siguen en tu biblioteca.', { playlist: playlist.name })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tr('Cancelar')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                handleRemoveSongsFromPlaylist(chosen);
+                select.clear();
+              }}
+            >
+              {tr('Quitar')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={!!songToRemove} onOpenChange={(isOpen) => !isOpen && setSongToRemove(null)}>
         <AlertDialogContent>
             <AlertDialogHeader>
@@ -606,7 +584,7 @@ export default function PlaylistDetailsClient({ id }: { id: string }) {
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={() => {
                         if (songToRemove) {
-                            handleRemoveSongFromPlaylist(songToRemove.id);
+                            handleRemoveSongsFromPlaylist([songToRemove.id]);
                             setSongToRemove(null);
                         }
                     }}

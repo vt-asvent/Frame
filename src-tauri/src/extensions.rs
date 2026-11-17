@@ -260,6 +260,73 @@ fn app_exe(exe: &str) -> Result<PathBuf, String> {
     Ok(base.join(relative))
 }
 
+/// Dónde está instalado de verdad (2.0.2): donde lo pone Frame (%LOCALAPPDATA%) o, si el
+/// usuario lo instaló a mano «para todos», en Archivos de programa. La misma ruta relativa.
+fn installed_exe(exe: &str) -> Result<Option<PathBuf>, String> {
+    let own = app_exe(exe)?;
+    if own.is_file() {
+        return Ok(Some(own));
+    }
+    let found = ["LOCALAPPDATA", "ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(|var| std::env::var_os(var).map(PathBuf::from))
+        .flat_map(|base| [base.join("Programs").join(exe), base.join(exe)])
+        .find(|path| path.is_file());
+    Ok(found)
+}
+
+/// Espera sin ocupar el hilo de la app (no hay tokio directo en este proyecto).
+async fn pause(secs: u64) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_secs(secs))).await;
+}
+
+/// GET con tres intentos (2.0.2): un corte de la red o un 5xx de GitHub no deja a nadie sin el programa.
+async fn get_retrying(client: &reqwest::Client, url: &str, timeout_secs: u64) -> Result<reqwest::Response, String> {
+    let mut last = String::new();
+    for attempt in 0..3u64 {
+        if attempt > 0 {
+            pause(3 * attempt).await;
+        }
+        match client.get(url).timeout(std::time::Duration::from_secs(timeout_secs)).send().await.and_then(|r| r.error_for_status()) {
+            Ok(response) => return Ok(response),
+            Err(error) => {
+                last = error.to_string();
+                // Un 4xx no se arregla reintentando.
+                if error.status().is_some_and(|status| status.is_client_error()) {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last)
+}
+
+/// Del índice de versiones del programa: versión, enlace del instalador para Windows y su firma, ya comprobados.
+async fn installer_of(client: &reqwest::Client, updates: &str) -> Result<(String, String, String), String> {
+    if !github(updates) {
+        return Err("El índice de versiones del programa no es de confianza.".into());
+    }
+    let index: serde_json::Value = get_retrying(client, updates, 60).await?.json().await.map_err(|e| e.to_string())?;
+    let version = index["version"].as_str().unwrap_or_default().trim_start_matches('v').to_string();
+    let platform = &index["platforms"]["windows-x86_64"];
+    let (Some(url), Some(signature)) = (platform["url"].as_str(), platform["signature"].as_str()) else {
+        return Err("El programa no tiene versión para Windows.".into());
+    };
+    if !github(url) || version.is_empty() || !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return Err("La versión publicada del programa no es de confianza.".into());
+    }
+    Ok((version, url.to_string(), signature.to_string()))
+}
+
+/// El enlace del instalador oficial (2.0.2), para el botón «Descargar» de «+ Añadir»: lo baja el
+/// navegador y el usuario lo instala. Es la vía de la versión de la Store, y el último recurso de
+/// la otra si la instalación en silencio no sale.
+#[tauri::command]
+pub async fn ext_app_installer_url(updates: String) -> Result<String, String> {
+    let client = crate::http_client();
+    Ok(installer_of(&client, &updates).await?.1)
+}
+
 /// Solo opciones sencillas («--tray»): nada que el programa lea como ruta.
 fn app_args(args: Vec<String>) -> Vec<String> {
     args.into_iter()
@@ -275,10 +342,9 @@ fn github(url: &str) -> bool {
 /// Abre el programa en segundo plano. `false`: no está instalado.
 #[tauri::command]
 pub fn ext_app_launch(exe: String, args: Vec<String>) -> Result<bool, String> {
-    let path = app_exe(&exe)?;
-    if !path.is_file() {
+    let Some(path) = installed_exe(&exe)? else {
         return Ok(false);
-    }
+    };
     let mut command = std::process::Command::new(&path);
     command
         .args(app_args(args))
@@ -324,42 +390,38 @@ pub async fn ext_app_install(updates: String, exe: String, args: Vec<String>) ->
     if crate::ia_bridge::packaged() {
         return Err("store".into());
     }
-    let target = app_exe(&exe)?;
-    if !github(&updates) {
-        return Err("El índice de versiones del programa no es de confianza.".into());
-    }
+    app_exe(&exe)?;
     let client = crate::http_client();
-    let index: serde_json::Value = client
-        .get(&updates)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let version = index["version"].as_str().unwrap_or_default().trim_start_matches('v').to_string();
-    let platform = &index["platforms"]["windows-x86_64"];
-    let (Some(url), Some(signature)) = (platform["url"].as_str(), platform["signature"].as_str()) else {
-        return Err("El programa no tiene versión para Windows.".into());
+    let (version, url, signature) = installer_of(&client, &updates).await?;
+    // La descarga entera se reintenta (2.0.2): un corte a mitad deja bytes que no pasan la firma.
+    let mut bytes = None;
+    let mut last = String::new();
+    for attempt in 0..3u64 {
+        if attempt > 0 {
+            pause(5 * attempt).await;
+        }
+        let response = match get_retrying(&client, &url, 900).await {
+            Ok(response) => response,
+            Err(error) => {
+                last = error;
+                continue;
+            }
+        };
+        if response.content_length().is_some_and(|size| size > MAX_INSTALLER) {
+            return Err("El instalador del programa es demasiado grande.".into());
+        }
+        match response.bytes().await {
+            Ok(body) if body.len() as u64 <= MAX_INSTALLER && signed(&body, &signature) => {
+                bytes = Some(body);
+                break;
+            }
+            Ok(_) => last = "La firma del instalador no es válida: no se instaló nada.".into(),
+            Err(error) => last = error.to_string(),
+        }
+    }
+    let Some(bytes) = bytes else {
+        return Err(last);
     };
-    if !github(url) || version.is_empty() || !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
-        return Err("La versión publicada del programa no es de confianza.".into());
-    }
-    let response = client
-        .get(url)
-        .timeout(std::time::Duration::from_secs(900))
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| e.to_string())?;
-    if response.content_length().is_some_and(|size| size > MAX_INSTALLER) {
-        return Err("El instalador del programa es demasiado grande.".into());
-    }
-    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_INSTALLER || !signed(&bytes, signature) {
-        return Err("La firma del instalador no es válida: no se instaló nada.".into());
-    }
 
     let dir = std::env::temp_dir().join("frame-ext-app");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -385,7 +447,7 @@ pub async fn ext_app_install(updates: String, exe: String, args: Vec<String>) ->
     .map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&installer);
     outcome?;
-    if !target.is_file() {
+    if installed_exe(&exe)?.is_none() {
         return Err("El programa se instaló en otra carpeta.".into());
     }
     ext_app_launch(exe, args)?;

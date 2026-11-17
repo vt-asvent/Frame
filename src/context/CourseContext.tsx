@@ -332,6 +332,8 @@ interface CourseContextType {
   areSongsLoading: boolean;
   addSongs: (newSongs: Song[]) => Promise<void>;
   deleteSong: (id: string) => Promise<void>;
+  /** Varias de una vez (2.0.2): un solo «deshacer». */
+  deleteSongs: (ids: string[]) => Promise<void>;
   toggleSongFavorite: (id: string) => Promise<void>;
   currentSong: Song | null;
   playSong: (song: Song, options?: { context?: string; queue?: Song[]; href?: string }) => void;
@@ -2519,64 +2521,82 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     });
   }, [playingContext]);
 
-  const deleteSong = useCallback(async (id: string) => {
+  /** Borra una o varias canciones (2.0.2: varias de una vez, con un solo «deshacer»). */
+  const deleteSongs = useCallback(async (ids: string[]) => {
     if (!storageKeys) return;
-
-    if (currentSong?.id === id) {
-      setCurrentSong(null);
-      setIsPlaying(false);
-    }
 
     const originalSongs = songs;
     const originalPlaylists = playlists;
-    const songToDelete = originalSongs.find(s => s.id === id);
-    if (!songToDelete) return;
+    const doomed = originalSongs.filter(s => ids.includes(s.id));
+    if (doomed.length === 0) return;
+    const gone = new Set(doomed.map(s => s.id));
+
+    if (currentSong && gone.has(currentSong.id)) {
+      setCurrentSong(null);
+      setIsPlaying(false);
+    }
 
     // Optimistic UI update. En las playlists la canción deja su CLAVE (1.6.8):
     // aquí ya no se ve, pero los demás dispositivos la conservan en su sitio
     // (la música no viaja: borrarla aquí no la borra allí).
     // La clave de ESTA copia (con su número si hay dos con el mismo título y
     // artista, 1.7.3), no la de la primera.
-    const keyOfDeleted = userProfile ? songKeyIn(userProfile.id, songToDelete) : songToDelete.id;
-    const keepKey = (ids: string[]) => [...new Set(ids.map(songId => (songId === id ? keyOfDeleted : songId)))];
-    setSongs(prev => prev.filter(s => s.id !== id));
-    setPlaylists(prev => prev.map(p => (p.songIds.includes(id) ? { ...p, songIds: keepKey(p.songIds) } : p)));
+    const keyOf = new Map(doomed.map(s => [s.id, userProfile ? songKeyIn(userProfile.id, s) : s.id]));
+    const keepKey = (list: string[]) => [...new Set(list.map(songId => keyOf.get(songId) ?? songId))];
+    const touches = (p: Playlist) => p.songIds.some(songId => gone.has(songId));
+    setSongs(prev => prev.filter(s => !gone.has(s.id)));
+    setPlaylists(prev => prev.map(p => (touches(p) ? { ...p, songIds: keepKey(p.songIds) } : p)));
     // La cola y el historial también la sueltan: si no, «siguiente» o «anterior»
     // acababan intentando reproducir un archivo que ya no existe.
-    setPlaybackQueue(prev => prev.filter(s => s.id !== id));
-    setPlaybackHistory(prev => prev.filter(s => s.id !== id));
+    setPlaybackQueue(prev => prev.filter(s => !gone.has(s.id)));
+    setPlaybackHistory(prev => prev.filter(s => !gone.has(s.id)));
 
     const undo = () => {
-      setSongs(prev => restoreRecords(prev, originalSongs, [songToDelete]));
+      setSongs(prev => restoreRecords(prev, originalSongs, doomed));
       setPlaylists(prev => prev.map(p => {
         const before = originalPlaylists.find(o => o.id === p.id);
-        if (!before || !before.songIds.includes(id) || p.songIds.includes(id)) return p;
-        return { ...p, songIds: restoreIds(p.songIds.filter(songId => songId !== keyOfDeleted), before.songIds, [id]) };
+        const back = before ? before.songIds.filter(songId => gone.has(songId) && !p.songIds.includes(songId)) : [];
+        if (!before || back.length === 0) return p;
+        const keys = new Set(back.map(songId => keyOf.get(songId)));
+        return { ...p, songIds: restoreIds(p.songIds.filter(songId => !keys.has(songId)), before.songIds, back) };
       }));
-      setPlaybackQueue(prev => (prev.some(s => s.id === id) ? prev : [...prev, songToDelete]));
-      toast({ title: tr('Acción deshecha'), description: tr('Canción "{songTitle}" restaurada.', { songTitle: songTitle(songToDelete) }) });
+      setPlaybackQueue(prev => [...prev, ...doomed.filter(s => !prev.some(q => q.id === s.id))]);
+      toast({
+        title: tr('Acción deshecha'),
+        description: doomed.length === 1
+          ? tr('Canción "{songTitle}" restaurada.', { songTitle: songTitle(doomed[0]) })
+          : tr('{n} canciones restauradas.', { n: doomed.length }),
+      });
     };
 
     const commit = async () => {
       try {
-        await deleteSongFileFromDB(id);
-        await deleteSongMetadata(id);
-        void forgetLyrics(id);
-        // Wire: es un borrado del usuario, no una pérdida; no se vuelve a traer a este equipo.
-        if (userProfile) noteSongRemoved(userProfile.id, id, keyOfDeleted);
+        for (const song of doomed) {
+          await deleteSongFileFromDB(song.id);
+          await deleteSongMetadata(song.id);
+          void forgetLyrics(song.id);
+          // Wire: es un borrado del usuario, no una pérdida; no se vuelve a traer a este equipo.
+          if (userProfile) noteSongRemoved(userProfile.id, song.id, keyOf.get(song.id)!);
+        }
         // Desde lo persistido (ver deletePlaylist): no pisa playlists nuevas.
         const latest = getArrayFromLocalStorage<Playlist>(storageKeys.playlists);
-        setInLocalStorage(storageKeys.playlists, latest.map(p => (p.songIds.includes(id) ? { ...p, songIds: keepKey(p.songIds) } : p)));
+        setInLocalStorage(storageKeys.playlists, latest.map(p => (touches(p) ? { ...p, songIds: keepKey(p.songIds) } : p)));
       } catch (e) {
         console.error("Failed to commit song deletion:", e);
         undo(); // Revert if commit fails
       }
     };
-    
+
     pushUndoableAction({ undo, commit });
-    toast({ title: tr('Canción "{songTitle}" eliminada', { songTitle: songTitle(songToDelete) }), description: tr('Presiona Ctrl+Z para deshacer.') });
+    toast({
+      title: doomed.length === 1
+        ? tr('Canción "{songTitle}" eliminada', { songTitle: songTitle(doomed[0]) })
+        : tr('{n} canciones eliminadas', { n: doomed.length }),
+      description: tr('Presiona Ctrl+Z para deshacer.'),
+    });
 
   }, [currentSong, storageKeys, songs, playlists, userProfile]);
+  const deleteSong = useCallback((id: string) => deleteSongs([id]), [deleteSongs]);
   
   const toggleSongFavorite = useCallback(async (id: string) => {
       const base = songsRef.current.find(s => s.id === id);
@@ -2790,6 +2810,7 @@ export function CourseProvider({ children, userProfile }: { children: ReactNode,
     areSongsLoading,
     addSongs,
     deleteSong,
+    deleteSongs,
     toggleSongFavorite,
     currentSong,
     playSong,

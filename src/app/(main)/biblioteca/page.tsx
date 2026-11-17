@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, FlaskConical, Heart, KeyRound, LoaderCircle, Lock, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Download, FlaskConical, Heart, KeyRound, LoaderCircle, Lock, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
 import { addDays, format, isAfter, isBefore, parseISO, startOfDay } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,8 @@ import LibraryActivateDialog from '@/components/extensions/LibraryActivateDialog
 import BibFileDialog from '@/components/library/BibFileDialog';
 import { AdvancedFilters, FILTER_BUTTON, LevelPicker, SQUARE_BUTTON, YearPicker } from '@/components/library/BibFilters';
 import PackButton from '@/components/library/BibPack';
+import SelectionBar from '@/components/shared/SelectionBar';
+import { useMultiSelect } from '@/hooks/use-multi-select';
 import { ItemCard, ItemGrid, SectionHeading, Shelf, ShelfItem, subjectColor } from '@/components/library/BibParts';
 import StudyCardsDialog from '@/components/library/StudyCardsDialog';
 import { useCourse } from '@/context/CourseContext';
@@ -36,7 +38,8 @@ import {
   type BibSubject,
 } from '@/lib/extensions/aklore/biblioteca';
 import { forgetPdfs } from '@/lib/extensions/aklore/pdf';
-import { AKLORE, demoAvailable, fold, setDemo, toggleFavorite, useDemo, useLoreFavorites } from '@/lib/extensions/aklore/source';
+import { CARPETA, startPack, usePack } from '@/lib/extensions/aklore/paquete';
+import { AKLORE, demoAvailable, fold, setDemo, setFavorites, toggleFavorite, useDemo, useLoreFavorites } from '@/lib/extensions/aklore/source';
 import { extRead, extWrite } from '@/lib/extensions/store';
 import { trackEvent } from '@/lib/telemetry';
 import { dateLocale, errorText, tr } from '@/lib/i18n';
@@ -202,6 +205,19 @@ export default function BibliotecaPage() {
   const subjectName = chosen.asignatura ?? (grupo && grupo.asignaturas.length === 1 ? grupo.asignaturas[0]! : null);
   const subject = subjectName ? shown.find((s) => s.name === subjectName) ?? null : null;
 
+  // Varios archivos a la vez (2.0.2): Ctrl+clic o mantener presionado; se bajan o van a favoritos juntos.
+  const selectable = useMemo(() => {
+    const all = subjectName ? subject?.items ?? [] : shown.flatMap((s) => s.items);
+    return query.trim() ? searchItems(all, query).slice(0, 200) : all;
+  }, [subjectName, subject, shown, query]);
+  const selectableIds = useMemo(() => [...new Set(selectable.map((it) => it.id))], [selectable]);
+  const select = useMultiSelect(selectableIds);
+  const picked = useMemo(() => {
+    const seen = new Set<string>();
+    return selectable.filter((it) => select.selected.has(it.id) && !seen.has(it.id) && seen.add(it.id));
+  }, [selectable, select.selected]);
+  const pack = usePack();
+
   const choose = (next: Chosen) => {
     setChosen(next);
     extWrite(AKLORE, 'filtro', next);
@@ -273,8 +289,23 @@ export default function BibliotecaPage() {
   }
 
   const card = (item: BibItem, showSubject = false) => (
-    <ItemCard item={item} conf={confOf(item)} favorite={favorites.has(item.key)} showSubject={showSubject} onOpen={() => setOpened(item)} onToggleFavorite={() => toggleFav(item)} />
+    <ItemCard item={item} conf={confOf(item)} favorite={favorites.has(item.key)} showSubject={showSubject} select={select} onOpen={() => setOpened(item)} onToggleFavorite={() => toggleFav(item)} />
   );
+  const allFavorite = picked.length > 0 && picked.every((it) => favorites.has(it.key));
+  const favoritePicked = () => {
+    if (!setFavorites(picked.map((it) => it.key), !allFavorite)) return favoriteFailed();
+    toast({ title: allFavorite ? tr('Se quitaron de favoritos') : tr('Se añadieron a favoritos') });
+    select.clear();
+  };
+  const downloadPicked = () => {
+    if (pack.status === 'running') {
+      toast({ title: tr('Ya hay una descarga en marcha'), description: tr('Espera a que termine «Tu paquete» y vuelve a intentarlo.') });
+      return;
+    }
+    startPack(picked);
+    toast({ title: picked.length === 1 ? tr('Bajando 1 archivo') : tr('Bajando {n} archivos', { n: picked.length }), description: tr('Quedan en Descargas, en «{carpeta}», cada uno en la carpeta de su asignatura.', { carpeta: CARPETA }) });
+    select.clear();
+  };
   const shelf = (label: string, items: BibItem[], showSubject = true) => (
     <Shelf label={label} count={items.length}>
       {items.map((it) => (
@@ -292,6 +323,16 @@ export default function BibliotecaPage() {
 
   return (
     <div className="p-6 pt-4 md:p-8 md:pt-4">
+      <SelectionBar count={picked.length} total={selectableIds.length} label={archivos(picked.length)} onSelectAll={select.selectAll} onClear={select.clear}>
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={favoritePicked}>
+          <Heart className={cn('mr-1 h-4 w-4', allFavorite && 'fill-current')} />
+          {allFavorite ? tr('Quitar de favoritos') : tr('Favoritos')}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={downloadPicked}>
+          <Download className="mr-1 h-4 w-4" />
+          {tr('Descargar')}
+        </Button>
+      </SelectionBar>
       {/* Buscador (media barra; con el total y el programa dentro) · nivel y asignatura · tipo · año · avanzados · favoritos · paquete */}
       <div className="mt-2 mb-6 flex flex-wrap items-center gap-2">
         <div className="flex h-10 w-full min-w-0 items-center gap-2 rounded-md border border-primary bg-card pl-3 pr-1 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 md:w-[calc(50%-0.25rem)] md:flex-none">

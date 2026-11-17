@@ -19,8 +19,10 @@ import type { EngineClient, EngineStatus } from '@/lib/extensions/yt-mp3';
 
 /** Versión mínima del protocolo: desde ella el programa entrega el archivo terminado. */
 export const MIN_ENGINE = [1, 1, 0];
-/** Un instalador que falló no se reintenta antes de esto. */
-const RETRY_INSTALL_MS = 30 * 60_000;
+/** Tras cada instalación fallida se espera un poco más antes de la siguiente (2.0.2: antes, media hora de golpe). */
+const INSTALL_BACKOFF_MS = [60_000, 3 * 60_000, 10 * 60_000, 30 * 60_000];
+/** Abrir el programa no se repite más seguido que esto: uno que no arranca no debe multiplicarse. */
+const RELAUNCH_MS = 45_000;
 
 export type EngineHealth = 'up' | 'down' | 'outdated';
 export type EngineStep = 'starting' | 'installing' | 'updating';
@@ -51,11 +53,27 @@ const subscribe = (listener: () => void) => {
 export const useEngineStep = (): EngineStep | null => useSyncExternalStore(subscribe, () => step, () => step);
 
 const running = new Map<string, Promise<EngineHealth>>();
-const lastInstall = new Map<string, number>();
+const nextInstall = new Map<string, number>();
+const failures = new Map<string, number>();
+const lastLaunch = new Map<string, number>();
 const lastError = new Map<string, string>();
 
 /** Por qué falló la última instalación del programa de esta fuente ('store': versión de la Store). */
 export const engineError = (sourceId: string): string | null => lastError.get(sourceId) ?? null;
+
+/**
+ * «Descargar» (2.0.2): el instalador oficial del programa, en el navegador. El usuario lo
+ * instala y «+ Añadir», que sigue mirando, se conecta solo. Es la vía de la versión de la
+ * Store (que no instala programas) y la salida de la otra si instalarlo en silencio falló.
+ */
+export async function downloadEngineInBrowser(sourceId: string): Promise<void> {
+  if (!catalogApp(sourceId)) await loadCatalog().catch(() => undefined);
+  const app = catalogApp(sourceId);
+  if (!app) throw new Error('El catálogo de Frame no responde. Revisa tu conexión.');
+  const url = await invoke<string>('ext_app_installer_url', { updates: app.updates });
+  const { openUrl } = await import('@tauri-apps/plugin-opener');
+  await openUrl(url);
+}
 
 const health = (status: EngineStatus | null): EngineHealth => (!status ? 'down' : versionBelow(status.version, MIN_ENGINE) ? 'outdated' : 'up');
 
@@ -79,7 +97,10 @@ async function waitUp(client: EngineClient, ms: number): Promise<EngineStatus | 
 export function ensureEngine(sourceId: string, client: EngineClient, force = false): Promise<EngineHealth> {
   const current = running.get(sourceId);
   if (current) return current;
-  if (force) lastInstall.delete(sourceId);
+  if (force) {
+    nextInstall.delete(sourceId);
+    lastLaunch.delete(sourceId);
+  }
   const job = repair(sourceId, client).finally(() => {
     running.delete(sourceId);
     setStep(null);
@@ -96,28 +117,38 @@ async function repair(sourceId: string, client: EngineClient): Promise<EngineHea
   if (!app) return health(status);
   // La mayor entre la que pide el catálogo y la del protocolo.
   const wanted = app.minVersion && !versionBelow(app.minVersion, MIN_ENGINE) ? parse(app.minVersion) : MIN_ENGINE;
-  if (status && !versionBelow(status.version, wanted)) return 'up';
+  const ready = () => {
+    lastError.delete(sourceId);
+    failures.delete(sourceId);
+    return 'up' as const;
+  };
+  if (status && !versionBelow(status.version, wanted)) return ready();
   const args = app.args ?? [];
 
-  if (!status) {
+  if (!status && Date.now() - (lastLaunch.get(sourceId) ?? 0) >= RELAUNCH_MS) {
     setStep('starting');
     if (await invoke<boolean>('ext_app_launch', { exe: app.exe, args }).catch(() => false)) {
+      lastLaunch.set(sourceId, Date.now());
       status = await waitUp(client, 20_000);
-      if (status && !versionBelow(status.version, wanted)) return 'up';
+      if (status && !versionBelow(status.version, wanted)) return ready();
     }
   }
 
   // Falta o es viejo: se instala la última versión. Nunca a mitad de una
-  // descarga (el instalador cierra el programa) ni dos veces seguidas.
-  if ((status && status.busy > 0) || Date.now() - (lastInstall.get(sourceId) ?? 0) < RETRY_INSTALL_MS) return health(status);
-  lastInstall.set(sourceId, Date.now());
+  // descarga (el instalador cierra el programa), y tras un fallo, cada vez
+  // un poco más espaciado (el usuario puede forzarlo con «Reintentar»).
+  if ((status && status.busy > 0) || Date.now() < (nextInstall.get(sourceId) ?? 0)) return health(status);
   setStep(status ? 'updating' : 'installing');
   try {
     await invoke<string>('ext_app_install', { updates: app.updates, exe: app.exe, args });
-    lastError.delete(sourceId);
+    lastLaunch.set(sourceId, Date.now());
   } catch (error) {
+    const failed = (failures.get(sourceId) ?? 0) + 1;
+    failures.set(sourceId, failed);
+    nextInstall.set(sourceId, Date.now() + INSTALL_BACKOFF_MS[Math.min(failed, INSTALL_BACKOFF_MS.length) - 1]);
     lastError.set(sourceId, String(error).replace(/^(Error:\s*|Invoke error:\s*)/i, '').slice(0, 200));
     return health(status);
   }
-  return health(await waitUp(client, 30_000));
+  const after = await waitUp(client, 30_000);
+  return after && !versionBelow(after.version, wanted) ? ready() : health(after);
 }

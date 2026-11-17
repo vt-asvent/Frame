@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Film, Headphones, Heart, Layers, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, FileText, Film, Headphones, Heart, Layers, Sparkles } from 'lucide-react';
+import { SELECTED_CARD } from '@/components/shared/SelectionBar';
+import type { MultiSelect } from '@/hooks/use-multi-select';
 import { convocatoriaLabel, programaDe, tipoLabel, useCover, type BibItem, type BibSubjectConf } from '@/lib/extensions/aklore/biblioteca';
 import { tr } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -82,6 +84,7 @@ export function ItemCard({
   conf,
   favorite,
   showSubject,
+  select,
   onOpen,
   onToggleFavorite,
 }: {
@@ -89,14 +92,29 @@ export function ItemCard({
   conf?: BibSubjectConf;
   favorite: boolean;
   showSubject?: boolean;
+  /** Varias a la vez (2.0.2): Ctrl+clic o mantenerla presionada. */
+  select?: MultiSelect;
   onOpen: () => void;
   onToggleFavorite: () => void;
 }) {
   const programa = programaDe(item, conf);
+  const selected = !!select?.selected.has(item.id);
   return (
-    <div className="group relative flex min-w-0 flex-col gap-1.5">
-      <button type="button" onClick={onOpen} className="flex min-w-0 flex-col gap-1.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Cover item={item} className="transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:shadow-md" />
+    <div className="group relative flex min-w-0 select-none flex-col gap-1.5" aria-selected={select?.active ? selected : undefined}>
+      <button
+        type="button"
+        onClick={(event) => {
+          if (!select?.onCardClick(event, item.id)) onOpen();
+        }}
+        {...select?.pressProps(item.id)}
+        className="flex min-w-0 flex-col gap-1.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Cover item={item} className={cn('transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:shadow-md', selected && SELECTED_CARD)} />
+        {selected && (
+          <span className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow" aria-hidden>
+            <Check className="h-4 w-4" />
+          </span>
+        )}
         <span className="line-clamp-3 text-[13px] font-semibold leading-snug text-foreground">{item.title}</span>
         <span className="line-clamp-2 text-xs leading-snug text-muted-foreground">
           {showSubject ? `${item.subject} · ` : ''}

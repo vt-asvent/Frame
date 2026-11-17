@@ -2022,6 +2022,7 @@ pub fn run() {
             extensions::ext_secret_delete,
             extensions::ext_app_launch,
             extensions::ext_app_install,
+            extensions::ext_app_installer_url,
             ia_bridge::ia_bridge_start,
             ia_bridge::ia_bridge_stop,
             ia_bridge::ia_bridge_reply,
