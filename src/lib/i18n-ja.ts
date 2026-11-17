@@ -2877,8 +2877,6 @@ const DICT: Record<string, string> = {
   "¿Quitar 1 canción de la playlist?": "プレイリストから 1 曲を外しますか？",
   "¿Quitar {n} canciones de la playlist?": "プレイリストから {n} 曲を外しますか？",
   "Salen de «{playlist}» y siguen en tu biblioteca.": "「{playlist}」から外れ、ライブラリには残ります。",
-  "Se está descargando {name} en tu navegador: ábrelo, instálalo y Frame se conectará solo.": "{name} をブラウザでダウンロード中です。開いてインストールすると、Frame が自動で接続します。",
-  "No se pudo abrir la descarga: {error}": "ダウンロードを開けませんでした：{error}",
   "Pulsa «Descargar», instala {name} y Frame se conectará solo. (La versión de la Microsoft Store no instala programas por su cuenta.)": "「ダウンロード」を押して {name} をインストールすると、Frame が自動で接続します。（Microsoft Store 版はプログラムを自動でインストールしません。）",
   "{name} no se pudo instalar solo. Pulsa «Descargar», instálalo y Frame se conectará solo.": "{name} を自動でインストールできませんでした。「ダウンロード」を押してインストールすると、Frame が自動で接続します。",
   "Ya estaban en «{name}»": "すでに「{name}」に入っています",
@@ -2895,6 +2893,9 @@ const DICT: Record<string, string> = {
   "Marcar todo lo que se ve": "表示中のものをすべて選択",
   "{n} canciones restauradas.": "{n} 曲を元に戻しました。",
   "{n} canciones eliminadas": "{n} 曲を削除しました",
+  "Descargando {name}…": "{name} をダウンロード中…",
+  "{name} quedó en Descargas: ábrelo, instálalo y Frame se conectará solo.": "{name} を「ダウンロード」に保存しました。開いてインストールすると、Frame が自動で接続します。",
+  "No se pudo descargar {name}: {error}": "{name} をダウンロードできませんでした：{error}",
 };
 
 export default DICT;

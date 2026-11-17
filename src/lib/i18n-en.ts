@@ -2879,8 +2879,6 @@ const EN: Record<string, string> = {
   "¿Quitar 1 canción de la playlist?": "Remove 1 song from the playlist?",
   "¿Quitar {n} canciones de la playlist?": "Remove {n} songs from the playlist?",
   "Salen de «{playlist}» y siguen en tu biblioteca.": "They leave “{playlist}” and stay in your library.",
-  "Se está descargando {name} en tu navegador: ábrelo, instálalo y Frame se conectará solo.": "{name} is downloading in your browser: open it, install it and Frame will connect on its own.",
-  "No se pudo abrir la descarga: {error}": "Couldn’t open the download: {error}",
   "Pulsa «Descargar», instala {name} y Frame se conectará solo. (La versión de la Microsoft Store no instala programas por su cuenta.)": "Press “Download”, install {name} and Frame will connect on its own. (The Microsoft Store version doesn’t install programs by itself.)",
   "{name} no se pudo instalar solo. Pulsa «Descargar», instálalo y Frame se conectará solo.": "{name} couldn’t install on its own. Press “Download”, install it and Frame will connect on its own.",
   "Ya estaban en «{name}»": "They were already in “{name}”",
@@ -2897,6 +2895,9 @@ const EN: Record<string, string> = {
   "Marcar todo lo que se ve": "Select everything shown",
   "{n} canciones restauradas.": "{n} songs restored.",
   "{n} canciones eliminadas": "{n} songs deleted",
+  "Descargando {name}…": "Downloading {name}…",
+  "{name} quedó en Descargas: ábrelo, instálalo y Frame se conectará solo.": "{name} is in Downloads: open it, install it and Frame will connect on its own.",
+  "No se pudo descargar {name}: {error}": "Couldn’t download {name}: {error}",
 };
 
 export default EN;

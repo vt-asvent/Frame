@@ -2877,8 +2877,6 @@ const DICT: Record<string, string> = {
   "¿Quitar 1 canción de la playlist?": "Убрать 1 песню из плейлиста?",
   "¿Quitar {n} canciones de la playlist?": "Убрать песни из плейлиста ({n})?",
   "Salen de «{playlist}» y siguen en tu biblioteca.": "Они уйдут из «{playlist}» и останутся в твоей библиотеке.",
-  "Se está descargando {name} en tu navegador: ábrelo, instálalo y Frame se conectará solo.": "{name} скачивается в браузере: открой, установи, и Frame подключится сам.",
-  "No se pudo abrir la descarga: {error}": "Не удалось открыть загрузку: {error}",
   "Pulsa «Descargar», instala {name} y Frame se conectará solo. (La versión de la Microsoft Store no instala programas por su cuenta.)": "Нажми «Скачать», установи {name}, и Frame подключится сам. (Версия из Microsoft Store не устанавливает программы сама.)",
   "{name} no se pudo instalar solo. Pulsa «Descargar», instálalo y Frame se conectará solo.": "{name} не удалось установить автоматически. Нажми «Скачать», установи его, и Frame подключится сам.",
   "Ya estaban en «{name}»": "Они уже были в «{name}»",
@@ -2895,6 +2893,9 @@ const DICT: Record<string, string> = {
   "Marcar todo lo que se ve": "Выбрать всё, что видно",
   "{n} canciones restauradas.": "Песни восстановлены: {n}.",
   "{n} canciones eliminadas": "Песни удалены: {n}",
+  "Descargando {name}…": "Скачивается {name}…",
+  "{name} quedó en Descargas: ábrelo, instálalo y Frame se conectará solo.": "{name} в «Загрузках»: открой, установи, и Frame подключится сам.",
+  "No se pudo descargar {name}: {error}": "Не удалось скачать {name}: {error}",
 };
 
 export default DICT;

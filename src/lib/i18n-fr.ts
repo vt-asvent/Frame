@@ -2877,8 +2877,6 @@ const DICT: Record<string, string> = {
   "¿Quitar 1 canción de la playlist?": "Retirer 1 chanson de la playlist ?",
   "¿Quitar {n} canciones de la playlist?": "Retirer {n} chansons de la playlist ?",
   "Salen de «{playlist}» y siguen en tu biblioteca.": "Elles quittent « {playlist} » et restent dans ta bibliothèque.",
-  "Se está descargando {name} en tu navegador: ábrelo, instálalo y Frame se conectará solo.": "{name} se télécharge dans ton navigateur : ouvre-le, installe-le et Frame se connectera tout seul.",
-  "No se pudo abrir la descarga: {error}": "Impossible d’ouvrir le téléchargement : {error}",
   "Pulsa «Descargar», instala {name} y Frame se conectará solo. (La versión de la Microsoft Store no instala programas por su cuenta.)": "Appuie sur « Télécharger », installe {name} et Frame se connectera tout seul. (La version Microsoft Store n’installe pas de programmes d’elle-même.)",
   "{name} no se pudo instalar solo. Pulsa «Descargar», instálalo y Frame se conectará solo.": "{name} n’a pas pu s’installer tout seul. Appuie sur « Télécharger », installe-le et Frame se connectera tout seul.",
   "Ya estaban en «{name}»": "Elles étaient déjà dans « {name} »",
@@ -2895,6 +2893,9 @@ const DICT: Record<string, string> = {
   "Marcar todo lo que se ve": "Sélectionner tout ce qui est affiché",
   "{n} canciones restauradas.": "{n} chansons restaurées.",
   "{n} canciones eliminadas": "{n} chansons supprimées",
+  "Descargando {name}…": "Téléchargement de {name}…",
+  "{name} quedó en Descargas: ábrelo, instálalo y Frame se conectará solo.": "{name} est dans Téléchargements : ouvre-le, installe-le et Frame se connectera tout seul.",
+  "No se pudo descargar {name}: {error}": "Impossible de télécharger {name} : {error}",
 };
 
 export default DICT;

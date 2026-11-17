@@ -62,17 +62,16 @@ const lastError = new Map<string, string>();
 export const engineError = (sourceId: string): string | null => lastError.get(sourceId) ?? null;
 
 /**
- * «Descargar» (2.0.2): el instalador oficial del programa, en el navegador. El usuario lo
- * instala y «+ Añadir», que sigue mirando, se conecta solo. Es la vía de la versión de la
- * Store (que no instala programas) y la salida de la otra si instalarlo en silencio falló.
+ * «Descargar» (2.0.2): Frame baja el instalador oficial, comprueba su firma y lo deja en
+ * Descargas, a la vista en el Explorador. El usuario lo instala y «+ Añadir», que sigue
+ * mirando, se conecta solo. Es la vía de la versión de la Store (que no instala programas)
+ * y la salida de la otra si instalarlo en silencio falló.
  */
-export async function downloadEngineInBrowser(sourceId: string): Promise<void> {
+export async function downloadEngineInstaller(sourceId: string, name: string): Promise<void> {
   if (!catalogApp(sourceId)) await loadCatalog().catch(() => undefined);
   const app = catalogApp(sourceId);
   if (!app) throw new Error('El catálogo de Frame no responde. Revisa tu conexión.');
-  const url = await invoke<string>('ext_app_installer_url', { updates: app.updates });
-  const { openUrl } = await import('@tauri-apps/plugin-opener');
-  await openUrl(url);
+  await invoke<string>('ext_app_download_installer', { updates: app.updates, name });
 }
 
 const health = (status: EngineStatus | null): EngineHealth => (!status ? 'down' : versionBelow(status.version, MIN_ENGINE) ? 'outdated' : 'up');

@@ -7,7 +7,7 @@ import { ExtensionIcon } from '@/components/extensions/ExtensionIcons';
 import { useCourse } from '@/context/CourseContext';
 import type { ExtensionManifest, MusicSourceContribution } from '@/lib/extensions/manifest';
 import { EngineClient, parseSongsCsv, safeFileName, songBytes, thumbnailUrl, youtubeId, type CsvSong } from '@/lib/extensions/yt-mp3';
-import { downloadEngineInBrowser, engineError, ensureEngine, useEngineStep } from '@/lib/extensions/engine-app';
+import { downloadEngineInstaller, engineError, ensureEngine, useEngineStep } from '@/lib/extensions/engine-app';
 import {
   addCsvDownloads,
   cancelDownloads,
@@ -151,13 +151,19 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
     };
   }, [engine, check]);
 
-  /** «Descargar»: el instalador oficial en el navegador; al instalarlo, Frame se conecta solo. */
+  /** «Descargar»: Frame baja el instalador oficial (firma comprobada) a Descargas; al instalarlo, se conecta solo. */
+  const [fetchingProgram, setFetchingProgram] = useState(false);
   const downloadProgram = async () => {
+    if (fetchingProgram) return;
+    setFetchingProgram(true);
+    setNotice(tr('Descargando {name}…', { name }));
     try {
-      await downloadEngineInBrowser(id);
-      setNotice(tr('Se está descargando {name} en tu navegador: ábrelo, instálalo y Frame se conectará solo.', { name }));
+      await downloadEngineInstaller(id, name);
+      setNotice(tr('{name} quedó en Descargas: ábrelo, instálalo y Frame se conectará solo.', { name }));
     } catch (error) {
-      setNotice(tr('No se pudo abrir la descarga: {error}', { error: errorText(error).slice(0, 140) }));
+      setNotice(tr('No se pudo descargar {name}: {error}', { name, error: errorText(error).slice(0, 140) }));
+    } finally {
+      setFetchingProgram(false);
     }
   };
 
@@ -532,8 +538,8 @@ export default function MusicAdd({ id, manifest, source }: { id: string; manifes
                           : tr('{name} necesita ponerse al día y aún no se pudo. Frame lo vuelve a intentar solo; la cola sigue donde iba.', { name })}
                   </span>
                   {engineError(id) && (
-                    <Button size="sm" className="h-7 shrink-0 px-2.5 text-[11px]" onClick={() => void downloadProgram()}>
-                      <Download className="mr-1 h-3 w-3" />
+                    <Button size="sm" className="h-7 shrink-0 px-2.5 text-[11px]" onClick={() => void downloadProgram()} disabled={fetchingProgram}>
+                      {fetchingProgram ? <LoaderCircle className="mr-1 h-3 w-3 animate-spin" /> : <Download className="mr-1 h-3 w-3" />}
                       {tr('Descargar')}
                     </Button>
                   )}

@@ -318,13 +318,49 @@ async fn installer_of(client: &reqwest::Client, updates: &str) -> Result<(String
     Ok((version, url.to_string(), signature.to_string()))
 }
 
-/// El enlace del instalador oficial (2.0.2), para el botón «Descargar» de «+ Añadir»: lo baja el
-/// navegador y el usuario lo instala. Es la vía de la versión de la Store, y el último recurso de
-/// la otra si la instalación en silencio no sale.
+/// Baja el instalador y comprueba su firma. La descarga entera se reintenta (2.0.2): un corte a
+/// mitad deja bytes que no pasan la firma.
+async fn verified_installer(client: &reqwest::Client, url: &str, signature: &str) -> Result<Vec<u8>, String> {
+    let mut last = String::new();
+    for attempt in 0..3u64 {
+        if attempt > 0 {
+            pause(5 * attempt).await;
+        }
+        let response = match get_retrying(client, url, 900).await {
+            Ok(response) => response,
+            Err(error) => {
+                last = error;
+                continue;
+            }
+        };
+        if response.content_length().is_some_and(|size| size > MAX_INSTALLER) {
+            return Err("El instalador del programa es demasiado grande.".into());
+        }
+        match response.bytes().await {
+            Ok(body) if body.len() as u64 <= MAX_INSTALLER && signed(&body, signature) => return Ok(body.into()),
+            Ok(_) => last = "La firma del instalador no es válida: no se instaló nada.".into(),
+            Err(error) => last = error.to_string(),
+        }
+    }
+    Err(last)
+}
+
+/// «Descargar» de «+ Añadir» (2.0.2): el instalador oficial, bajado por Frame y con su firma
+/// comprobada (lo mismo que Frame instalaría), queda en Descargas y se muestra en el Explorador
+/// para que el usuario lo abra. Es la vía de la versión de la Store, y el último recurso de la
+/// otra si la instalación en silencio no sale. Nunca un enlace crudo al navegador.
 #[tauri::command]
-pub async fn ext_app_installer_url(updates: String) -> Result<String, String> {
+pub async fn ext_app_download_installer(app: tauri::AppHandle, updates: String, name: String) -> Result<String, String> {
     let client = crate::http_client();
-    Ok(installer_of(&client, &updates).await?.1)
+    let (version, url, signature) = installer_of(&client, &updates).await?;
+    let bytes = verified_installer(&client, &url, &signature).await?;
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let label: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == ' ' || *c == '-').take(40).collect();
+    let label = if label.trim().is_empty() { "Programa".to_string() } else { label.trim().to_string() };
+    let file = dir.join(format!("{label} {version} (instalador).exe"));
+    std::fs::write(&file, &bytes).map_err(|e| e.to_string())?;
+    let _ = tauri_plugin_opener::reveal_item_in_dir(&file);
+    Ok(file.to_string_lossy().into_owned())
 }
 
 /// Solo opciones sencillas («--tray»): nada que el programa lea como ruta.
@@ -393,35 +429,7 @@ pub async fn ext_app_install(updates: String, exe: String, args: Vec<String>) ->
     app_exe(&exe)?;
     let client = crate::http_client();
     let (version, url, signature) = installer_of(&client, &updates).await?;
-    // La descarga entera se reintenta (2.0.2): un corte a mitad deja bytes que no pasan la firma.
-    let mut bytes = None;
-    let mut last = String::new();
-    for attempt in 0..3u64 {
-        if attempt > 0 {
-            pause(5 * attempt).await;
-        }
-        let response = match get_retrying(&client, &url, 900).await {
-            Ok(response) => response,
-            Err(error) => {
-                last = error;
-                continue;
-            }
-        };
-        if response.content_length().is_some_and(|size| size > MAX_INSTALLER) {
-            return Err("El instalador del programa es demasiado grande.".into());
-        }
-        match response.bytes().await {
-            Ok(body) if body.len() as u64 <= MAX_INSTALLER && signed(&body, &signature) => {
-                bytes = Some(body);
-                break;
-            }
-            Ok(_) => last = "La firma del instalador no es válida: no se instaló nada.".into(),
-            Err(error) => last = error.to_string(),
-        }
-    }
-    let Some(bytes) = bytes else {
-        return Err(last);
-    };
+    let bytes = verified_installer(&client, &url, &signature).await?;
 
     let dir = std::env::temp_dir().join("frame-ext-app");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
