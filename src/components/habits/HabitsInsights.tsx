@@ -636,10 +636,10 @@ export default function HabitsInsights({ weekOffset = 0 }: { weekOffset?: number
           <TooltipProvider delayDuration={150}>
             <div className="flex h-[180px] items-end justify-between gap-2">
               {weekdayProfile.map((day) => {
-                const isBest = bestWeekday?.initial === day.initial && day.ratio > 0;
-                const isWorst = worstWeekday?.initial === day.initial && day.counted && !isBest;
+                const isBest = bestWeekday?.name === day.name && day.ratio > 0;
+                const isWorst = worstWeekday?.name === day.name && day.counted && !isBest;
                 return (
-                  <Tooltip key={day.initial}>
+                  <Tooltip key={day.name}>
                     <TooltipTrigger asChild>
                       <div className="flex h-full flex-1 cursor-default flex-col items-center justify-end gap-1.5">
                         <span
@@ -686,7 +686,7 @@ export default function HabitsInsights({ weekOffset = 0 }: { weekOffset?: number
               })}
             </div>
           </TooltipProvider>
-          {bestWeekday && worstWeekday && bestWeekday.initial !== worstWeekday.initial && (
+          {bestWeekday && worstWeekday && bestWeekday.name !== worstWeekday.name && (
             <p className="mt-3 text-center text-[11px] text-muted-foreground">
               {tr('Tu mejor día es el')}{' '}<span className="font-semibold capitalize text-emerald-500">{bestWeekday.name}</span>{' '}{tr('y el que peor te sale, el')}{' '}<span className="font-semibold capitalize text-amber-500">{worstWeekday.name}</span>.
             </p>

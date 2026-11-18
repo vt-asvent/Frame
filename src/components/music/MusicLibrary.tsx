@@ -186,7 +186,7 @@ export default function MusicLibrary() {
         onClear={select.clear}
       >
         <AddToPlaylistMenu songIds={chosen} onDone={select.clear} />
-        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-destructive hover:text-destructive" onClick={() => setConfirmBulkDelete(true)}>
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-red-600 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" onClick={() => setConfirmBulkDelete(true)}>
           <Trash2 className="mr-1 h-4 w-4" />
           {tr('Eliminar')}
         </Button>
