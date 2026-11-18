@@ -151,6 +151,8 @@ Support is offered for the current stable version and the one immediately before
 
 **${appVersion} — ${releaseDate}**
 
+*2.0.2:* **several cards at once**: in Music, in each playlist and in the Library, Ctrl+click selects several songs or files (Shift+click, a range) to add them to a playlist —a new one too—, remove them, delete them, favorite them or download them together · **safer SongVerse**: if its program could not install itself, the “Download” button fetches it, checks its signature and leaves it in Downloads · over 700 new files in the Library · in English, “Your typical week” no longer mixes up days with the same initial.
+
 *2.0.1:* **simpler code**: out go the clean-ups of data from old versions that already did their job · Frame for Android moves to 2.0.1, designed for phones.
 
 *2.0.0:* **everything syncs on its own**: your voice recordings show up on your other devices (the audio arrives with Wire) and the accent color follows your account; “Fix” is for when something gets stuck and goes through everything thoroughly · **the floating clock view, always on top**: it no longer ends up behind other windows · **the Google screens** (YouTube, Gmail, Classroom) no longer cover another screen if you switch quickly · **La casa de Bernarda Alba**, in the Library · Frame for Windows and for Android now share the same version number · lighter code.

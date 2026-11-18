@@ -159,6 +159,8 @@ Se ofrece soporte para la versión estable vigente y para la inmediatamente ante
 
 **${appVersion} — ${releaseDate}**
 
+*2.0.2:* **varias tarjetas a la vez**: en Música, en cada playlist y en la Biblioteca, Ctrl+clic marca varias canciones o archivos (Mayús+clic, un tramo) para añadirlos a una playlist —también a una nueva—, quitarlos, eliminarlos, marcarlos como favoritos o descargarlos juntos · **SongVerse más seguro**: si su programa no se pudo instalar solo, el botón «Descargar» lo baja, comprueba su firma y lo deja en Descargas · más de 700 archivos nuevos en la Biblioteca · en inglés, «Tu semana tipo» ya no confunde días con la misma inicial.
+
 *2.0.1:* **código más simple**: fuera las limpiezas de datos de versiones antiguas que ya hicieron su trabajo · Frame para Android pasa a la 2.0.1, pensada para el celular.
 
 *2.0.0:* **todo se sincroniza solo**: tus grabaciones de voz aparecen en tus otros dispositivos (el audio llega con Wire) y el color de acento sigue a tu cuenta; «Corregir» queda para cuando algo se atasca y repasa todo a fondo · **la vista flotante del reloj, siempre a la vista**: ya no se queda detrás de otras ventanas · **las pantallas de Google** (YouTube, Gmail, Classroom) ya no tapan a otra si cambias rápido · **La casa de Bernarda Alba**, en la Biblioteca · Frame para Windows y para Android llevan desde ahora el mismo número de versión · código más ligero.
